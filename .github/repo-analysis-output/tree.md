@@ -28,13 +28,17 @@
   └── middleware.py
 ├── docs
   └── deployment.md
+├── scripts
+  └── deploy_cloud_run.sh
 ├── .env.example
 ├── .gitignore
+├── Dockerfile
 ├── example_openai_usage.py
 ├── gcp_deployment_reference.md
 ├── infrastructure_versions.txt
 ├── LICENSE
 ├── LLMs.md
+├── Makefile
 ├── python_dev_versions.txt
 ├── README.md
 └── requirements.txt

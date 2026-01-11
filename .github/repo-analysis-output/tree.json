@@ -129,12 +129,26 @@
       ]
     },
     {
+      "type": "directory",
+      "name": "scripts",
+      "children": [
+        {
+          "type": "file",
+          "name": "deploy_cloud_run.sh"
+        }
+      ]
+    },
+    {
       "type": "file",
       "name": ".env.example"
     },
     {
       "type": "file",
       "name": ".gitignore"
+    },
+    {
+      "type": "file",
+      "name": "Dockerfile"
     },
     {
       "type": "file",
@@ -155,6 +169,10 @@
     {
       "type": "file",
       "name": "LLMs.md"
+    },
+    {
+      "type": "file",
+      "name": "Makefile"
     },
     {
       "type": "file",
