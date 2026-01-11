@@ -41,6 +41,7 @@ from app.models import (
     Status,
     character_to_firestore,
     character_from_firestore,
+    datetime_from_firestore,
 )
 
 logger = get_logger(__name__)
@@ -121,6 +122,178 @@ class CreateCharacterResponse(BaseModel):
 class GetCharacterResponse(BaseModel):
     """Response model for character retrieval."""
     character: CharacterDocument = Field(description="The character document")
+
+
+class CharacterMetadata(BaseModel):
+    """
+    Lightweight character metadata for list responses.
+    
+    Contains essential character information without full state details.
+    """
+    model_config = {"extra": "forbid"}
+    
+    character_id: str = Field(description="UUID character identifier")
+    name: str = Field(description="Character name")
+    race: str = Field(description="Character race")
+    character_class: str = Field(
+        alias="class",
+        serialization_alias="class",
+        description="Character class"
+    )
+    status: Status = Field(description="Character health status")
+    created_at: datetime = Field(description="When the character was created")
+    updated_at: datetime = Field(description="Last update timestamp")
+
+
+class ListCharactersResponse(BaseModel):
+    """Response model for character list retrieval."""
+    characters: list[CharacterMetadata] = Field(
+        description="List of character metadata objects"
+    )
+    total: int = Field(description="Total number of characters returned")
+
+
+@router.get(
+    "",
+    response_model=ListCharactersResponse,
+    status_code=status.HTTP_200_OK,
+    summary="List all characters for a user",
+    description=(
+        "Retrieve all character saves for a user_id to drive save-slot UIs.\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (for ownership and access control)\n\n"
+        "**Optional Query Parameters:**\n"
+        "- `limit`: Maximum number of characters to return (default: unlimited)\n"
+        "- `offset`: Number of characters to skip for pagination (default: 0)\n\n"
+        "**Response:**\n"
+        "- Returns an array of character metadata objects\n"
+        "- Each object contains: character_id, name, race, class, status, created_at, updated_at\n"
+        "- Results are sorted by updated_at descending (most recently updated first)\n"
+        "- Empty list returned if user has no characters\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or empty X-User-Id header\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def list_characters(
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+    limit: Optional[int] = None,
+    offset: int = 0,
+) -> ListCharactersResponse:
+    """
+    List all characters owned by a user.
+    
+    This endpoint:
+    1. Validates required X-User-Id header
+    2. Queries Firestore for all characters owned by the user
+    3. Projects lightweight metadata (character_id, name, race, class, status, timestamps)
+    4. Sorts by updated_at descending
+    5. Supports optional pagination via limit/offset
+    
+    Args:
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+        limit: Optional maximum number of results to return
+        offset: Number of results to skip (for pagination)
+        
+    Returns:
+        ListCharactersResponse with array of character metadata
+        
+    Raises:
+        HTTPException:
+            - 400: Missing or invalid X-User-Id
+            - 500: Firestore error
+    """
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("list_characters_missing_user_id")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+    
+    user_id = x_user_id.strip()
+    
+    # Log list attempt
+    logger.info(
+        "list_characters_attempt",
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    
+    try:
+        # Query Firestore for characters owned by user
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        query = characters_ref.where("owner_user_id", "==", user_id)
+        
+        # Order by updated_at descending
+        query = query.order_by("updated_at", direction=firestore.Query.DESCENDING)
+        
+        # Apply offset if specified
+        if offset > 0:
+            query = query.offset(offset)
+        
+        # Apply limit if specified
+        if limit is not None and limit > 0:
+            query = query.limit(limit)
+        
+        # Execute query
+        docs = query.stream()
+        
+        # Project to metadata
+        characters = []
+        for doc in docs:
+            data = doc.to_dict()
+            character_id = doc.id
+            
+            # Extract fields from nested player_state
+            player_state = data.get("player_state", {})
+            identity = player_state.get("identity", {})
+            
+            # Default status to Healthy if missing (as per edge case requirements)
+            status_value = player_state.get("status", "Healthy")
+            
+            # Create metadata object
+            metadata = CharacterMetadata(
+                character_id=character_id,
+                name=identity.get("name", "Unknown"),
+                race=identity.get("race", "Unknown"),
+                **{"class": identity.get("class", "Unknown")},
+                status=Status(status_value),
+                created_at=datetime_from_firestore(data.get("created_at")),
+                updated_at=datetime_from_firestore(data.get("updated_at")),
+            )
+            characters.append(metadata)
+        
+        logger.info(
+            "list_characters_success",
+            user_id=user_id,
+            count=len(characters),
+        )
+        
+        return ListCharactersResponse(
+            characters=characters,
+            total=len(characters),
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "list_characters_error",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list characters due to an internal error",
+        )
 
 
 @router.post(

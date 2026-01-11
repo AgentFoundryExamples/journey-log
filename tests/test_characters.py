@@ -881,3 +881,408 @@ class TestGetCharacter:
         response_data = response.json()
         assert "error" in response_data
         assert "empty" in response_data["message"].lower()
+
+
+class TestListCharacters:
+    """Tests for GET /characters endpoint."""
+    
+    def test_list_characters_empty_results(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that empty list is returned when user has no characters."""
+        
+        # Mock empty query results
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "user_no_chars"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "characters" in data
+        assert data["characters"] == []
+        assert data["total"] == 0
+    
+    def test_list_characters_single_character(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test listing a single character."""
+        
+        # Mock character document
+        mock_doc = Mock()
+        mock_doc.id = "char-001"
+        mock_doc.to_dict.return_value = {
+            "character_id": "char-001",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Hero One",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query results
+        mock_query = Mock()
+        mock_query.stream.return_value = [mock_doc]
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 1
+        assert data["total"] == 1
+        
+        char = data["characters"][0]
+        assert char["character_id"] == "char-001"
+        assert char["name"] == "Hero One"
+        assert char["race"] == "Human"
+        assert char["class"] == "Warrior"
+        assert char["status"] == "Healthy"
+    
+    def test_list_characters_multiple_sorted_by_updated_at(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test listing multiple characters sorted by updated_at descending."""
+        
+        # Mock character documents (ordered by updated_at desc)
+        mock_doc1 = Mock()
+        mock_doc1.id = "char-newest"
+        mock_doc1.to_dict.return_value = {
+            "character_id": "char-newest",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Newest Hero",
+                    "race": "Elf",
+                    "class": "Mage",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 12, 15, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        mock_doc2 = Mock()
+        mock_doc2.id = "char-middle"
+        mock_doc2.to_dict.return_value = {
+            "character_id": "char-middle",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Middle Hero",
+                    "race": "Dwarf",
+                    "class": "Fighter",
+                },
+                "status": "Wounded",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        mock_doc3 = Mock()
+        mock_doc3.id = "char-oldest"
+        mock_doc3.to_dict.return_value = {
+            "character_id": "char-oldest",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Oldest Hero",
+                    "race": "Human",
+                    "class": "Rogue",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 9, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query results (already sorted by Firestore)
+        mock_query = Mock()
+        mock_query.stream.return_value = [mock_doc1, mock_doc2, mock_doc3]
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 3
+        assert data["total"] == 3
+        
+        # Verify order (newest first)
+        assert data["characters"][0]["character_id"] == "char-newest"
+        assert data["characters"][1]["character_id"] == "char-middle"
+        assert data["characters"][2]["character_id"] == "char-oldest"
+    
+    def test_list_characters_missing_user_id(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that missing X-User-Id header returns 422."""
+        response = test_client_with_mock_db.get("/characters")
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_list_characters_empty_user_id(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that empty X-User-Id header returns 400."""
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "   "},
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "X-User-Id" in response_data["message"]
+    
+    def test_list_characters_with_limit(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test pagination with limit parameter."""
+        
+        # Mock two characters (but query should be limited)
+        mock_doc1 = Mock()
+        mock_doc1.id = "char-001"
+        mock_doc1.to_dict.return_value = {
+            "character_id": "char-001",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Hero One",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        mock_doc2 = Mock()
+        mock_doc2.id = "char-002"
+        mock_doc2.to_dict.return_value = {
+            "character_id": "char-002",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Hero Two",
+                    "race": "Elf",
+                    "class": "Mage",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query with limit
+        mock_query = Mock()
+        mock_query.limit.return_value.stream.return_value = [mock_doc1]  # Only return first
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request with limit=1
+        response = test_client_with_mock_db.get(
+            "/characters?limit=1",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 1
+        assert data["total"] == 1
+        
+        # Verify limit was called on query
+        mock_query.limit.assert_called_once_with(1)
+    
+    def test_list_characters_with_offset(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test pagination with offset parameter."""
+        
+        # Mock character document
+        mock_doc = Mock()
+        mock_doc.id = "char-002"
+        mock_doc.to_dict.return_value = {
+            "character_id": "char-002",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Hero Two",
+                    "race": "Elf",
+                    "class": "Mage",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query with offset
+        mock_query = Mock()
+        mock_query.offset.return_value.stream.return_value = [mock_doc]
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request with offset=1
+        response = test_client_with_mock_db.get(
+            "/characters?offset=1",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 1
+        
+        # Verify offset was called on query
+        mock_query.offset.assert_called_once_with(1)
+    
+    def test_list_characters_default_status_healthy(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that legacy documents lacking status default to Healthy."""
+        
+        # Mock character document without status
+        mock_doc = Mock()
+        mock_doc.id = "char-legacy"
+        mock_doc.to_dict.return_value = {
+            "character_id": "char-legacy",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Legacy Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                # No status field
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query results
+        mock_query = Mock()
+        mock_query.stream.return_value = [mock_doc]
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 1
+        
+        # Verify status defaults to Healthy
+        char = data["characters"][0]
+        assert char["status"] == "Healthy"
+    
+    def test_list_characters_firestore_error_returns_500(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that Firestore errors return 500."""
+        
+        # Mock Firestore error
+        mock_firestore_client.collection.side_effect = Exception("Firestore connection error")
+        
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        response_data = response.json()
+        assert "error" in response_data
+        assert "internal error" in response_data["message"].lower()
+    
+    def test_list_characters_user_isolation(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that users can only see their own characters."""
+        
+        # Mock character document for user123
+        mock_doc = Mock()
+        mock_doc.id = "char-user123"
+        mock_doc.to_dict.return_value = {
+            "character_id": "char-user123",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "User123 Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query results - Firestore should only return user123's characters
+        mock_query = Mock()
+        mock_query.stream.return_value = [mock_doc]
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request as user123
+        response = test_client_with_mock_db.get(
+            "/characters",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 1
+        
+        # Verify Firestore was queried with correct user_id filter
+        mock_collection.where.assert_called_once_with("owner_user_id", "==", "user123")

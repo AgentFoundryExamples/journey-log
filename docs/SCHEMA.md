@@ -14,6 +14,7 @@ This document defines the canonical data schema for the Journey Log system, spec
 8. [Edge Cases and Migration](#edge-cases-and-migration)
 9. [Firestore Sizing and Consistency Considerations](#firestore-sizing-and-consistency-considerations)
 10. [Serialization Testing](#serialization-testing)
+11. [API Endpoints](#api-endpoints)
 
 ---
 
@@ -1353,6 +1354,94 @@ The serialization tests are run automatically:
 - As part of the full test suite (`make test`)
 
 All serialization tests must pass before merging code changes.
+
+---
+
+## API Endpoints
+
+### Character Management Endpoints
+
+The Journey Log API provides RESTful endpoints for managing character documents. All character endpoints are prefixed with `/characters`.
+
+#### List Characters
+
+**Endpoint:** `GET /characters`
+
+**Description:** Retrieve all character saves for a user to drive save-slot UIs. Returns lightweight metadata for each character owned by the user.
+
+**Required Headers:**
+- `X-User-Id` (string): User identifier for ownership and access control
+
+**Optional Query Parameters:**
+- `limit` (integer): Maximum number of characters to return (default: unlimited)
+- `offset` (integer): Number of characters to skip for pagination (default: 0)
+
+**Response Format:**
+```json
+{
+  "characters": [
+    {
+      "character_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Aragorn",
+      "race": "Human",
+      "class": "Ranger",
+      "status": "Healthy",
+      "created_at": "2026-01-10T10:00:00Z",
+      "updated_at": "2026-01-11T12:00:00Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+**Response Fields:**
+- `characters` (array): List of character metadata objects
+  - `character_id` (string): UUID character identifier
+  - `name` (string): Character name (from `player_state.identity.name`)
+  - `race` (string): Character race (from `player_state.identity.race`)
+  - `class` (string): Character class (from `player_state.identity.class`)
+  - `status` (string): Character health status - "Healthy", "Wounded", or "Dead" (defaults to "Healthy" if missing)
+  - `created_at` (string): ISO 8601 timestamp of character creation
+  - `updated_at` (string): ISO 8601 timestamp of last update
+- `total` (integer): Total number of characters returned
+
+**Sorting:**
+Results are sorted by `updated_at` descending (most recently updated first).
+
+**Pagination:**
+Use `limit` and `offset` parameters for pagination:
+- First page: `GET /characters?limit=10`
+- Second page: `GET /characters?limit=10&offset=10`
+- Third page: `GET /characters?limit=10&offset=20`
+
+**Error Responses:**
+- `400 Bad Request`: Missing or empty `X-User-Id` header
+- `422 Unprocessable Entity`: Missing required `X-User-Id` header
+- `500 Internal Server Error`: Firestore or internal errors
+
+**Access Control:**
+- Only returns characters owned by the user specified in `X-User-Id`
+- Empty array `[]` returned if user has no characters
+- Never returns other users' characters
+
+**Example Requests:**
+```bash
+# List all characters for a user
+curl -H "X-User-Id: user123" http://localhost:8080/characters
+
+# List first 5 characters
+curl -H "X-User-Id: user123" "http://localhost:8080/characters?limit=5"
+
+# List next 5 characters (pagination)
+curl -H "X-User-Id: user123" "http://localhost:8080/characters?limit=5&offset=5"
+```
+
+**Edge Cases:**
+- Missing `X-User-Id` header yields 422 error before Firestore query
+- Empty `X-User-Id` header yields 400 error
+- Legacy documents lacking `status` default to "Healthy" in projection
+- Users with high save counts receive deterministic pagination when `limit` provided
+- Firestore query timeouts handled gracefully with 500 error and logging
 
 ---
 
