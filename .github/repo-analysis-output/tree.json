@@ -161,6 +161,10 @@
         {
           "type": "file",
           "name": "test_models.py"
+        },
+        {
+          "type": "file",
+          "name": "test_serialization.py"
         }
       ]
     },

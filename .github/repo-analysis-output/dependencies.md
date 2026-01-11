@@ -8,8 +8,8 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 ## Statistics
 
-- **Total files**: 14
-- **Intra-repo dependencies**: 16
+- **Total files**: 15
+- **Intra-repo dependencies**: 17
 - **External stdlib dependencies**: 19
 - **External third-party dependencies**: 28
 
@@ -68,7 +68,7 @@ Total: 28 unique packages
 ## Most Depended Upon Files (Intra-Repo)
 
 - `app/config.py` (5 dependents)
-- `app/models.py` (3 dependents)
+- `app/models.py` (4 dependents)
 - `app/logging.py` (3 dependents)
 - `app/firestore.py` (1 dependents)
 - `app/routers/firestore_test.py` (1 dependents)

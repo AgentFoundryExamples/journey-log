@@ -35,7 +35,8 @@
 ├── tests
   ├── __init__.py
   ├── test_firestore_serialization.py
-  └── test_models.py
+  ├── test_models.py
+  └── test_serialization.py
 ├── .env.example
 ├── .gitignore
 ├── Dockerfile

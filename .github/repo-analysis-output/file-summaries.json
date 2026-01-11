@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 14,
+  "total_files": 15,
   "files": [
     {
       "schema_version": "2.0",
@@ -195,6 +195,20 @@
       "metrics": {
         "size_bytes": 22911,
         "loc": 547,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_serialization.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 42708,
+        "loc": 755,
         "todo_count": 0
       }
     }

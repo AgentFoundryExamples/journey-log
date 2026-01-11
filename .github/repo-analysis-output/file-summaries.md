@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 14
+Total files: 15
 
 ## app/__init__.py
 **Language:** Python  
@@ -130,4 +130,13 @@ Total files: 14
 **Summary:** Python test file (role: test)  
 **Size:** 22.37 KB  
 **LOC:** 547  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_serialization.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 41.71 KB  
+**LOC:** 755  
 **TODOs/FIXMEs:** 0  

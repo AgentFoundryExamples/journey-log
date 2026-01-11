@@ -216,6 +216,22 @@
           "pytest"
         ]
       }
+    },
+    {
+      "id": "tests/test_serialization.py",
+      "path": "tests/test_serialization.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timedelta",
+          "datetime.timezone",
+          "unittest.mock.Mock"
+        ],
+        "third-party": [
+          "pytest"
+        ]
+      }
     }
   ],
   "edges": [
@@ -281,6 +297,10 @@
     },
     {
       "source": "tests/test_models.py",
+      "target": "app/models.py"
+    },
+    {
+      "source": "tests/test_serialization.py",
       "target": "app/models.py"
     }
   ],
