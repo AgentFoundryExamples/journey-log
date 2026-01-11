@@ -132,7 +132,7 @@ class PlayerState(BaseModel):
     
     Referenced in: docs/SCHEMA.md - Character Document Fields (player_state)
     """
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
     
     identity: CharacterIdentity = Field(description="Character identity information")
     status: Status = Field(description="Character health status")
