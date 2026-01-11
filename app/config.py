@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO", description="Logging level"
     )
+    request_id_header: str = Field(
+        default="X-Request-ID",
+        description="Header name for request ID (for Cloud Run/Load Balancer compatibility)",
+    )
 
     @field_validator("gcp_project_id")
     @classmethod
