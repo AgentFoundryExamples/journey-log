@@ -4,6 +4,7 @@ Configuration module for the Journey Log API service.
 Loads environment variables and provides validated settings.
 """
 
+from functools import lru_cache
 from typing import Literal
 from pydantic import Field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -80,17 +81,6 @@ class Settings(BaseSettings):
         description="Logging level"
     )
     
-    @field_validator("service_environment")
-    @classmethod
-    def validate_environment(cls, v: str) -> str:
-        """Validate that environment is one of the allowed values."""
-        allowed = ["dev", "staging", "prod"]
-        if v not in allowed:
-            raise ValueError(
-                f"Invalid environment '{v}'. Must be one of: {', '.join(allowed)}"
-            )
-        return v
-    
     @field_validator("gcp_project_id")
     @classmethod
     def validate_gcp_project_id(cls, v: str, info: ValidationInfo) -> str:
@@ -103,6 +93,7 @@ class Settings(BaseSettings):
         return v
 
 
+@lru_cache
 def get_settings() -> Settings:
     """
     Get the application settings.

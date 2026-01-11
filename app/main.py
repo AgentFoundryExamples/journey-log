@@ -53,11 +53,6 @@ async def info() -> dict[str, Any]:
             "version": settings.build_version,
             "commit": settings.build_commit or "unknown",
             "timestamp": settings.build_timestamp or "unknown",
-        },
-        "configuration": {
-            "gcp_project_id": settings.gcp_project_id or "not-configured",
-            "firestore_journeys_collection": settings.firestore_journeys_collection,
-            "firestore_entries_collection": settings.firestore_entries_collection,
         }
     }
 
