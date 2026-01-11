@@ -5,7 +5,7 @@ Loads environment variables and provides validated settings.
 """
 
 from typing import Literal
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     
     @field_validator("gcp_project_id")
     @classmethod
-    def validate_gcp_project_id(cls, v: str, info) -> str:
+    def validate_gcp_project_id(cls, v: str, info: ValidationInfo) -> str:
         """Validate GCP project ID is provided in non-dev environments."""
         environment = info.data.get("service_environment", "dev")
         if environment in ["staging", "prod"] and not v:

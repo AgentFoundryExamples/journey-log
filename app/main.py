@@ -6,7 +6,6 @@ FastAPI application with health and info endpoints.
 
 from typing import Dict, Any
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 
@@ -31,15 +30,12 @@ async def health() -> Dict[str, Any]:
     Returns the service status and basic identifiers.
     Always returns 200 OK when the service is running.
     """
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "healthy",
-            "service": settings.service_name,
-            "environment": settings.service_environment,
-            "version": settings.build_version,
-        }
-    )
+    return {
+        "status": "healthy",
+        "service": settings.service_name,
+        "environment": settings.service_environment,
+        "version": settings.build_version,
+    }
 
 
 @app.get("/info", response_model=Dict[str, Any])
