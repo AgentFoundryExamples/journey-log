@@ -17,13 +17,14 @@ Journey Log API Service - Main Application
 FastAPI application with health and info endpoints.
 """
 
+import json
 from typing import Any
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from app.config import get_settings
-from app.routers import firestore_test
+from app.routers import firestore_test, characters
 from app.logging import configure_logging, get_logger
 from app.middleware import RequestIDMiddleware
 
@@ -47,6 +48,7 @@ app = FastAPI(
 app.add_middleware(RequestIDMiddleware)
 
 # Include routers
+app.include_router(characters.router)
 app.include_router(firestore_test.router)
 
 
@@ -117,13 +119,35 @@ async def validation_exception_handler(
         "validation_error",
         errors=exc.errors(),
     )
+    
+    def _to_json_safe(value: Any) -> Any:
+        """Attempt to return a JSON-serializable value, or its string representation."""
+        try:
+            json.dumps(value)
+            return value
+        except (TypeError, ValueError):
+            return str(value)
+    
+    # Serialize errors to JSON-safe format
+    errors = []
+    for error in exc.errors():
+        # Create a JSON-safe version of the error
+        safe_error = {
+            "loc": error.get("loc", []),
+            "msg": str(error.get("msg", "")),
+            "type": error.get("type", ""),
+        }
+        # Include ctx if present, converting values to be JSON-safe
+        if "ctx" in error:
+            safe_error["ctx"] = {k: _to_json_safe(v) for k, v in error["ctx"].items()}
+        errors.append(safe_error)
 
     response = JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "error": "validation_error",
             "message": "Request validation failed",
-            "errors": exc.errors(),
+            "errors": errors,
             "request_id": request_id,
         },
     )

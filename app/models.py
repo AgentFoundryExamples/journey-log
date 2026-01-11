@@ -808,9 +808,8 @@ def character_to_firestore(
     
     # Handle server timestamps if requested
     if use_server_timestamp:
+        data['created_at'] = firestore.SERVER_TIMESTAMP
         data['updated_at'] = firestore.SERVER_TIMESTAMP
-        # Only set created_at if it's a new document (you'd typically check if it exists)
-        # For now, we'll let the caller handle created_at separately
     
     return data
 
