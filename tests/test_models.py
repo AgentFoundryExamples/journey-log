@@ -403,7 +403,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="middle-earth-v1",
-            schema_version=1,
+            schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
             additional_metadata={"character_name": "Aragorn"}
@@ -411,7 +411,7 @@ class TestCharacterDocument:
         
         assert doc.character_id == "550e8400-e29b-41d4-a716-446655440000"
         assert doc.owner_user_id == "user_123"
-        assert doc.schema_version == 1
+        assert doc.schema_version == "1.0.0"
         assert doc.player_state.identity.name == "Aragorn"
     
     def test_character_document_optional_fields_none(self):
@@ -429,7 +429,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
-            schema_version=1,
+            schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
             active_quest=None,
@@ -461,7 +461,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
-            schema_version=1,
+            schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
             active_quest=quest
@@ -498,7 +498,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
-            schema_version=1,
+            schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
             combat_state=combat
@@ -522,7 +522,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
-            schema_version=1,
+            schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
             additional_metadata={
@@ -551,7 +551,7 @@ class TestCharacterDocument:
                 owner_user_id="user_123",
                 player_state=player_state,
                 world_pois_reference="world",
-                schema_version=1,
+                schema_version="1.0.0",
                 created_at="2026-01-11T12:00:00Z",
                 updated_at="2026-01-11T12:00:00Z",
                 extra_forbidden_field="should fail"

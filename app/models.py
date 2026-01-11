@@ -414,8 +414,8 @@ class CharacterDocument(BaseModel):
     world_pois_reference: str = Field(
         description="Reference to world POI collection or configuration"
     )
-    schema_version: int = Field(
-        description="Schema version for this document (integer)"
+    schema_version: str = Field(
+        description="Schema version for this document (semantic versioning format, e.g., '1.0.0')"
     )
     created_at: Union[datetime, str] = Field(
         description="When the character was created (Firestore Timestamp or ISO 8601)"
