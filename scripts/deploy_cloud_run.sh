@@ -163,11 +163,12 @@ main() {
     
     # Step 1: Verify gcloud authentication
     log_info "Verifying gcloud authentication..."
-    if ! gcloud auth list --filter=status:ACTIVE --format="value(account)" &>/dev/null; then
+    ACTIVE_ACCOUNT=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null | head -n 1)
+    if [[ -z "${ACTIVE_ACCOUNT}" ]]; then
         log_error "Not authenticated with gcloud. Run: gcloud auth login"
         exit 1
     fi
-    log_info "✓ Authenticated"
+    log_info "✓ Authenticated as ${ACTIVE_ACCOUNT}"
     echo ""
     
     # Step 2: Set active project
