@@ -7,6 +7,7 @@ This document provides detailed instructions for deploying the Journey Log API t
 - [Prerequisites](#prerequisites)
 - [IAM Roles and Permissions](#iam-roles-and-permissions)
 - [Local Development Setup](#local-development-setup)
+- [Docker Containerization](#docker-containerization)
 - [Firestore Configuration](#firestore-configuration)
 - [Cloud Run Deployment](#cloud-run-deployment)
 - [Testing Connectivity](#testing-connectivity)
@@ -19,8 +20,9 @@ Before deploying the Journey Log API, ensure you have:
 1. **Google Cloud Project**: An active GCP project with billing enabled
 2. **gcloud CLI**: Installed and configured ([Installation Guide](https://cloud.google.com/sdk/docs/install))
 3. **Firestore Database**: A Firestore database created in your project (Native mode recommended)
-4. **Docker** (optional): For local container testing
-5. **Python 3.12+**: For local development
+4. **Docker**: Required for container builds (version 29.1.4+)
+5. **Python 3.14+**: For local development (targeting 3.14 per infrastructure_versions.txt)
+6. **Artifact Registry**: A repository for storing container images
 
 ## IAM Roles and Permissions
 
@@ -148,6 +150,110 @@ GCP_PROJECT_ID=demo-project
 SERVICE_ENVIRONMENT=dev
 ```
 
+## Docker Containerization
+
+The Journey Log API uses a production-ready Dockerfile optimized for Cloud Run deployment.
+
+### Dockerfile Features
+
+- **Base Image**: Python 3.14-slim (aligned with infrastructure_versions.txt)
+- **Multi-stage Build**: Separates build dependencies from runtime for smaller images
+- **Non-root User**: Runs as `appuser` (UID 1001) for security
+- **Cloud Run Compatible**: Uses `$PORT` environment variable set by Cloud Run
+- **Security Updates**: Includes latest security patches in base image
+- **Health Check**: Built-in health check endpoint monitoring
+
+### Building the Container Locally
+
+Using Make (recommended):
+
+```bash
+# Build the Docker image
+make docker-build
+
+# This runs:
+# docker build -t journey-log:latest .
+```
+
+Or using Docker directly:
+
+```bash
+# Build with build metadata
+docker build -t journey-log:latest \
+  --build-arg BUILD_VERSION=$(git describe --tags --always) \
+  --build-arg BUILD_COMMIT=$(git rev-parse HEAD) \
+  --build-arg BUILD_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+  .
+```
+
+### Running the Container Locally
+
+Using Make (recommended):
+
+```bash
+# Run the container with default settings
+make docker-run
+
+# Service will be available at http://localhost:8080
+```
+
+Or using Docker directly:
+
+```bash
+# Run with Firestore emulator
+docker run --rm -it \
+  -p 8080:8080 \
+  -e SERVICE_ENVIRONMENT=dev \
+  -e GCP_PROJECT_ID=demo-project \
+  -e FIRESTORE_EMULATOR_HOST=host.docker.internal:8080 \
+  journey-log:latest
+
+# Run with real Firestore (requires ADC volume mount)
+docker run --rm -it \
+  -p 8080:8080 \
+  -e SERVICE_ENVIRONMENT=dev \
+  -e GCP_PROJECT_ID=your-project-id \
+  -v ~/.config/gcloud:/home/appuser/.config/gcloud:ro \
+  journey-log:latest
+```
+
+**Note**: On macOS/Windows, use `host.docker.internal` to access the host machine's localhost. On Linux, use `--network host` or the host's IP address.
+
+### Testing the Containerized Application
+
+Once the container is running:
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Info endpoint
+curl http://localhost:8080/info
+
+# Firestore connectivity test (if Firestore is configured)
+curl -X POST http://localhost:8080/firestore-test
+```
+
+### Container Configuration
+
+The Dockerfile is configured with the following production settings:
+
+- **Workers**: 1 worker per instance (Cloud Run manages concurrency)
+- **Timeout**: 75 seconds keep-alive (Cloud Run default is 60s, max 300s)
+- **Port**: Uses `$PORT` environment variable (Cloud Run sets this to 8080)
+- **Log Level**: info (configurable via `LOG_LEVEL` env var)
+
+You can override these settings by passing environment variables:
+
+```bash
+docker run --rm -it \
+  -p 8080:8080 \
+  -e PORT=8080 \
+  -e LOG_LEVEL=DEBUG \
+  -e SERVICE_ENVIRONMENT=dev \
+  journey-log:latest
+```
+
 ## Firestore Configuration
 
 ### Creating Firestore Database
@@ -191,67 +297,232 @@ gcloud firestore import gs://your-backup-bucket/test-backup \
 
 ## Cloud Run Deployment
 
-### Build and Deploy
+The Journey Log API includes a deployment script (`scripts/deploy_cloud_run.sh`) that automates the entire deployment process to Cloud Run, including building the container, pushing to Artifact Registry, and deploying with proper IAM configuration.
+
+### Prerequisites for Cloud Run Deployment
+
+1. **Create an Artifact Registry repository** (one-time setup):
 
 ```bash
-# Set variables
-PROJECT_ID="your-project-id"
-REGION="us-central1"
-SERVICE_NAME="journey-log"
-IMAGE_NAME="journey-log"
+# Set your project and region
+export GCP_PROJECT_ID="your-project-id"
+export REGION="us-central1"
 
+# Create Artifact Registry repository
+gcloud artifacts repositories create cloud-run-apps \
+    --repository-format=docker \
+    --location="${REGION}" \
+    --description="Container images for Cloud Run applications" \
+    --project="${GCP_PROJECT_ID}"
+```
+
+2. **Create a dedicated service account** (recommended for production):
+
+```bash
+# Create service account
+gcloud iam service-accounts create journey-log-sa \
+    --display-name="Journey Log Service Account" \
+    --project="${GCP_PROJECT_ID}"
+
+# Grant Firestore read/write permissions
+gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+    --member="serviceAccount:journey-log-sa@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
+    --role="roles/datastore.user"
+```
+
+### Required Environment Variables
+
+The deployment script requires the following environment variables:
+
+```bash
+# Required variables
+export GCP_PROJECT_ID="your-project-id"              # GCP Project ID
+export REGION="us-central1"                          # GCP region
+export SERVICE_NAME="journey-log"                    # Cloud Run service name
+export ARTIFACT_REGISTRY_REPO="cloud-run-apps"       # Artifact Registry repo name
+export SERVICE_ACCOUNT="journey-log-sa@your-project-id.iam.gserviceaccount.com"
+
+# Optional variables (with defaults)
+export IMAGE_TAG="latest"                            # Container image tag (default: latest)
+export SERVICE_ENVIRONMENT="prod"                    # Environment (default: prod)
+export MIN_INSTANCES="0"                             # Min instances (default: 0)
+export MAX_INSTANCES="10"                            # Max instances (default: 10)
+export MEMORY="512Mi"                                # Memory allocation (default: 512Mi)
+export CPU="1"                                       # CPU allocation (default: 1)
+export CONCURRENCY="80"                              # Request concurrency (default: 80)
+export TIMEOUT="300"                                 # Request timeout in seconds (default: 300)
+export ALLOW_UNAUTHENTICATED="false"                 # Public access (default: false)
+```
+
+### Deploying to Cloud Run
+
+#### Using the Deployment Script (Recommended)
+
+```bash
+# Set required environment variables
+export GCP_PROJECT_ID="your-project-id"
+export REGION="us-central1"
+export SERVICE_NAME="journey-log"
+export ARTIFACT_REGISTRY_REPO="cloud-run-apps"
+export SERVICE_ACCOUNT="journey-log-sa@your-project-id.iam.gserviceaccount.com"
+
+# Run deployment script
+./scripts/deploy_cloud_run.sh
+```
+
+Or using Make:
+
+```bash
+# Set environment variables, then run:
+make deploy
+```
+
+The deployment script will:
+
+1. ✓ Validate all required environment variables
+2. ✓ Verify gcloud authentication
+3. ✓ Enable required GCP APIs (Artifact Registry, Cloud Run, Firestore, Cloud Build)
+4. ✓ Configure Docker authentication for Artifact Registry
+5. ✓ Build the container image with build metadata
+6. ✓ Push the image to Artifact Registry
+7. ✓ Deploy to Cloud Run with specified configuration
+8. ✓ Display the service URL and next steps
+
+#### Security Note: Authenticated Deployment
+
+**By default, the deployment script deploys with authentication required** (`--no-allow-unauthenticated`). This prevents public access and requires callers to have the `roles/run.invoker` role.
+
+To allow public access (use with caution):
+
+```bash
+export ALLOW_UNAUTHENTICATED="true"
+./scripts/deploy_cloud_run.sh
+```
+
+The script will prompt for confirmation before deploying with public access.
+
+### Granting Access to Cloud Run Service
+
+After deploying with authentication required, grant access to specific users or service accounts:
+
+```bash
+# Grant access to a specific user
+gcloud run services add-iam-policy-binding journey-log \
+    --region="${REGION}" \
+    --member="user:your-email@example.com" \
+    --role="roles/run.invoker" \
+    --project="${GCP_PROJECT_ID}"
+
+# Grant access to a service account (for service-to-service calls)
+gcloud run services add-iam-policy-binding journey-log \
+    --region="${REGION}" \
+    --member="serviceAccount:caller-sa@project-id.iam.gserviceaccount.com" \
+    --role="roles/run.invoker" \
+    --project="${GCP_PROJECT_ID}"
+
+# Grant access to all authenticated users (less restrictive)
+gcloud run services add-iam-policy-binding journey-log \
+    --region="${REGION}" \
+    --member="allAuthenticatedUsers" \
+    --role="roles/run.invoker" \
+    --project="${GCP_PROJECT_ID}"
+```
+
+### Environment-Specific Deployments
+
+Deploy to different environments (dev, staging, prod) using environment variables:
+
+```bash
+# Deploy to staging
+export SERVICE_ENVIRONMENT="staging"
+export SERVICE_NAME="journey-log-staging"
+export IMAGE_TAG="staging-$(git rev-parse --short HEAD)"
+export MIN_INSTANCES="0"
+export MAX_INSTANCES="5"
+./scripts/deploy_cloud_run.sh
+
+# Deploy to production
+export SERVICE_ENVIRONMENT="prod"
+export SERVICE_NAME="journey-log"
+export IMAGE_TAG="prod-v1.0.0"
+export MIN_INSTANCES="1"
+export MAX_INSTANCES="10"
+./scripts/deploy_cloud_run.sh
+```
+
+### Manual Deployment (Alternative)
+
+If you prefer to deploy manually without the script:
+
+```bash
 # Build and push to Artifact Registry
-gcloud builds submit \
-    --tag="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${IMAGE_NAME}" \
-    --project="${PROJECT_ID}"
+IMAGE="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REGISTRY_REPO}/${SERVICE_NAME}:latest"
+
+docker build -t "${IMAGE}" .
+docker push "${IMAGE}"
 
 # Deploy to Cloud Run
 gcloud run deploy "${SERVICE_NAME}" \
-    --image="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${IMAGE_NAME}" \
+    --image="${IMAGE}" \
     --platform=managed \
     --region="${REGION}" \
-    --allow-unauthenticated \
-    --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},SERVICE_ENVIRONMENT=prod" \
+    --no-allow-unauthenticated \
     --service-account="${SERVICE_ACCOUNT}" \
     --memory=512Mi \
     --cpu=1 \
-    --project="${PROJECT_ID}"
+    --concurrency=80 \
+    --timeout=300 \
+    --min-instances=0 \
+    --max-instances=10 \
+    --set-env-vars="GCP_PROJECT_ID=${GCP_PROJECT_ID},SERVICE_ENVIRONMENT=prod,SERVICE_NAME=${SERVICE_NAME}" \
+    --project="${GCP_PROJECT_ID}"
 ```
 
-### Using Dockerfile
+### IAM Role Summary
 
-Create a `Dockerfile` in your project root:
+For a complete Cloud Run deployment, you need the following IAM roles:
 
-```dockerfile
-FROM python:3.14-slim
+#### Cloud Run Service Account (Runtime)
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+The service account used by Cloud Run to run your application:
 
-# Set working directory
-WORKDIR /app
+- **`roles/datastore.user`**: Read/write access to Firestore
+  - Required for: Writing/reading journey logs and entries
 
-# Copy requirements and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+#### Caller/Invoker Principals
 
-# Copy application code
-COPY . .
+Users or service accounts that need to call the Cloud Run service:
 
-# Expose port
-EXPOSE 8080
+- **`roles/run.invoker`**: Permission to invoke Cloud Run service
+  - Required for: Any user or service account that needs to call the API
 
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
-```
+#### Deployment Principal (Your User/CI)
 
-Then deploy:
+The account performing the deployment needs:
+
+- **`roles/run.admin`**: Manage Cloud Run services
+- **`roles/iam.serviceAccountUser`**: Use service accounts
+- **`roles/artifactregistry.writer`**: Push images to Artifact Registry
+
+### Viewing Deployment Details
+
+After deployment, view service details:
 
 ```bash
-gcloud run deploy journey-log \
-    --source=. \
-    --region=us-central1 \
-    --allow-unauthenticated
+# Get service URL
+gcloud run services describe "${SERVICE_NAME}" \
+    --region="${REGION}" \
+    --project="${GCP_PROJECT_ID}" \
+    --format='value(status.url)'
+
+# View service configuration
+gcloud run services describe "${SERVICE_NAME}" \
+    --region="${REGION}" \
+    --project="${GCP_PROJECT_ID}"
+
+# List all Cloud Run services
+gcloud run services list \
+    --project="${GCP_PROJECT_ID}"
 ```
 
 ## Testing Connectivity
@@ -295,22 +566,78 @@ curl -X DELETE http://localhost:8080/firestore-test
 
 ### Cloud Run Testing
 
-After deploying to Cloud Run:
+After deploying to Cloud Run, test the deployment:
+
+#### Testing with Authentication Required (Default)
+
+If deployed without public access (recommended):
 
 ```bash
 # Get the service URL
-SERVICE_URL=$(gcloud run services describe journey-log \
-    --region=us-central1 \
+SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \
+    --region="${REGION}" \
+    --project="${GCP_PROJECT_ID}" \
     --format='value(status.url)')
 
-# Test connectivity (POST)
-curl -X POST "${SERVICE_URL}/firestore-test"
+# Test health endpoint with authentication
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+    "${SERVICE_URL}/health"
+
+# Test info endpoint
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+    "${SERVICE_URL}/info"
+
+# Test Firestore connectivity (POST)
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+    -X POST "${SERVICE_URL}/firestore-test"
+
+# Expected response:
+{
+  "status": "success",
+  "message": "Successfully wrote to and read from Firestore collection 'connectivity_test'",
+  "document_id": "test_20260111_123456_789012",
+  "data": {
+    "test_type": "connectivity_check",
+    "timestamp": "2026-01-11T12:34:56.789012+00:00",
+    "message": "Firestore connectivity test document",
+    "service": "journey-log",
+    "environment": "prod"
+  },
+  "timestamp": "2026-01-11T12:34:56.789012+00:00"
+}
 
 # Clean up test documents
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+    -X DELETE "${SERVICE_URL}/firestore-test"
+
+# Expected response:
+{
+  "status": "success",
+  "message": "Successfully deleted N test document(s) from collection 'connectivity_test'",
+  "deleted_count": N,
+  "timestamp": "2026-01-11T12:34:56.789012+00:00"
+}
+```
+
+#### Testing with Public Access
+
+If deployed with `ALLOW_UNAUTHENTICATED=true`:
+
+```bash
+# Get the service URL
+SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \
+    --region="${REGION}" \
+    --project="${GCP_PROJECT_ID}" \
+    --format='value(status.url)')
+
+# Test without authentication
+curl "${SERVICE_URL}/health"
+curl "${SERVICE_URL}/info"
+curl -X POST "${SERVICE_URL}/firestore-test"
 curl -X DELETE "${SERVICE_URL}/firestore-test"
 ```
 
-**Important**: For production deployments, restrict access using Cloud Run IAM. See the Security Best Practices section below.
+**Security Warning**: Public access should only be used for development/testing. Always use authentication for production deployments.
 
 ### API Documentation
 

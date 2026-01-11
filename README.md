@@ -349,15 +349,53 @@ pytest
 
 ## Deployment
 
-This service is designed to run on Google Cloud Run. See `docs/deployment.md` for detailed deployment instructions, including:
+This service is designed to run on Google Cloud Run with containerized deployment. 
 
-- IAM roles and service account configuration
-- Firestore database setup
-- Application Default Credentials (ADC) setup
-- Local development with Firestore emulator
-- Cloud Run deployment steps
-- Connectivity testing procedures
-- Troubleshooting common issues
+### Quick Start - Docker Build and Run
+
+```bash
+# Build the Docker image
+make docker-build
+
+# Run locally in Docker
+make docker-run
+
+# Deploy to Cloud Run (requires environment variables)
+make deploy
+```
+
+### Deployment Guide
+
+See `docs/deployment.md` for comprehensive deployment instructions, including:
+
+- **Docker Containerization**: Building and running the container locally
+- **IAM Configuration**: Service account setup and role assignments
+- **Artifact Registry**: Container image registry setup
+- **Cloud Run Deployment**: Automated deployment script with environment variables
+- **Firestore Setup**: Database configuration and permissions
+- **Authentication**: IAM-based access control (default: no public access)
+- **Testing**: Connectivity testing procedures for local and Cloud Run
+- **Troubleshooting**: Common issues and solutions
+
+### Required Environment Variables for Deployment
+
+```bash
+export GCP_PROJECT_ID="your-project-id"
+export REGION="us-central1"
+export SERVICE_NAME="journey-log"
+export ARTIFACT_REGISTRY_REPO="cloud-run-apps"
+export SERVICE_ACCOUNT="journey-log-sa@your-project-id.iam.gserviceaccount.com"
+```
+
+Then run: `./scripts/deploy_cloud_run.sh`
+
+### Key Features
+
+- **Production-ready Dockerfile**: Multi-stage build with Python 3.14-slim, non-root user
+- **Automated Deployment**: Script handles build, push, and deployment with validation
+- **Secure by Default**: Deploys with authentication required (no public access)
+- **IAM-only Access**: Uses Cloud Run service account with Firestore permissions
+- **Environment Support**: Configurable for dev, staging, and production environments
 
 
 
