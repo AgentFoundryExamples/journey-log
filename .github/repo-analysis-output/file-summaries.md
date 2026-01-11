@@ -4,15 +4,15 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 10
+Total files: 13
 
 ## app/__init__.py
 **Language:** Python  
 **Role:** module-init  
 **Role Justification:** module initialization file '__init__'  
 **Summary:** Python module initialization (role: module-init)  
-**Size:** 0.67 KB  
-**LOC:** 5  
+**Size:** 1.28 KB  
+**LOC:** 41  
 **TODOs/FIXMEs:** 0  
 
 ## app/config.py
@@ -69,6 +69,15 @@ Total files: 10
 **LOC:** 74  
 **TODOs/FIXMEs:** 0  
 
+## app/models.py
+**Language:** Python  
+**Role:** model  
+**Role Justification:** model/schema name 'models'  
+**Summary:** Python data models (role: model)  
+**Size:** 14.69 KB  
+**LOC:** 350  
+**TODOs/FIXMEs:** 0  
+
 ## app/routers/__init__.py
 **Language:** Python  
 **Role:** module-init  
@@ -94,4 +103,22 @@ Total files: 10
 **Summary:** Python module for example openai usage  
 **Size:** 20.59 KB  
 **LOC:** 415  
+**TODOs/FIXMEs:** 0  
+
+## tests/__init__.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** located in 'tests' directory  
+**Summary:** Python test module initialization (role: test)  
+**Size:** 0.56 KB  
+**LOC:** 0  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_models.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 22.37 KB  
+**LOC:** 547  
 **TODOs/FIXMEs:** 0  

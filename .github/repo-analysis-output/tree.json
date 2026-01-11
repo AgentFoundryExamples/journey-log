@@ -115,6 +115,10 @@
         {
           "type": "file",
           "name": "middleware.py"
+        },
+        {
+          "type": "file",
+          "name": "models.py"
         }
       ]
     },
@@ -139,6 +143,20 @@
         {
           "type": "file",
           "name": "deploy_cloud_run.sh"
+        }
+      ]
+    },
+    {
+      "type": "directory",
+      "name": "tests",
+      "children": [
+        {
+          "type": "file",
+          "name": "__init__.py"
+        },
+        {
+          "type": "file",
+          "name": "test_models.py"
         }
       ]
     },

@@ -112,6 +112,26 @@
       }
     },
     {
+      "id": "app/models.py",
+      "path": "app/models.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "enum.Enum",
+          "typing.Any",
+          "typing.Optional",
+          "typing.Union"
+        ],
+        "third-party": [
+          "pydantic.BaseModel",
+          "pydantic.ConfigDict",
+          "pydantic.Field",
+          "pydantic.model_validator"
+        ]
+      }
+    },
+    {
       "id": "app/routers/__init__.py",
       "path": "app/routers/__init__.py",
       "type": "file",
@@ -154,9 +174,37 @@
           "openai.OpenAI"
         ]
       }
+    },
+    {
+      "id": "tests/__init__.py",
+      "path": "tests/__init__.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [],
+        "third-party": []
+      }
+    },
+    {
+      "id": "tests/test_models.py",
+      "path": "tests/test_models.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone"
+        ],
+        "third-party": [
+          "pydantic.ValidationError",
+          "pytest"
+        ]
+      }
     }
   ],
   "edges": [
+    {
+      "source": "app/__init__.py",
+      "target": "app/models.py"
+    },
     {
       "source": "app/dependencies.py",
       "target": "app/firestore.py"
@@ -208,6 +256,10 @@
     {
       "source": "example_openai_usage.py",
       "target": "app/__init__.py"
+    },
+    {
+      "source": "tests/test_models.py",
+      "target": "app/models.py"
     }
   ],
   "external_dependencies_summary": {
@@ -215,6 +267,7 @@
       "contextvars.ContextVar",
       "datetime.datetime",
       "datetime.timezone",
+      "enum.Enum",
       "functools.lru_cache",
       "logging",
       "os",
@@ -226,6 +279,7 @@
       "typing.Callable",
       "typing.Literal",
       "typing.Optional",
+      "typing.Union",
       "uuid"
     ],
     "third-party": [
@@ -242,11 +296,15 @@
       "openai",
       "openai.OpenAI",
       "pydantic.BaseModel",
+      "pydantic.ConfigDict",
       "pydantic.Field",
+      "pydantic.ValidationError",
       "pydantic.ValidationInfo",
       "pydantic.field_validator",
+      "pydantic.model_validator",
       "pydantic_settings.BaseSettings",
       "pydantic_settings.SettingsConfigDict",
+      "pytest",
       "starlette.middleware.base.BaseHTTPMiddleware",
       "starlette.types.ASGIApp",
       "structlog",
@@ -254,7 +312,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 15,
-    "third-party_count": 24
+    "stdlib_count": 17,
+    "third-party_count": 28
   }
 }

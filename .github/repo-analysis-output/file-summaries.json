@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 10,
+  "total_files": 13,
   "files": [
     {
       "schema_version": "2.0",
@@ -11,8 +11,8 @@
       "summary": "Python module initialization (role: module-init)",
       "summary_text": "Python module initialization (role: module-init)",
       "metrics": {
-        "size_bytes": 685,
-        "loc": 5,
+        "size_bytes": 1310,
+        "loc": 41,
         "todo_count": 0
       }
     },
@@ -102,6 +102,20 @@
     },
     {
       "schema_version": "2.0",
+      "path": "app/models.py",
+      "language": "Python",
+      "role": "model",
+      "role_justification": "model/schema name 'models'",
+      "summary": "Python data models (role: model)",
+      "summary_text": "Python data models (role: model)",
+      "metrics": {
+        "size_bytes": 15041,
+        "loc": 350,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
       "path": "app/routers/__init__.py",
       "language": "Python",
       "role": "module-init",
@@ -139,6 +153,34 @@
       "metrics": {
         "size_bytes": 21089,
         "loc": 415,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/__init__.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "located in 'tests' directory",
+      "summary": "Python test module initialization (role: test)",
+      "summary_text": "Python test module initialization (role: test)",
+      "metrics": {
+        "size_bytes": 578,
+        "loc": 0,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_models.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 22911,
+        "loc": 547,
         "todo_count": 0
       }
     }
