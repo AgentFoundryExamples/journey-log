@@ -118,12 +118,14 @@
       "external_dependencies": {
         "stdlib": [
           "datetime.datetime",
+          "datetime.timezone",
           "enum.Enum",
           "typing.Any",
           "typing.Optional",
           "typing.Union"
         ],
         "third-party": [
+          "google.cloud.firestore",
           "pydantic.BaseModel",
           "pydantic.ConfigDict",
           "pydantic.Field",
@@ -182,6 +184,22 @@
       "external_dependencies": {
         "stdlib": [],
         "third-party": []
+      }
+    },
+    {
+      "id": "tests/test_firestore_serialization.py",
+      "path": "tests/test_firestore_serialization.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timedelta",
+          "datetime.timezone",
+          "unittest.mock.Mock"
+        ],
+        "third-party": [
+          "pytest"
+        ]
       }
     },
     {
@@ -258,6 +276,10 @@
       "target": "app/__init__.py"
     },
     {
+      "source": "tests/test_firestore_serialization.py",
+      "target": "app/models.py"
+    },
+    {
       "source": "tests/test_models.py",
       "target": "app/models.py"
     }
@@ -266,6 +288,7 @@
     "stdlib": [
       "contextvars.ContextVar",
       "datetime.datetime",
+      "datetime.timedelta",
       "datetime.timezone",
       "enum.Enum",
       "functools.lru_cache",
@@ -280,6 +303,7 @@
       "typing.Literal",
       "typing.Optional",
       "typing.Union",
+      "unittest.mock.Mock",
       "uuid"
     ],
     "third-party": [
@@ -312,7 +336,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 17,
+    "stdlib_count": 19,
     "third-party_count": 28
   }
 }

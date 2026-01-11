@@ -8,19 +8,20 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 ## Statistics
 
-- **Total files**: 13
-- **Intra-repo dependencies**: 15
-- **External stdlib dependencies**: 17
+- **Total files**: 14
+- **Intra-repo dependencies**: 16
+- **External stdlib dependencies**: 19
 - **External third-party dependencies**: 28
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 17 unique modules
+Total: 19 unique modules
 
 - `contextvars.ContextVar`
 - `datetime.datetime`
+- `datetime.timedelta`
 - `datetime.timezone`
 - `enum.Enum`
 - `functools.lru_cache`
@@ -35,6 +36,7 @@ Total: 17 unique modules
 - `typing.Literal`
 - `typing.Optional`
 - `typing.Union`
+- `unittest.mock.Mock`
 - `uuid`
 
 ### Third-Party Packages
@@ -66,8 +68,8 @@ Total: 28 unique packages
 ## Most Depended Upon Files (Intra-Repo)
 
 - `app/config.py` (5 dependents)
+- `app/models.py` (3 dependents)
 - `app/logging.py` (3 dependents)
-- `app/models.py` (2 dependents)
 - `app/firestore.py` (1 dependents)
 - `app/routers/firestore_test.py` (1 dependents)
 - `app/middleware.py` (1 dependents)
@@ -84,4 +86,5 @@ Total: 28 unique packages
 - `app/firestore.py` (1 dependencies)
 - `app/logging.py` (1 dependencies)
 - `example_openai_usage.py` (1 dependencies)
+- `tests/test_firestore_serialization.py` (1 dependencies)
 - `tests/test_models.py` (1 dependencies)
