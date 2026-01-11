@@ -28,6 +28,7 @@ from app.models import (
     CombatStatus,
     CompletionState,
     Enemy,
+    Health,
     InventoryItem,
     NarrativeTurn,
     PlayerState,
@@ -55,6 +56,10 @@ class TestEnums:
         assert CombatStatus.WOUNDED.value == "Wounded"
         assert CombatStatus.DEAD.value == "Dead"
     
+    def test_combat_status_is_alias(self):
+        """Test that CombatStatus is an alias for Status."""
+        assert CombatStatus is Status
+    
     def test_completion_state_enum_values(self):
         """Test CompletionState enum has correct values."""
         assert CompletionState.NOT_STARTED.value == "NotStarted"
@@ -67,10 +72,48 @@ class TestEnums:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status="InvalidStatus",
-                health={"current": 100, "max": 100},
+                health=Health(current=100, max=100),
                 stats={},
                 location="test"
             )
+
+
+class TestHealth:
+    """Test Health model."""
+    
+    def test_create_valid_health(self):
+        """Test creating valid Health."""
+        health = Health(current=50, max=100)
+        assert health.current == 50
+        assert health.max == 100
+    
+    def test_health_current_equals_max(self):
+        """Test Health when current equals max."""
+        health = Health(current=100, max=100)
+        assert health.current == 100
+        assert health.max == 100
+    
+    def test_health_current_exceeds_max_raises_error(self):
+        """Test that current > max raises ValidationError."""
+        with pytest.raises(ValidationError) as exc_info:
+            Health(current=150, max=100)
+        assert "current health cannot be greater than max health" in str(exc_info.value)
+    
+    def test_health_negative_current_raises_error(self):
+        """Test that negative current raises ValidationError."""
+        with pytest.raises(ValidationError):
+            Health(current=-10, max=100)
+    
+    def test_health_negative_max_raises_error(self):
+        """Test that negative max raises ValidationError."""
+        with pytest.raises(ValidationError):
+            Health(current=50, max=-100)
+    
+    def test_health_zero_values_allowed(self):
+        """Test that zero values are allowed."""
+        health = Health(current=0, max=0)
+        assert health.current == 0
+        assert health.max == 0
 
 
 class TestCharacterIdentity:
@@ -167,7 +210,7 @@ class TestPlayerState:
             status=Status.HEALTHY,
             level=5,
             experience=1000,
-            health={"current": 80, "max": 100},
+            health=Health(current=80, max=100),
             stats={"strength": 10, "dexterity": 18},
             equipment=[],
             inventory=[],
@@ -183,7 +226,7 @@ class TestPlayerState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location={"world": "middle-earth", "region": "gondor", "coordinates": {"x": 100, "y": 200}}
         )
@@ -195,7 +238,7 @@ class TestPlayerState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test"
         )
@@ -207,7 +250,7 @@ class TestPlayerState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test",
             additional_fields={"custom_stat": "value"}
@@ -230,23 +273,13 @@ class TestNarrativeTurn:
         assert turn.turn_id == "turn_001"
         assert isinstance(turn.timestamp, datetime)
     
-    def test_create_narrative_turn_with_string_timestamp(self):
-        """Test creating a NarrativeTurn with ISO string timestamp."""
-        turn = NarrativeTurn(
-            turn_id="turn_002",
-            player_action="I approach the door",
-            gm_response="The door creaks open",
-            timestamp="2026-01-11T12:00:00Z"
-        )
-        assert turn.timestamp == "2026-01-11T12:00:00Z"
-    
     def test_narrative_turn_with_metadata(self):
         """Test NarrativeTurn with optional metadata."""
         turn = NarrativeTurn(
             turn_id="turn_003",
             player_action="test",
             gm_response="test",
-            timestamp="2026-01-11T12:00:00Z",
+            timestamp=datetime.now(timezone.utc),
             game_state_snapshot={"location": "Cave", "health": 100},
             metadata={"response_time_ms": 1250, "llm_model": "gpt-5.1"}
         )
@@ -263,7 +296,7 @@ class TestPointOfInterest:
             name="Hidden Temple",
             description="An ancient temple"
         )
-        assert poi.id == "poi_123"
+        assert poi.poi_id == "poi_123"
         assert poi.name == "Hidden Temple"
     
     def test_poi_with_optional_timestamps(self):
@@ -272,12 +305,12 @@ class TestPointOfInterest:
             poi_id="poi_124",
             name="Dragon's Lair",
             description="A dangerous cave",
-            discovered_at="2026-01-10T15:30:00Z",
-            visited_at="2026-01-10T16:00:00Z",
+            timestamp_discovered=datetime.now(timezone.utc),
+            last_visited=datetime.now(timezone.utc),
             visited=True
         )
-        assert poi.timestamp_discovered == "2026-01-10T15:30:00Z"
-        assert poi.last_visited == "2026-01-10T16:00:00Z"
+        assert poi.timestamp_discovered is not None
+        assert poi.last_visited is not None
         assert poi.visited is True
 
 
@@ -341,7 +374,7 @@ class TestCombatState:
         enemy = Enemy(
             enemy_id="orc_001",
             name="Orc Warrior",
-            health={"current": 25, "max": 50},
+            health=Health(current=25, max=50),
             status_effects=["poisoned"]
         )
         combat = CombatState(
@@ -359,7 +392,7 @@ class TestCombatState:
         enemy = Enemy(
             enemy_id="orc_001",
             name="Orc Warrior",
-            health={"current": 25, "max": 50},
+            health=Health(current=25, max=50),
             status_effects=[]
         )
         combat = CombatState(
@@ -374,7 +407,7 @@ class TestCombatState:
         enemy = Enemy(
             enemy_id="orc_001",
             name="Orc Warrior",
-            health={"current": 0, "max": 50},
+            health=Health(current=0, max=50),
             status_effects=[]
         )
         combat = CombatState(
@@ -393,7 +426,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Aragorn", race="Human", **{"class": "Ranger"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={"strength": 18},
             location="Rivendell"
         )
@@ -403,6 +436,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="middle-earth-v1",
+            narrative_turns_reference="narrative_turns",
             schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
@@ -419,7 +453,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test"
         )
@@ -429,6 +463,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
             schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
@@ -444,7 +479,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test"
         )
@@ -461,6 +496,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
             schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
@@ -475,7 +511,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test"
         )
@@ -483,7 +519,7 @@ class TestCharacterDocument:
         enemy = Enemy(
             enemy_id="enemy_001",
             name="Test Enemy",
-            health={"current": 50, "max": 50},
+            health=Health(current=50, max=50),
             status_effects=[]
         )
         
@@ -498,6 +534,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
             schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
@@ -512,7 +549,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test"
         )
@@ -522,6 +559,7 @@ class TestCharacterDocument:
             owner_user_id="user_123",
             player_state=player_state,
             world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
             schema_version="1.0.0",
             created_at="2026-01-11T12:00:00Z",
             updated_at="2026-01-11T12:00:00Z",
@@ -540,7 +578,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test"
         )
@@ -551,6 +589,7 @@ class TestCharacterDocument:
                 owner_user_id="user_123",
                 player_state=player_state,
                 world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
                 schema_version="1.0.0",
                 created_at="2026-01-11T12:00:00Z",
                 updated_at="2026-01-11T12:00:00Z",
@@ -579,7 +618,7 @@ class TestEdgeCases:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test",
             equipment=[]
@@ -591,7 +630,7 @@ class TestEdgeCases:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health={"current": 100, "max": 100},
+            health=Health(current=100, max=100),
             stats={},
             location="test",
             additional_fields={

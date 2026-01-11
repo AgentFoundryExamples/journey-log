@@ -28,7 +28,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Status(str, Enum):
@@ -42,15 +42,9 @@ class Status(str, Enum):
     DEAD = "Dead"
 
 
-class CombatStatus(str, Enum):
-    """
-    Combat-specific status enum.
-    
-    Referenced in: docs/SCHEMA.md - Combat State
-    """
-    HEALTHY = "Healthy"
-    WOUNDED = "Wounded"
-    DEAD = "Dead"
+# CombatStatus is an alias for Status, as they share the same values.
+# This maintains semantic clarity in model definitions while avoiding duplication.
+CombatStatus = Status
 
 
 class CompletionState(str, Enum):
@@ -62,6 +56,24 @@ class CompletionState(str, Enum):
     NOT_STARTED = "NotStarted"
     IN_PROGRESS = "InProgress"
     COMPLETED = "Completed"
+
+
+class Health(BaseModel):
+    """
+    Represents current and maximum health points with validation.
+    
+    Ensures current health cannot exceed maximum health.
+    """
+    model_config = ConfigDict(extra="forbid")
+    
+    current: int = Field(ge=0, description="Current health points")
+    max: int = Field(ge=0, description="Maximum health points")
+    
+    @model_validator(mode='after')
+    def check_current_le_max(self) -> 'Health':
+        if self.current > self.max:
+            raise ValueError("current health cannot be greater than max health")
+        return self
 
 
 class CharacterIdentity(BaseModel):
@@ -138,9 +150,8 @@ class PlayerState(BaseModel):
     status: Status = Field(description="Character health status")
     level: int = Field(default=1, ge=1, description="Character level")
     experience: int = Field(default=0, ge=0, description="Experience points")
-    health: dict[str, int] = Field(
-        description="Health points (current and max)",
-        examples=[{"current": 100, "max": 100}]
+    health: Health = Field(
+        description="Health points (current and max)"
     )
     stats: dict[str, int] = Field(
         description="Character stats (strength, dexterity, etc.)",
@@ -194,8 +205,8 @@ class NarrativeTurn(BaseModel):
         serialization_alias="gm_response",
         description="Game master's/AI's response"
     )
-    timestamp: Union[datetime, str] = Field(
-        description="When the turn occurred (datetime or ISO 8601 string)"
+    timestamp: datetime = Field(
+        description="When the turn occurred (datetime object or ISO 8601 string)"
     )
     game_state_snapshot: Optional[dict[str, Any]] = Field(
         default=None,
@@ -218,7 +229,7 @@ class PointOfInterest(BaseModel):
     """
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     
-    id: str = Field(alias="poi_id", serialization_alias="poi_id", description="Unique POI identifier (UUIDv4)")
+    poi_id: str = Field(description="Unique POI identifier (UUIDv4)")
     name: str = Field(description="POI name")
     description: str = Field(description="POI description")
     type: Optional[str] = Field(default=None, description="POI type (dungeon, town, landmark, etc.)")
@@ -226,16 +237,12 @@ class PointOfInterest(BaseModel):
         default=None,
         description="POI location information"
     )
-    timestamp_discovered: Optional[Union[datetime, str]] = Field(
+    timestamp_discovered: Optional[datetime] = Field(
         default=None,
-        alias="discovered_at",
-        serialization_alias="discovered_at",
         description="When the POI was discovered"
     )
-    last_visited: Optional[Union[datetime, str]] = Field(
+    last_visited: Optional[datetime] = Field(
         default=None,
-        alias="visited_at",
-        serialization_alias="visited_at",
         description="When the POI was last visited"
     )
     visited: Optional[bool] = Field(default=False, description="Whether the POI has been visited")
@@ -322,9 +329,8 @@ class Enemy(BaseModel):
     
     enemy_id: str = Field(description="Unique enemy identifier")
     name: str = Field(description="Enemy name")
-    health: dict[str, int] = Field(
-        description="Enemy health (current and max)",
-        examples=[{"current": 50, "max": 50}]
+    health: Health = Field(
+        description="Enemy health (current and max)"
     )
     status_effects: list[str] = Field(
         default_factory=list,
@@ -364,7 +370,7 @@ class CombatState(BaseModel):
         Combat is considered active if there are any enemies with current health > 0.
         """
         return any(
-            enemy.health.get("current", 0) > 0
+            enemy.health.current > 0
             for enemy in self.enemies
         )
 
@@ -413,6 +419,9 @@ class CharacterDocument(BaseModel):
     )
     world_pois_reference: str = Field(
         description="Reference to world POI collection or configuration"
+    )
+    narrative_turns_reference: str = Field(
+        description="Reference to narrative turns subcollection or storage location"
     )
     schema_version: str = Field(
         description="Schema version for this document (semantic versioning format, e.g., '1.0.0')"
