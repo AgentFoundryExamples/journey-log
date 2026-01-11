@@ -17,4 +17,40 @@ Journey Log API Service
 A FastAPI-based service for managing journey logs.
 """
 
+from app.models import (
+    CharacterDocument,
+    CharacterIdentity,
+    CombatState,
+    CombatStatus,
+    CompletionState,
+    Enemy,
+    InventoryItem,
+    NarrativeTurn,
+    PlayerState,
+    PointOfInterest,
+    Quest,
+    QuestRequirement,
+    QuestReward,
+    Status,
+    Weapon,
+)
+
 __version__ = "0.1.0"
+
+__all__ = [
+    "CharacterDocument",
+    "CharacterIdentity",
+    "CombatState",
+    "CombatStatus",
+    "CompletionState",
+    "Enemy",
+    "InventoryItem",
+    "NarrativeTurn",
+    "PlayerState",
+    "PointOfInterest",
+    "Quest",
+    "QuestRequirement",
+    "QuestReward",
+    "Status",
+    "Weapon",
+]
