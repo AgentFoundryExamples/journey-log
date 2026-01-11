@@ -226,6 +226,9 @@ async def _perform_cleanup(db: FirestoreClient) -> CleanupResponse:
     """
     Internal helper to clean up test documents from Firestore.
 
+    Uses batch operations for efficient deletion of multiple documents.
+    Processes documents in batches to avoid memory issues with large collections.
+
     Args:
         db: Firestore client from dependency injection
 
@@ -240,15 +243,25 @@ async def _perform_cleanup(db: FirestoreClient) -> CleanupResponse:
     timestamp = datetime.now(timezone.utc).isoformat()
 
     try:
-        # Get all documents in the test collection
         collection_ref = db.collection(test_collection)
-        docs = collection_ref.stream()
-
-        # Delete each document
         deleted_count = 0
-        for doc in docs:
-            doc.reference.delete()
-            deleted_count += 1
+        batch_size = 500  # Firestore batch limit
+
+        while True:
+            # Get a batch of documents
+            docs = list(collection_ref.limit(batch_size).stream())
+
+            if not docs:
+                break
+
+            # Create a batch for deletion
+            batch = db.batch()
+            for doc in docs:
+                batch.delete(doc.reference)
+                deleted_count += 1
+
+            # Commit the batch
+            batch.commit()
 
         return CleanupResponse(
             status="success",
