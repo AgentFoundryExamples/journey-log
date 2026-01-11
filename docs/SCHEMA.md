@@ -659,15 +659,27 @@ def check_schema_compatibility(character_doc):
 import json
 
 character_doc = character_ref.get().to_dict()
+
+# Helper function to serialize Firestore types
+def firestore_serializer(obj):
+    """Serialize Firestore-specific types for size estimation."""
+    if hasattr(obj, 'isoformat'):  # datetime/Timestamp
+        return obj.isoformat()
+    return str(obj)
+
 # Estimate Firestore document size (in bytes)
-doc_size_bytes = len(json.dumps(character_doc, default=str).encode('utf-8'))
+doc_size_bytes = len(json.dumps(character_doc, default=firestore_serializer).encode('utf-8'))
 doc_size_kb = doc_size_bytes / 1024
 
 if doc_size_kb > 100:
     print(f"Warning: Character document is {doc_size_kb:.2f} KB (consider moving data to subcollections)")
 ```
 
-**Note:** This provides an estimate. Actual Firestore document size may vary slightly due to internal encoding.
+**Note:** This provides an approximation. Actual Firestore document size may vary due to:
+- Internal binary encoding (more efficient than JSON)
+- Firestore-specific types (Timestamps, References, GeoPoints)
+- Metadata overhead
+For critical sizing decisions, test with actual Firestore documents and monitor via Firestore console or quotas.
 
 **When to Move Data to Subcollections:**
 - Arrays with unbounded growth (use subcollections instead)
