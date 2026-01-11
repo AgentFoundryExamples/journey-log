@@ -1,4 +1,4 @@
-# agent-foundry-ai-template
+# journey-log
 
 ├── .github
   ├── af-config
