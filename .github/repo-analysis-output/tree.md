@@ -15,10 +15,17 @@
     └── tree.md
   └── workflows
     └── af_maintenance.yml
+├── app
+  ├── __init__.py
+  ├── config.py
+  └── main.py
+├── .env.example
+├── .gitignore
 ├── example_openai_usage.py
 ├── gcp_deployment_reference.md
 ├── infrastructure_versions.txt
 ├── LICENSE
 ├── LLMs.md
 ├── python_dev_versions.txt
-└── README.md
+├── README.md
+└── requirements.txt

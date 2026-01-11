@@ -1,7 +1,49 @@
 {
   "schema_version": "2.0",
-  "total_files": 1,
+  "total_files": 4,
   "files": [
+    {
+      "schema_version": "2.0",
+      "path": "app/__init__.py",
+      "language": "Python",
+      "role": "module-init",
+      "role_justification": "module initialization file '__init__'",
+      "summary": "Python module initialization (role: module-init)",
+      "summary_text": "Python module initialization (role: module-init)",
+      "metrics": {
+        "size_bytes": 685,
+        "loc": 5,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/config.py",
+      "language": "Python",
+      "role": "configuration",
+      "role_justification": "configuration file name 'config'",
+      "summary": "Python configuration file (role: configuration)",
+      "summary_text": "Python configuration file (role: configuration)",
+      "metrics": {
+        "size_bytes": 3547,
+        "loc": 82,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/main.py",
+      "language": "Python",
+      "role": "entry-point",
+      "role_justification": "common entry point name 'main'",
+      "summary": "Python main entry point (role: entry-point)",
+      "summary_text": "Python main entry point (role: entry-point)",
+      "metrics": {
+        "size_bytes": 2206,
+        "loc": 53,
+        "todo_count": 0
+      }
+    },
     {
       "schema_version": "2.0",
       "path": "example_openai_usage.py",

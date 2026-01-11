@@ -1,6 +1,47 @@
 {
   "nodes": [
     {
+      "id": "app/__init__.py",
+      "path": "app/__init__.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [],
+        "third-party": []
+      }
+    },
+    {
+      "id": "app/config.py",
+      "path": "app/config.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "functools.lru_cache",
+          "typing.Literal"
+        ],
+        "third-party": [
+          "pydantic.Field",
+          "pydantic.ValidationInfo",
+          "pydantic.field_validator",
+          "pydantic_settings.BaseSettings",
+          "pydantic_settings.SettingsConfigDict"
+        ]
+      }
+    },
+    {
+      "id": "app/main.py",
+      "path": "app/main.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "typing.Any"
+        ],
+        "third-party": [
+          "fastapi.FastAPI",
+          "uvicorn"
+        ]
+      }
+    },
+    {
       "id": "example_openai_usage.py",
       "path": "example_openai_usage.py",
       "type": "file",
@@ -11,40 +52,43 @@
           "typing.Optional"
         ],
         "third-party": [
-          "app.services.llm_client.",
-          "app.services.llm_client.BaseLLMClient",
-          "app.services.llm_client.LLMConfigurationError",
-          "app.services.llm_client.LLMRequestError",
-          "app.services.llm_client.LLMResponseError",
-          "app.services.metrics.get_metrics_collector",
-          "app.utils.logging_helpers.log_llm_request",
-          "app.utils.logging_helpers.log_llm_response",
           "openai",
           "openai.OpenAI"
         ]
       }
     }
   ],
-  "edges": [],
+  "edges": [
+    {
+      "source": "app/main.py",
+      "target": "app/config.py"
+    },
+    {
+      "source": "example_openai_usage.py",
+      "target": "app/__init__.py"
+    }
+  ],
   "external_dependencies_summary": {
     "stdlib": [
+      "functools.lru_cache",
       "logging",
       "time",
+      "typing.Any",
+      "typing.Literal",
       "typing.Optional"
     ],
     "third-party": [
-      "app.services.llm_client.",
-      "app.services.llm_client.BaseLLMClient",
-      "app.services.llm_client.LLMConfigurationError",
-      "app.services.llm_client.LLMRequestError",
-      "app.services.llm_client.LLMResponseError",
-      "app.services.metrics.get_metrics_collector",
-      "app.utils.logging_helpers.log_llm_request",
-      "app.utils.logging_helpers.log_llm_response",
+      "fastapi.FastAPI",
       "openai",
-      "openai.OpenAI"
+      "openai.OpenAI",
+      "pydantic.Field",
+      "pydantic.ValidationInfo",
+      "pydantic.field_validator",
+      "pydantic_settings.BaseSettings",
+      "pydantic_settings.SettingsConfigDict",
+      "uvicorn"
     ],
-    "stdlib_count": 3,
-    "third-party_count": 10
+    "stdlib_count": 6,
+    "third-party_count": 9
   }
 }
