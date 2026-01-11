@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 15
+Total files: 17
 
 ## app/__init__.py
 **Language:** Python  
@@ -20,8 +20,8 @@ Total files: 15
 **Role:** configuration  
 **Role Justification:** configuration file name 'config'  
 **Summary:** Python configuration file (role: configuration)  
-**Size:** 4.15 KB  
-**LOC:** 77  
+**Size:** 4.28 KB  
+**LOC:** 80  
 **TODOs/FIXMEs:** 0  
 
 ## app/dependencies.py
@@ -56,8 +56,8 @@ Total files: 15
 **Role:** entry-point  
 **Role Justification:** common entry point name 'main'  
 **Summary:** Python main entry point (role: entry-point)  
-**Size:** 6.72 KB  
-**LOC:** 162  
+**Size:** 7.55 KB  
+**LOC:** 181  
 **TODOs/FIXMEs:** 0  
 
 ## app/middleware.py
@@ -74,8 +74,8 @@ Total files: 15
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 36.04 KB  
-**LOC:** 798  
+**Size:** 35.94 KB  
+**LOC:** 799  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -85,6 +85,15 @@ Total files: 15
 **Summary:** Python module initialization (role: module-init)  
 **Size:** 0.60 KB  
 **LOC:** 1  
+**TODOs/FIXMEs:** 0  
+
+## app/routers/characters.py
+**Language:** Python  
+**Role:** implementation  
+**Role Justification:** general implementation file (default classification)  
+**Summary:** Python module for characters  
+**Size:** 12.06 KB  
+**LOC:** 273  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -112,6 +121,15 @@ Total files: 15
 **Summary:** Python test module initialization (role: test)  
 **Size:** 0.56 KB  
 **LOC:** 0  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_characters.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 20.51 KB  
+**LOC:** 454  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py

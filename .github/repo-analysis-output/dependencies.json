@@ -80,6 +80,7 @@
       "type": "file",
       "external_dependencies": {
         "stdlib": [
+          "json",
           "typing.Any"
         ],
         "third-party": [
@@ -143,6 +144,30 @@
       }
     },
     {
+      "id": "app/routers/characters.py",
+      "path": "app/routers/characters.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone",
+          "typing.Optional",
+          "uuid"
+        ],
+        "third-party": [
+          "fastapi.APIRouter",
+          "fastapi.HTTPException",
+          "fastapi.Header",
+          "fastapi.status",
+          "google.cloud.firestore",
+          "pydantic.BaseModel",
+          "pydantic.Field",
+          "pydantic.field_validator",
+          "pydantic.model_validator"
+        ]
+      }
+    },
+    {
       "id": "app/routers/firestore_test.py",
       "path": "app/routers/firestore_test.py",
       "type": "file",
@@ -184,6 +209,27 @@
       "external_dependencies": {
         "stdlib": [],
         "third-party": []
+      }
+    },
+    {
+      "id": "tests/test_characters.py",
+      "path": "tests/test_characters.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone",
+          "typing.Any",
+          "typing.Dict",
+          "unittest.mock.MagicMock",
+          "unittest.mock.Mock",
+          "unittest.mock.patch"
+        ],
+        "third-party": [
+          "fastapi.status",
+          "fastapi.testclient.TestClient",
+          "pytest"
+        ]
       }
     },
     {
@@ -261,6 +307,10 @@
     },
     {
       "source": "app/main.py",
+      "target": "app/routers/characters.py"
+    },
+    {
+      "source": "app/main.py",
       "target": "app/logging.py"
     },
     {
@@ -274,6 +324,22 @@
     {
       "source": "app/middleware.py",
       "target": "app/logging.py"
+    },
+    {
+      "source": "app/routers/characters.py",
+      "target": "app/config.py"
+    },
+    {
+      "source": "app/routers/characters.py",
+      "target": "app/dependencies.py"
+    },
+    {
+      "source": "app/routers/characters.py",
+      "target": "app/logging.py"
+    },
+    {
+      "source": "app/routers/characters.py",
+      "target": "app/models.py"
     },
     {
       "source": "app/routers/firestore_test.py",
@@ -290,6 +356,18 @@
     {
       "source": "example_openai_usage.py",
       "target": "app/__init__.py"
+    },
+    {
+      "source": "tests/test_characters.py",
+      "target": "app/main.py"
+    },
+    {
+      "source": "tests/test_characters.py",
+      "target": "app/models.py"
+    },
+    {
+      "source": "tests/test_characters.py",
+      "target": "app/dependencies.py"
     },
     {
       "source": "tests/test_firestore_serialization.py",
@@ -312,6 +390,7 @@
       "datetime.timezone",
       "enum.Enum",
       "functools.lru_cache",
+      "json",
       "logging",
       "os",
       "sys",
@@ -320,10 +399,13 @@
       "typing.Annotated",
       "typing.Any",
       "typing.Callable",
+      "typing.Dict",
       "typing.Literal",
       "typing.Optional",
       "typing.Union",
+      "unittest.mock.MagicMock",
       "unittest.mock.Mock",
+      "unittest.mock.patch",
       "uuid"
     ],
     "third-party": [
@@ -331,11 +413,13 @@
       "fastapi.Depends",
       "fastapi.FastAPI",
       "fastapi.HTTPException",
+      "fastapi.Header",
       "fastapi.Request",
       "fastapi.Response",
       "fastapi.exceptions.RequestValidationError",
       "fastapi.responses.JSONResponse",
       "fastapi.status",
+      "fastapi.testclient.TestClient",
       "google.cloud.firestore",
       "openai",
       "openai.OpenAI",
@@ -356,7 +440,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 19,
-    "third-party_count": 28
+    "stdlib_count": 23,
+    "third-party_count": 30
   }
 }

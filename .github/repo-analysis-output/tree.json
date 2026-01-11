@@ -84,6 +84,10 @@
             },
             {
               "type": "file",
+              "name": "characters.py"
+            },
+            {
+              "type": "file",
               "name": "firestore_test.py"
             }
           ]
@@ -153,6 +157,10 @@
         {
           "type": "file",
           "name": "__init__.py"
+        },
+        {
+          "type": "file",
+          "name": "test_characters.py"
         },
         {
           "type": "file",

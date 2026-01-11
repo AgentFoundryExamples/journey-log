@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 15,
+  "total_files": 17,
   "files": [
     {
       "schema_version": "2.0",
@@ -25,8 +25,8 @@
       "summary": "Python configuration file (role: configuration)",
       "summary_text": "Python configuration file (role: configuration)",
       "metrics": {
-        "size_bytes": 4246,
-        "loc": 77,
+        "size_bytes": 4387,
+        "loc": 80,
         "todo_count": 0
       }
     },
@@ -81,8 +81,8 @@
       "summary": "Python main entry point (role: entry-point)",
       "summary_text": "Python main entry point (role: entry-point)",
       "metrics": {
-        "size_bytes": 6880,
-        "loc": 162,
+        "size_bytes": 7734,
+        "loc": 181,
         "todo_count": 0
       }
     },
@@ -109,8 +109,8 @@
       "summary": "Python data models (role: model)",
       "summary_text": "Python data models (role: model)",
       "metrics": {
-        "size_bytes": 36902,
-        "loc": 798,
+        "size_bytes": 36799,
+        "loc": 799,
         "todo_count": 0
       }
     },
@@ -125,6 +125,20 @@
       "metrics": {
         "size_bytes": 615,
         "loc": 1,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/routers/characters.py",
+      "language": "Python",
+      "role": "implementation",
+      "role_justification": "general implementation file (default classification)",
+      "summary": "Python module for characters",
+      "summary_text": "Python module for characters",
+      "metrics": {
+        "size_bytes": 12349,
+        "loc": 273,
         "todo_count": 0
       }
     },
@@ -167,6 +181,20 @@
       "metrics": {
         "size_bytes": 578,
         "loc": 0,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_characters.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 21001,
+        "loc": 454,
         "todo_count": 0
       }
     },

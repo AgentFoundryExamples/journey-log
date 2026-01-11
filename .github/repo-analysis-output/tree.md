@@ -18,6 +18,7 @@
 ├── app
   ├── routers
     ├── __init__.py
+    ├── characters.py
     └── firestore_test.py
   ├── __init__.py
   ├── config.py
@@ -34,6 +35,7 @@
   └── deploy_cloud_run.sh
 ├── tests
   ├── __init__.py
+  ├── test_characters.py
   ├── test_firestore_serialization.py
   ├── test_models.py
   └── test_serialization.py
