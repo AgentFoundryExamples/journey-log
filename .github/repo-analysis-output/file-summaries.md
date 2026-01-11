@@ -20,8 +20,8 @@ Total files: 15
 **Role:** configuration  
 **Role Justification:** configuration file name 'config'  
 **Summary:** Python configuration file (role: configuration)  
-**Size:** 3.73 KB  
-**LOC:** 74  
+**Size:** 4.15 KB  
+**LOC:** 77  
 **TODOs/FIXMEs:** 0  
 
 ## app/dependencies.py
@@ -74,8 +74,8 @@ Total files: 15
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 32.20 KB  
-**LOC:** 730  
+**Size:** 36.04 KB  
+**LOC:** 798  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -119,8 +119,8 @@ Total files: 15
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 22.41 KB  
-**LOC:** 480  
+**Size:** 22.80 KB  
+**LOC:** 487  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_models.py
@@ -128,8 +128,8 @@ Total files: 15
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 22.37 KB  
-**LOC:** 547  
+**Size:** 39.54 KB  
+**LOC:** 905  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_serialization.py
@@ -137,6 +137,6 @@ Total files: 15
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 41.71 KB  
-**LOC:** 755  
+**Size:** 42.30 KB  
+**LOC:** 763  
 **TODOs/FIXMEs:** 0  
