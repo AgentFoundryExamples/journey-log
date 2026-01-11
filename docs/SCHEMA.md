@@ -13,6 +13,7 @@ This document defines the canonical data schema for the Journey Log system, spec
 7. [Timestamp Conventions](#timestamp-conventions)
 8. [Edge Cases and Migration](#edge-cases-and-migration)
 9. [Firestore Sizing and Consistency Considerations](#firestore-sizing-and-consistency-considerations)
+10. [Serialization Testing](#serialization-testing)
 
 ---
 
@@ -1044,6 +1045,168 @@ This schema provides a robust foundation for character data storage in Journey L
 - **Firestore Best Practices:** Document size management, consistency guarantees, query optimization
 
 For API endpoint implementation, refer to the character-related routers in `app/routers/` and follow the patterns established in this schema.
+
+---
+
+## Serialization Testing
+
+### Overview
+
+The Journey Log system includes comprehensive round-trip serialization tests to validate that all models can be serialized to Firestore-compatible dictionaries and deserialized back to equivalent model instances without data loss.
+
+**Test Location:** `tests/test_serialization.py`
+
+**Purpose:**
+- Ensure models and serializers align correctly
+- Prevent silent regressions in serialization logic
+- Validate timestamp preservation and timezone handling
+- Test edge cases and schema evolution scenarios
+
+### Test Coverage
+
+The serialization test suite includes:
+
+**CharacterDocument Tests:**
+- Healthy characters with no quest or combat
+- Wounded characters with in-progress quests
+- Characters in combat with multiple enemies
+- Dead characters with completed quests
+- Characters with empty arrays vs. populated arrays
+- Schema version variations (including future versions)
+- Equipment and inventory serialization
+- Additional metadata preservation
+
+**NarrativeTurn Tests:**
+- Basic narrative turns with minimal fields
+- Turns with full metadata (game state, LLM metrics)
+- Turns without optional turn_number field
+- Timestamp preservation across timezones
+- Timezone conversion to UTC
+
+**PointOfInterest Tests:**
+- Minimal POIs with required fields only
+- Full POIs with all optional fields
+- POIs discovered but not visited
+- POIs with partial timestamp data
+- Timestamp preservation
+
+**Edge Case Tests:**
+- Empty arrays vs. None values
+- Multiple entries in arrays (enemies, status effects)
+- Schema version increments
+- Timezone-aware timestamp equality
+- Firestore Timestamp object handling
+- Narrative turn ordering metadata
+
+### Running the Tests
+
+To run all serialization tests:
+
+```bash
+pytest tests/test_serialization.py -v
+```
+
+To run a specific test class:
+
+```bash
+pytest tests/test_serialization.py::TestCharacterDocumentRoundTrip -v
+```
+
+To run all tests (including serialization):
+
+```bash
+pytest tests/ -v
+# or
+make test
+```
+
+### Extending the Tests for Schema Evolution
+
+When adding new fields or modifying the schema:
+
+1. **Add New Fixture Methods:**
+   - Create fixtures for new schema variations in `tests/test_serialization.py`
+   - Follow the naming convention: `character_<variant>`, `narrative_turn_<variant>`, `poi_<variant>`
+
+2. **Add Round-Trip Test Methods:**
+   - Test that the new fields serialize and deserialize correctly
+   - Verify optional fields handle None values
+   - Test arrays with empty and populated values
+
+3. **Test Compatibility:**
+   - Test forward compatibility (old schema → new schema)
+   - Test backward compatibility (new schema → old schema)
+   - Handle missing fields gracefully with defaults
+
+4. **Update Documentation:**
+   - Document schema changes in this file
+   - Update the `schema_version` field as appropriate
+   - Add migration notes if breaking changes are introduced
+
+**Example: Adding a New Field to CharacterDocument**
+
+```python
+# 1. Add fixture with new field
+@pytest.fixture
+def character_with_new_field(base_player_state):
+    return CharacterDocument(
+        # ... existing fields ...
+        new_field="test_value",  # New field
+        schema_version="1.1.0"  # Increment version
+    )
+
+# 2. Add round-trip test
+def test_character_with_new_field_roundtrip(character_with_new_field):
+    data = character_to_firestore(character_with_new_field)
+    restored = character_from_firestore(data)
+    assert restored.new_field == character_with_new_field.new_field
+
+# 3. Test backward compatibility (missing field)
+def test_character_missing_new_field():
+    data = {
+        # ... required fields ...
+        "schema_version": "1.0.0"
+        # new_field is missing
+    }
+    restored = character_from_firestore(data)
+    assert restored.new_field is None  # or default value
+```
+
+### Key Testing Principles
+
+1. **Timestamp Handling:**
+   - All timestamps must be timezone-aware (UTC)
+   - Test conversion from different timezone representations
+   - Verify timestamps survive round-trips with equality
+
+2. **Optional Fields:**
+   - Test None values are excluded from serialization
+   - Test missing fields deserialize to None or defaults
+   - Distinguish between None and empty arrays/dicts
+
+3. **Schema Versioning:**
+   - Always include schema_version in test fixtures
+   - Test handling of future schema versions
+   - Verify version field survives round-trips unchanged
+
+4. **Arrays and Collections:**
+   - Test empty arrays separately from None values
+   - Test arrays with multiple entries
+   - Verify array ordering is preserved
+
+5. **Nested Structures:**
+   - Test deeply nested models (combat_state, active_quest)
+   - Verify all nested fields survive round-trips
+   - Test optional nested structures (None vs. populated)
+
+### Continuous Integration
+
+The serialization tests are run automatically:
+- On every pull request
+- On every commit to main
+- As part of the full test suite (`make test`)
+
+All serialization tests must pass before merging code changes.
 
 ---
 
