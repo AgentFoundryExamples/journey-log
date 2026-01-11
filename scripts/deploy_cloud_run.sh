@@ -153,9 +153,9 @@ main() {
     if [[ "${ALLOW_UNAUTHENTICATED}" == "true" ]]; then
         log_warn "WARNING: Deploying with public access enabled (--allow-unauthenticated)"
         log_warn "This will allow anyone on the internet to access your service."
-        read -p "Are you sure you want to continue? (yes/no): " -r
+        read -p "Are you sure you want to continue? (y/n): " -r
         echo
-        if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log_error "Deployment cancelled by user"
             exit 1
         fi

@@ -28,10 +28,9 @@ WORKDIR /app
 # Copy dependency files
 COPY requirements.txt .
 
-# Install dependencies to a virtual environment
+# Install dependencies using uv for faster installation
 # Using --system to install globally for smaller final image
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache -r requirements.txt
 
 # Stage 2: Runtime - Minimal production image
 FROM python:3.14-slim
