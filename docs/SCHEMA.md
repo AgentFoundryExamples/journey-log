@@ -400,10 +400,12 @@ The system uses **Firestore Timestamp** objects for all timestamps stored in Fir
 
 ### Firestore Timestamp
 
-- **Type:** `google.cloud.firestore.SERVER_TIMESTAMP` or `Timestamp` object
+- **Type:** Use `firestore.SERVER_TIMESTAMP` for writes, stored as Firestore `Timestamp` object
 - **Precision:** Microsecond precision (UTC)
 - **Usage:** All `*_at` fields in character documents and subcollections
 - **Serialization:** Automatically converted to ISO 8601 strings in API responses
+
+**Note:** `SERVER_TIMESTAMP` is a sentinel value that tells Firestore to use the server's current time when writing. The actual stored value is a `Timestamp` object.
 
 ### When to Use Firestore Timestamp vs ISO String
 
@@ -654,15 +656,18 @@ def check_schema_compatibility(character_doc):
 
 **Monitoring Document Size:**
 ```python
-import sys
+import json
 
 character_doc = character_ref.get().to_dict()
-doc_size_bytes = sys.getsizeof(str(character_doc))
+# Estimate Firestore document size (in bytes)
+doc_size_bytes = len(json.dumps(character_doc, default=str).encode('utf-8'))
 doc_size_kb = doc_size_bytes / 1024
 
 if doc_size_kb > 100:
     print(f"Warning: Character document is {doc_size_kb:.2f} KB (consider moving data to subcollections)")
 ```
+
+**Note:** This provides an estimate. Actual Firestore document size may vary slightly due to internal encoding.
 
 **When to Move Data to Subcollections:**
 - Arrays with unbounded growth (use subcollections instead)
