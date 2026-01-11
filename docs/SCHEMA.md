@@ -490,6 +490,55 @@ The system uses **Firestore Timestamp** objects for all timestamps stored in Fir
 
 **Note:** `SERVER_TIMESTAMP` is a sentinel value that tells Firestore to use the server's current time when writing. The actual stored value is a `Timestamp` object.
 
+### Serialization Helpers
+
+The system provides serialization helpers in `app/models.py` for converting between Pydantic models and Firestore documents:
+
+**Core Functions:**
+- `datetime_to_firestore(dt)` - Convert Python datetime/ISO string to Firestore-compatible format
+- `datetime_from_firestore(value)` - Convert Firestore Timestamp/ISO string to Python datetime
+- `character_to_firestore(character)` - Serialize CharacterDocument to Firestore dict
+- `character_from_firestore(data)` - Deserialize Firestore dict to CharacterDocument
+- `narrative_turn_to_firestore(turn)` - Serialize NarrativeTurn to Firestore dict
+- `narrative_turn_from_firestore(data)` - Deserialize Firestore dict to NarrativeTurn
+- `poi_to_firestore(poi)` - Serialize PointOfInterest to Firestore dict
+- `poi_from_firestore(data)` - Deserialize Firestore dict to PointOfInterest
+
+**Timestamp Handling:**
+All serialization helpers automatically:
+- Convert timezone-aware datetimes to UTC
+- Handle both Firestore Timestamp objects and ISO 8601 strings
+- Preserve None values for optional timestamp fields
+- Assume UTC for naive datetimes
+
+**Schema Version Defaults:**
+- New character documents should use schema_version "1.0.0"
+- The schema_version field is required and stored in every document
+- See "Edge Cases and Migration" for handling legacy documents
+
+**Example Usage:**
+```python
+from app.models import (
+    CharacterDocument,
+    character_to_firestore,
+    character_from_firestore
+)
+from google.cloud import firestore
+
+# Create or get Firestore client
+db = firestore.Client()
+
+# Serialize character for writing to Firestore
+character_data = character_to_firestore(character)
+db.collection('characters').document(character.character_id).set(character_data)
+
+# Deserialize character when reading from Firestore
+doc_ref = db.collection('characters').document(character_id)
+doc = doc_ref.get()
+if doc.exists:
+    character = character_from_firestore(doc.to_dict(), character_id=doc.id)
+```
+
 ### When to Use Firestore Timestamp vs ISO String
 
 | Context | Use |
@@ -529,6 +578,48 @@ character_doc = {
 2. **Convert to ISO 8601** when returning timestamps in API responses
 3. **Accept ISO 8601** in API requests, but convert to Firestore `Timestamp` before storing
 4. **Use UTC** for all timestamps (no local timezones in storage)
+5. **Use serialization helpers** from `app/models.py` to ensure consistent conversion
+6. **Exclude None values** when serializing to reduce storage (default behavior)
+7. **Handle missing fields gracefully** when deserializing from Firestore
+
+**Handling Optional Fields:**
+- When serializing: `character_to_firestore()` excludes None values by default to save storage
+- When deserializing: `character_from_firestore()` treats missing fields as None
+- Empty lists and empty dicts are preserved (not treated as None)
+- Optional timestamp fields (e.g., `started_at`, `timestamp_discovered`) support None
+
+**Example: Updating a character with timestamps**
+```python
+from google.cloud import firestore
+from app.models import character_to_firestore
+
+# When updating an existing character
+character_data = character_to_firestore(character)
+character_data['updated_at'] = firestore.SERVER_TIMESTAMP
+
+db.collection('characters').document(character.character_id).update(character_data)
+```
+
+**Example: Creating a new narrative turn**
+```python
+from google.cloud import firestore
+from app.models import narrative_turn_to_firestore, NarrativeTurn
+
+turn = NarrativeTurn(
+    turn_id=str(uuid.uuid4()),
+    turn_number=1,
+    player_action="I draw my sword",
+    gm_response="You hear a growl in the distance",
+    timestamp=datetime.now(timezone.utc)
+)
+
+turn_data = narrative_turn_to_firestore(turn)
+turn_data['timestamp'] = firestore.SERVER_TIMESTAMP  # Use server time
+
+db.collection('characters').document(character_id)\
+  .collection('narrative_turns').document(turn.turn_id)\
+  .set(turn_data)
+```
 
 ---
 
