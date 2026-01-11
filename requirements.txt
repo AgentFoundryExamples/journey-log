@@ -1,0 +1,21 @@
+# Core Framework (aligned with python_dev_versions.txt)
+fastapi[standard]>=0.128.0
+pydantic>=2.12.5
+uvicorn>=0.40.0
+starlette>=0.41.0
+
+# Configuration
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+
+# GCP & Database
+google-cloud-firestore>=2.14.0
+
+# Utils
+httpx>=0.28.1
+
+# Development & Testing
+pytest>=8.3.4
+pytest-asyncio>=0.25.0
+ruff>=0.8.0
+mypy>=1.14.0
