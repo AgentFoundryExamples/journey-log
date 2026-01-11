@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.routers import firestore_test
 
 # Load settings
 settings = get_settings()
@@ -34,12 +35,15 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Include routers
+app.include_router(firestore_test.router)
+
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     """
     Health check endpoint.
-    
+
     Returns the service status and basic identifiers.
     Always returns 200 OK when the service is running.
     """
@@ -55,7 +59,7 @@ async def health() -> dict[str, Any]:
 async def info() -> dict[str, Any]:
     """
     Service information endpoint.
-    
+
     Returns build and version metadata from environment variables.
     """
     return {
@@ -66,13 +70,13 @@ async def info() -> dict[str, Any]:
             "version": settings.build_version,
             "commit": settings.build_commit or "unknown",
             "timestamp": settings.build_timestamp or "unknown",
-        }
+        },
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=settings.api_host,

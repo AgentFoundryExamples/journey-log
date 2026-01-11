@@ -271,7 +271,10 @@ class OpenAIClient(BaseLLMClient):
         from app.utils.logging_helpers import log_llm_request
 
         log_llm_request(
-            logger=logger, provider="openai", model=self.model, description_length=len(description)
+            logger=logger,
+            provider="openai",
+            model=self.model,
+            description_length=len(description),
         )
 
         while retry_count <= self.max_retries:
@@ -363,7 +366,11 @@ class OpenAIClient(BaseLLMClient):
                     if total_tokens is None:
                         logger.debug(
                             "Token usage information unavailable or in unexpected format",
-                            extra={"usage_attrs": dir(response.usage) if response.usage else None},
+                            extra={
+                                "usage_attrs": dir(response.usage)
+                                if response.usage
+                                else None
+                            },
                         )
 
                 # Record metrics
@@ -417,7 +424,8 @@ class OpenAIClient(BaseLLMClient):
             except openai.NotFoundError as e:
                 # Model not found or endpoint not found - not retryable
                 logger.error(
-                    "OpenAI resource not found", extra={"error": str(e), "model": self.model}
+                    "OpenAI resource not found",
+                    extra={"error": str(e), "model": self.model},
                 )
                 raise LLMConfigurationError(
                     f"OpenAI resource not found: {e}. Please check your model name or endpoint."
@@ -449,7 +457,9 @@ class OpenAIClient(BaseLLMClient):
 
                 # Check if this is an LLMResponseError (don't retry response parsing errors)
                 if isinstance(e, LLMResponseError):
-                    logger.error("OpenAI API returned invalid response", extra={"error": str(e)})
+                    logger.error(
+                        "OpenAI API returned invalid response", extra={"error": str(e)}
+                    )
                     raise
 
                 # Check if error is retryable
@@ -474,7 +484,10 @@ class OpenAIClient(BaseLLMClient):
 
                     metrics = get_metrics_collector()
                     metrics.record_llm_request(
-                        provider="openai", model=self.model, status="error", duration=elapsed
+                        provider="openai",
+                        model=self.model,
+                        status="error",
+                        duration=elapsed,
                     )
 
                     # Log structured error
