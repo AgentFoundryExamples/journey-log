@@ -27,7 +27,8 @@
   ├── main.py
   └── middleware.py
 ├── docs
-  └── deployment.md
+  ├── deployment.md
+  └── SCHEMA.md
 ├── scripts
   └── deploy_cloud_run.sh
 ├── .env.example
