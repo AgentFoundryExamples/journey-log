@@ -20,22 +20,25 @@ and local development (Firestore emulator) configurations.
 """
 
 import os
+import threading
 from typing import Optional
 from google.cloud import firestore  # type: ignore[import-untyped]
 
 from app.config import get_settings
 
-# Module-level singleton client
+# Module-level singleton client and lock for thread safety
 _firestore_client: Optional[firestore.Client] = None
+_firestore_lock = threading.Lock()
 
 
 def get_firestore_client() -> firestore.Client:
     """
-    Get or create a Firestore client instance.
+    Get or create a Firestore client instance with thread-safe lazy initialization.
 
     This function implements lazy initialization of the Firestore client,
     creating it only on first use and reusing the same instance for
-    subsequent calls (singleton pattern per process).
+    subsequent calls (singleton pattern per process). Uses a lock to
+    ensure thread safety in concurrent environments.
 
     Configuration:
     - Uses GCP_PROJECT_ID from settings for production
@@ -54,34 +57,38 @@ def get_firestore_client() -> firestore.Client:
     """
     global _firestore_client
 
+    # Double-checked locking pattern for thread-safe lazy initialization
     if _firestore_client is None:
-        settings = get_settings()
+        with _firestore_lock:
+            # Check again inside the lock to avoid race conditions
+            if _firestore_client is None:
+                settings = get_settings()
 
-        # Check if using emulator
-        emulator_host = settings.firestore_emulator_host
-        if emulator_host:
-            # Set environment variable for Firestore emulator
-            os.environ["FIRESTORE_EMULATOR_HOST"] = emulator_host
-            # For emulator, project_id can be any non-empty string
-            project_id = settings.gcp_project_id or "demo-project"
-        else:
-            # Production mode - project_id is required
-            project_id = settings.gcp_project_id
-            if not project_id:
-                raise ValueError(
-                    "GCP_PROJECT_ID must be set when not using Firestore emulator. "
-                    "Set FIRESTORE_EMULATOR_HOST for local development."
-                )
+                # Check if using emulator
+                emulator_host = settings.firestore_emulator_host
+                if emulator_host:
+                    # Set environment variable for Firestore emulator
+                    os.environ["FIRESTORE_EMULATOR_HOST"] = emulator_host
+                    # For emulator, project_id can be any non-empty string
+                    project_id = settings.gcp_project_id or "demo-project"
+                else:
+                    # Production mode - project_id is required
+                    project_id = settings.gcp_project_id
+                    if not project_id:
+                        raise ValueError(
+                            "GCP_PROJECT_ID must be set when not using Firestore emulator. "
+                            "Set FIRESTORE_EMULATOR_HOST for local development."
+                        )
 
-        # Initialize the Firestore client
-        _firestore_client = firestore.Client(project=project_id)
+                # Initialize the Firestore client
+                _firestore_client = firestore.Client(project=project_id)
 
     return _firestore_client
 
 
 def reset_firestore_client() -> None:
     """
-    Reset the Firestore client singleton.
+    Reset the Firestore client singleton in a thread-safe manner.
 
     This function is primarily used for testing to ensure a fresh
     client instance is created with new settings.
@@ -91,4 +98,5 @@ def reset_firestore_client() -> None:
         connection issues with ongoing operations.
     """
     global _firestore_client
-    _firestore_client = None
+    with _firestore_lock:
+        _firestore_client = None

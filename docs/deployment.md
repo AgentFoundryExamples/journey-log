@@ -261,10 +261,7 @@ gcloud run deploy journey-log \
 Once the service is running locally:
 
 ```bash
-# Test with GET request
-curl http://localhost:8080/firestore-test
-
-# Test with POST request
+# Test with POST request (recommended)
 curl -X POST http://localhost:8080/firestore-test
 
 # Expected response:
@@ -281,7 +278,20 @@ curl -X POST http://localhost:8080/firestore-test
   },
   "timestamp": "2026-01-11T12:34:56.789012+00:00"
 }
+
+# Clean up test documents
+curl -X DELETE http://localhost:8080/firestore-test
+
+# Expected response:
+{
+  "status": "success",
+  "message": "Successfully deleted N test document(s) from collection 'connectivity_test'",
+  "deleted_count": N,
+  "timestamp": "2026-01-11T12:34:56.789012+00:00"
+}
 ```
+
+**Security Note**: In production, these endpoints should be protected with authentication. See the security section below.
 
 ### Cloud Run Testing
 
@@ -293,12 +303,14 @@ SERVICE_URL=$(gcloud run services describe journey-log \
     --region=us-central1 \
     --format='value(status.url)')
 
-# Test connectivity
-curl "${SERVICE_URL}/firestore-test"
+# Test connectivity (POST)
+curl -X POST "${SERVICE_URL}/firestore-test"
 
-# Or use httpie
-http GET "${SERVICE_URL}/firestore-test"
+# Clean up test documents
+curl -X DELETE "${SERVICE_URL}/firestore-test"
 ```
+
+**Important**: For production deployments, restrict access using Cloud Run IAM. See the Security Best Practices section below.
 
 ### API Documentation
 
@@ -390,13 +402,39 @@ gcloud logging tail "resource.type=cloud_run_revision AND resource.labels.servic
 
 ## Security Best Practices
 
+### Protect Operational Endpoints
+
+The `/firestore-test` endpoint should be protected in production environments:
+
+```bash
+# Deploy with authentication required (no public access)
+gcloud run deploy journey-log \
+    --no-allow-unauthenticated \
+    --region=us-central1
+
+# Grant access to specific users/service accounts only
+gcloud run services add-iam-policy-binding journey-log \
+    --region=us-central1 \
+    --member="user:admin@example.com" \
+    --role="roles/run.invoker"
+
+# Test authenticated endpoint
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+    -X POST "${SERVICE_URL}/firestore-test"
+```
+
+### General Security Guidelines
+
 1. **Use Workload Identity Federation** for CI/CD instead of service account keys
 2. **Rotate service account keys** regularly if you must use them
 3. **Restrict IAM roles** to the minimum required permissions
 4. **Enable audit logging** to track Firestore access
 5. **Use Secret Manager** for sensitive configuration values
 6. **Don't commit** service account keys or `.env` files to version control
-7. **Review and clean up** test documents from the connectivity_test collection regularly
+7. **Review and clean up** test documents from the connectivity_test collection regularly using the DELETE endpoint
+8. **Protect operational endpoints** with authentication in production (see above)
+9. **Monitor for unusual activity** on test endpoints
+10. **Use environment-specific error messages** to avoid information disclosure
 
 ## Additional Resources
 

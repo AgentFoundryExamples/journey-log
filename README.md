@@ -123,10 +123,7 @@ GCP_PROJECT_ID=YOUR_PROJECT_ID
 Once configured, test Firestore connectivity:
 
 ```bash
-# GET request
-curl http://localhost:8080/firestore-test
-
-# POST request
+# POST request (recommended)
 curl -X POST http://localhost:8080/firestore-test
 
 # Expected response:
@@ -145,7 +142,22 @@ curl -X POST http://localhost:8080/firestore-test
 }
 ```
 
-**Note**: Test documents are NOT automatically cleaned up. You can manually delete them from the Firestore console or use the cleanup commands in `docs/deployment.md`.
+**Note**: Test documents are NOT automatically cleaned up. Use the cleanup endpoint to remove them:
+
+```bash
+# DELETE request to clean up test documents
+curl -X DELETE http://localhost:8080/firestore-test
+
+# Expected response:
+{
+  "status": "success",
+  "message": "Successfully deleted N test document(s) from collection 'connectivity_test'",
+  "deleted_count": N,
+  "timestamp": "2026-01-11T12:34:56.789012+00:00"
+}
+```
+
+**Security Note**: In production, protect these endpoints with authentication (e.g., Cloud Run IAM) to prevent unauthorized access.
 
 ## Environment Variables
 
