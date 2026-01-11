@@ -90,9 +90,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
         logger.info(
             "request_started",
-            request_id=request_id,
-            path=request.url.path,
-            method=request.method,
             client_host=request.client.host if request.client else None,
         )
 
@@ -109,7 +106,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             # Log successful response
             logger.info(
                 "request_completed",
-                request_id=request_id,
                 status_code=response.status_code,
                 duration_ms=round(duration_ms, 2),
             )
@@ -123,7 +119,6 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             # Log error
             logger.error(
                 "request_failed",
-                request_id=request_id,
                 error_type=type(e).__name__,
                 error_message=str(e),
                 duration_ms=round(duration_ms, 2),

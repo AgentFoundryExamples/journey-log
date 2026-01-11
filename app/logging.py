@@ -133,13 +133,13 @@ def configure_logging() -> None:
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
     ]
 
     # In dev mode, use prettier console output for readability
     # In production, use JSON for Cloud Logging
     if settings.service_environment == "dev":
         processors = shared_processors + [
+            structlog.processors.StackInfoRenderer(),
             structlog.processors.ExceptionRenderer(),
             structlog.dev.ConsoleRenderer(),
         ]
