@@ -450,12 +450,12 @@ async def get_character(
         
         # Verify user_id if provided
         if x_user_id is not None:
-            user_id = x_user_id.strip()
-            if user_id and user_id != character.owner_user_id:
+            stripped_user_id = x_user_id.strip()
+            if stripped_user_id and stripped_user_id != character.owner_user_id:
                 logger.warning(
                     "get_character_user_mismatch",
                     character_id=character_id,
-                    requested_user_id=user_id,
+                    requested_user_id=stripped_user_id,
                     owner_user_id=character.owner_user_id,
                 )
                 raise HTTPException(
@@ -485,5 +485,5 @@ async def get_character(
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to retrieve character: {str(e)}",
+            detail="Failed to retrieve character due to an internal error",
         )

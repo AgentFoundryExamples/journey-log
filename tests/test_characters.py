@@ -853,7 +853,7 @@ class TestGetCharacter:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         response_data = response.json()
         assert "error" in response_data
-        assert "Failed to retrieve character" in response_data["message"]
+        assert "internal error" in response_data["message"].lower()
     
     def test_get_character_empty_user_id_header(
         self,
