@@ -285,10 +285,10 @@ async def create_character(
             additional_metadata={},
         )
         
-        # Serialize to Firestore format
+        # Serialize to Firestore format with server timestamps
         character_data = character_to_firestore(character, use_server_timestamp=False)
         
-        # Use Firestore server timestamp for consistency
+        # Override timestamps to use Firestore server timestamp for consistency
         character_data["created_at"] = firestore.SERVER_TIMESTAMP
         character_data["updated_at"] = firestore.SERVER_TIMESTAMP
         

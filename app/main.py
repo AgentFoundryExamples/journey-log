@@ -128,9 +128,19 @@ async def validation_exception_handler(
             "msg": str(error.get("msg", "")),
             "type": error.get("type", ""),
         }
-        # Include ctx if present, but convert any non-serializable values
+        # Include ctx if present, converting only non-serializable values
         if "ctx" in error:
-            safe_error["ctx"] = {k: str(v) for k, v in error["ctx"].items()}
+            safe_ctx = {}
+            for k, v in error["ctx"].items():
+                try:
+                    # Test if value is JSON serializable
+                    import json
+                    json.dumps(v)
+                    safe_ctx[k] = v
+                except (TypeError, ValueError):
+                    # Convert non-serializable values to strings
+                    safe_ctx[k] = str(v)
+            safe_error["ctx"] = safe_ctx
         errors.append(safe_error)
 
     response = JSONResponse(

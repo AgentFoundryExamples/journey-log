@@ -467,12 +467,6 @@ class TestCharacterDefaultValues:
         mock_doc_snapshot = Mock()
         mock_doc_snapshot.exists = True
         
-        # Capture the data being set
-        set_data = {}
-        def capture_set(data):
-            set_data.update(data)
-        mock_doc_ref.set.side_effect = capture_set
-        
         # Mock return document
         mock_doc_snapshot.to_dict.return_value = {
             "character_id": "test-uuid",
