@@ -162,7 +162,6 @@
           "google.cloud.firestore",
           "pydantic.BaseModel",
           "pydantic.Field",
-          "pydantic.field_validator",
           "pydantic.model_validator"
         ]
       }
@@ -219,11 +218,7 @@
         "stdlib": [
           "datetime.datetime",
           "datetime.timezone",
-          "typing.Any",
-          "typing.Dict",
-          "unittest.mock.MagicMock",
-          "unittest.mock.Mock",
-          "unittest.mock.patch"
+          "unittest.mock.Mock"
         ],
         "third-party": [
           "fastapi.status",
@@ -363,10 +358,6 @@
     },
     {
       "source": "tests/test_characters.py",
-      "target": "app/models.py"
-    },
-    {
-      "source": "tests/test_characters.py",
       "target": "app/dependencies.py"
     },
     {
@@ -399,13 +390,10 @@
       "typing.Annotated",
       "typing.Any",
       "typing.Callable",
-      "typing.Dict",
       "typing.Literal",
       "typing.Optional",
       "typing.Union",
-      "unittest.mock.MagicMock",
       "unittest.mock.Mock",
-      "unittest.mock.patch",
       "uuid"
     ],
     "third-party": [
@@ -440,7 +428,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 23,
+    "stdlib_count": 20,
     "third-party_count": 30
   }
 }
