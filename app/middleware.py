@@ -76,6 +76,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             self.settings.request_id_header.lower()
         ) or str(uuid.uuid4())
 
+        # Store request ID in request state for access by exception handlers
+        request.state.request_id = request_id
+
         # Set up logging context for this request
         set_request_context(
             request_id=request_id,
