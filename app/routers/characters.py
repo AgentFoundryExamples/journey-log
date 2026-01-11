@@ -361,12 +361,15 @@ async def create_character(
         "**Path Parameters:**\n"
         "- `character_id`: UUID-formatted character identifier\n\n"
         "**Optional Headers:**\n"
-        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
         "**Response:**\n"
         "- Returns the complete CharacterDocument with all fields\n"
         "- Includes player state, quests, combat state, and metadata\n"
         "- Timestamps are returned as ISO 8601 strings\n\n"
         "**Error Responses:**\n"
+        "- `400`: X-User-Id header provided but empty/whitespace-only\n"
         "- `404`: Character not found\n"
         "- `403`: X-User-Id header provided but does not match character owner\n"
         "- `422`: Invalid UUID format for character_id\n"
@@ -402,9 +405,10 @@ async def get_character(
             - 422: Invalid UUID format
             - 500: Firestore error
     """
-    # Validate UUID format
+    # Validate and normalize UUID format to canonical representation
     try:
-        uuid.UUID(character_id)
+        # This creates a canonical string representation (lowercase, with hyphens)
+        character_id = str(uuid.UUID(character_id))
     except ValueError:
         logger.warning(
             "get_character_invalid_uuid",
@@ -414,9 +418,6 @@ async def get_character(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
-    # Normalize character_id to lowercase (UUIDs are case-insensitive)
-    character_id = character_id.lower()
     
     # Log retrieval attempt
     logger.info(
@@ -451,7 +452,17 @@ async def get_character(
         # Verify user_id if provided
         if x_user_id is not None:
             stripped_user_id = x_user_id.strip()
-            if stripped_user_id and stripped_user_id != character.owner_user_id:
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_character_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+            if stripped_user_id != character.owner_user_id:
                 logger.warning(
                     "get_character_user_mismatch",
                     character_id=character_id,

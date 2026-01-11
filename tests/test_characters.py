@@ -861,7 +861,7 @@ class TestGetCharacter:
         mock_firestore_client,
         sample_character_data,
     ):
-        """Test that empty X-User-Id header is treated as no header."""
+        """Test that empty X-User-Id header returns 400 error."""
         
         # Mock Firestore document retrieval
         mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
@@ -870,11 +870,14 @@ class TestGetCharacter:
         mock_doc_snapshot.to_dict.return_value = sample_character_data
         mock_doc_ref.get.return_value = mock_doc_snapshot
         
-        # Make request with empty user ID (should be treated as no verification)
+        # Make request with empty user ID (should trigger validation error)
         response = test_client_with_mock_db.get(
             "/characters/550e8400-e29b-41d4-a716-446655440000",
             headers={"X-User-Id": "   "},
         )
         
-        # Assertions - should succeed because empty string is ignored
-        assert response.status_code == status.HTTP_200_OK
+        # Assertions - should fail with 400 because empty header is a client error
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "empty" in response_data["message"].lower()
