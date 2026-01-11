@@ -128,8 +128,19 @@ def character_healthy(base_player_state):
 @pytest.fixture
 def character_wounded_with_quest(base_player_state):
     """Fixture: Wounded character with an in-progress quest."""
-    base_player_state.status = Status.WOUNDED
-    base_player_state.health = Health(current=30, max=100)
+    # Create a new PlayerState to avoid mutating the shared fixture
+    player_state = PlayerState(
+        identity=base_player_state.identity,
+        status=Status.WOUNDED,
+        level=base_player_state.level,
+        experience=base_player_state.experience,
+        health=Health(current=30, max=100),
+        stats=base_player_state.stats,
+        equipment=base_player_state.equipment,
+        inventory=base_player_state.inventory,
+        location=base_player_state.location,
+        additional_fields=base_player_state.additional_fields
+    )
     
     quest = Quest(
         quest_id="quest_001",
@@ -155,7 +166,7 @@ def character_wounded_with_quest(base_player_state):
     return CharacterDocument(
         character_id="char-wounded-002",
         owner_user_id="user_002",
-        player_state=base_player_state,
+        player_state=player_state,
         world_pois_reference="world-v1",
         narrative_turns_reference="narrative_turns",
         schema_version="1.0.0",
@@ -480,20 +491,52 @@ class TestCharacterDocumentRoundTrip:
         # Deserialize
         restored = character_from_firestore(data)
         
-        # Verify all fields match
+        # Verify all core fields match
         assert restored.character_id == character_healthy.character_id
         assert restored.owner_user_id == character_healthy.owner_user_id
         assert restored.schema_version == character_healthy.schema_version
-        assert restored.player_state.identity.name == character_healthy.player_state.identity.name
-        assert restored.player_state.status == character_healthy.player_state.status
-        assert restored.player_state.health.current == character_healthy.player_state.health.current
-        assert restored.player_state.health.max == character_healthy.player_state.health.max
-        assert restored.player_state.level == character_healthy.player_state.level
-        assert restored.player_state.experience == character_healthy.player_state.experience
+        assert restored.world_pois_reference == character_healthy.world_pois_reference
+        assert restored.narrative_turns_reference == character_healthy.narrative_turns_reference
         assert restored.created_at == character_healthy.created_at
         assert restored.updated_at == character_healthy.updated_at
         assert restored.active_quest is None
         assert restored.combat_state is None
+        
+        # Verify player state identity
+        assert restored.player_state.identity.name == character_healthy.player_state.identity.name
+        assert restored.player_state.identity.race == character_healthy.player_state.identity.race
+        assert restored.player_state.identity.character_class == character_healthy.player_state.identity.character_class
+        
+        # Verify player state core attributes
+        assert restored.player_state.status == character_healthy.player_state.status
+        assert restored.player_state.level == character_healthy.player_state.level
+        assert restored.player_state.experience == character_healthy.player_state.experience
+        assert restored.player_state.health.current == character_healthy.player_state.health.current
+        assert restored.player_state.health.max == character_healthy.player_state.health.max
+        assert restored.player_state.location == character_healthy.player_state.location
+        
+        # Verify stats dictionary
+        assert restored.player_state.stats == character_healthy.player_state.stats
+        
+        # Verify equipment array
+        assert len(restored.player_state.equipment) == len(character_healthy.player_state.equipment)
+        for i, equipment in enumerate(restored.player_state.equipment):
+            orig_equipment = character_healthy.player_state.equipment[i]
+            assert equipment.name == orig_equipment.name
+            assert equipment.damage == orig_equipment.damage
+            assert equipment.special_effects == orig_equipment.special_effects
+        
+        # Verify inventory array
+        assert len(restored.player_state.inventory) == len(character_healthy.player_state.inventory)
+        for i, item in enumerate(restored.player_state.inventory):
+            orig_item = character_healthy.player_state.inventory[i]
+            assert item.name == orig_item.name
+            assert item.quantity == orig_item.quantity
+            assert item.effect == orig_item.effect
+        
+        # Verify additional fields and metadata
+        assert restored.player_state.additional_fields == character_healthy.player_state.additional_fields
+        assert restored.additional_metadata == character_healthy.additional_metadata
     
     def test_wounded_character_with_quest_roundtrip(self, character_wounded_with_quest):
         """Test round-trip for wounded character with in-progress quest."""
@@ -884,8 +927,8 @@ class TestRoundTripEdgeCases:
             world_pois_reference="world",
             narrative_turns_reference="narrative_turns",
             schema_version="1.0.0",
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc)
+            created_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc)
         )
         
         # Round-trip
@@ -917,8 +960,8 @@ class TestRoundTripEdgeCases:
                 world_pois_reference="world",
                 narrative_turns_reference="narrative_turns",
                 schema_version=version,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc)
+                created_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+                updated_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc)
             )
             
             # Round-trip
