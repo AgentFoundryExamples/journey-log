@@ -66,22 +66,17 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     Returns:
         JSON response with error details
     """
-    # Get request ID from request state (set by middleware) or headers
-    request_id = getattr(request.state, "request_id", None) or request.headers.get(
-        settings.request_id_header, "unknown"
-    )
+    # Get request ID from request state (set by middleware)
+    request_id = getattr(request.state, "request_id", "unknown")
 
     # Log the exception
     logger.warning(
         "http_exception",
         status_code=exc.status_code,
         detail=exc.detail,
-        request_id=request_id,
-        path=request.url.path,
-        method=request.method,
     )
 
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": "http_error",
@@ -90,6 +85,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             "request_id": request_id,
         },
     )
+    
+    # Add request ID to response headers
+    response.headers[settings.request_id_header] = request_id
+    
+    return response
 
 
 @app.exception_handler(RequestValidationError)
@@ -109,21 +109,16 @@ async def validation_exception_handler(
     Returns:
         JSON response with validation error details
     """
-    # Get request ID from request state (set by middleware) or headers
-    request_id = getattr(request.state, "request_id", None) or request.headers.get(
-        settings.request_id_header, "unknown"
-    )
+    # Get request ID from request state (set by middleware)
+    request_id = getattr(request.state, "request_id", "unknown")
 
     # Log the validation error
     logger.warning(
         "validation_error",
         errors=exc.errors(),
-        request_id=request_id,
-        path=request.url.path,
-        method=request.method,
     )
 
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "error": "validation_error",
@@ -132,6 +127,11 @@ async def validation_exception_handler(
             "request_id": request_id,
         },
     )
+    
+    # Add request ID to response headers
+    response.headers[settings.request_id_header] = request_id
+    
+    return response
 
 
 @app.exception_handler(Exception)
@@ -150,19 +150,14 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     Returns:
         JSON response with error details
     """
-    # Get request ID from request state (set by middleware) or headers
-    request_id = getattr(request.state, "request_id", None) or request.headers.get(
-        settings.request_id_header, "unknown"
-    )
+    # Get request ID from request state (set by middleware)
+    request_id = getattr(request.state, "request_id", "unknown")
 
     # Log the exception with stack trace
     logger.error(
         "unhandled_exception",
         error_type=type(exc).__name__,
         error_message=str(exc),
-        request_id=request_id,
-        path=request.url.path,
-        method=request.method,
         exc_info=True,  # Include stack trace in logs
     )
 
@@ -183,10 +178,15 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
             "request_id": request_id,
         }
 
-    return JSONResponse(
+    response = JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response,
     )
+    
+    # Add request ID to response headers
+    response.headers[settings.request_id_header] = request_id
+    
+    return response
 
 
 @app.get("/health")

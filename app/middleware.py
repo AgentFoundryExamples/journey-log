@@ -79,8 +79,8 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         # Store request ID in request state for access by exception handlers
         request.state.request_id = request_id
 
-        # Set up logging context for this request
-        set_request_context(
+        # Set up logging context for this request and get token for cleanup
+        token = set_request_context(
             request_id=request_id,
             path=request.url.path,
             method=request.method,
@@ -112,22 +112,11 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
             return response
 
-        except Exception as e:
-            # Calculate request duration
-            duration_ms = (time.time() - start_time) * 1000
-
-            # Log error
-            logger.error(
-                "request_failed",
-                error_type=type(e).__name__,
-                error_message=str(e),
-                duration_ms=round(duration_ms, 2),
-                exc_info=True,
-            )
-
-            # Re-raise the exception to be handled by exception handlers
+        except Exception:
+            # Re-raise the exception to be handled by FastAPI's exception handlers
+            # Exception handlers will log the error and add request ID to response
             raise
 
         finally:
-            # Clean up logging context
-            clear_request_context()
+            # Clean up logging context using token
+            clear_request_context(token)

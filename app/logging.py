@@ -177,7 +177,7 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     return structlog.get_logger(name)
 
 
-def set_request_context(request_id: str, path: str, method: str) -> None:
+def set_request_context(request_id: str, path: str, method: str) -> Any:
     """
     Set request-scoped context for logging.
 
@@ -189,8 +189,11 @@ def set_request_context(request_id: str, path: str, method: str) -> None:
         request_id: Unique identifier for the request
         path: Request path (e.g., "/health")
         method: HTTP method (e.g., "GET")
+
+    Returns:
+        A token to be used for resetting the context.
     """
-    request_context.set(
+    return request_context.set(
         {
             "request_id": request_id,
             "path": path,
@@ -199,11 +202,18 @@ def set_request_context(request_id: str, path: str, method: str) -> None:
     )
 
 
-def clear_request_context() -> None:
+def clear_request_context(token: Any = None) -> None:
     """
     Clear request-scoped context.
 
     This function should be called by middleware at the end of each request
-    to clean up context variables.
+    to clean up context variables. If a token is provided, it will be used
+    to reset the context to its previous state.
+
+    Args:
+        token: Optional token returned from set_request_context to reset context.
     """
-    request_context.set({})
+    if token is not None:
+        request_context.reset(token)
+    else:
+        request_context.set({})
