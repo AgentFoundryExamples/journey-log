@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 8,
+  "total_files": 10,
   "files": [
     {
       "schema_version": "2.0",
@@ -25,8 +25,8 @@
       "summary": "Python configuration file (role: configuration)",
       "summary_text": "Python configuration file (role: configuration)",
       "metrics": {
-        "size_bytes": 3656,
-        "loc": 70,
+        "size_bytes": 3824,
+        "loc": 74,
         "todo_count": 0
       }
     },
@@ -60,6 +60,20 @@
     },
     {
       "schema_version": "2.0",
+      "path": "app/logging.py",
+      "language": "Python",
+      "role": "implementation",
+      "role_justification": "general implementation file (default classification)",
+      "summary": "Python module for logging",
+      "summary_text": "Python module for logging",
+      "metrics": {
+        "size_bytes": 6925,
+        "loc": 158,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
       "path": "app/main.py",
       "language": "Python",
       "role": "entry-point",
@@ -67,8 +81,22 @@
       "summary": "Python main entry point (role: entry-point)",
       "summary_text": "Python main entry point (role: entry-point)",
       "metrics": {
-        "size_bytes": 2295,
-        "loc": 55,
+        "size_bytes": 6880,
+        "loc": 162,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/middleware.py",
+      "language": "Python",
+      "role": "middleware",
+      "role_justification": "filename contains 'middleware'",
+      "summary": "Python middleware component (role: middleware)",
+      "summary_text": "Python middleware component (role: middleware)",
+      "metrics": {
+        "size_bytes": 3960,
+        "loc": 74,
         "todo_count": 0
       }
     },
@@ -95,8 +123,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 10190,
-        "loc": 213,
+        "size_bytes": 11043,
+        "loc": 233,
         "todo_count": 0
       }
     },

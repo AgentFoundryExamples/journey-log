@@ -57,6 +57,24 @@
       }
     },
     {
+      "id": "app/logging.py",
+      "path": "app/logging.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "contextvars.ContextVar",
+          "logging",
+          "sys",
+          "typing.Any"
+        ],
+        "third-party": [
+          "structlog",
+          "structlog.types.EventDict",
+          "structlog.types.Processor"
+        ]
+      }
+    },
+    {
       "id": "app/main.py",
       "path": "app/main.py",
       "type": "file",
@@ -66,7 +84,30 @@
         ],
         "third-party": [
           "fastapi.FastAPI",
+          "fastapi.HTTPException",
+          "fastapi.Request",
+          "fastapi.exceptions.RequestValidationError",
+          "fastapi.responses.JSONResponse",
+          "fastapi.status",
           "uvicorn"
+        ]
+      }
+    },
+    {
+      "id": "app/middleware.py",
+      "path": "app/middleware.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "time",
+          "typing.Callable",
+          "uuid"
+        ],
+        "third-party": [
+          "fastapi.Request",
+          "fastapi.Response",
+          "starlette.middleware.base.BaseHTTPMiddleware",
+          "starlette.types.ASGIApp"
         ]
       }
     },
@@ -125,12 +166,32 @@
       "target": "app/config.py"
     },
     {
+      "source": "app/logging.py",
+      "target": "app/config.py"
+    },
+    {
       "source": "app/main.py",
       "target": "app/config.py"
     },
     {
       "source": "app/main.py",
       "target": "app/routers/firestore_test.py"
+    },
+    {
+      "source": "app/main.py",
+      "target": "app/logging.py"
+    },
+    {
+      "source": "app/main.py",
+      "target": "app/middleware.py"
+    },
+    {
+      "source": "app/middleware.py",
+      "target": "app/config.py"
+    },
+    {
+      "source": "app/middleware.py",
+      "target": "app/logging.py"
     },
     {
       "source": "app/routers/firestore_test.py",
@@ -141,29 +202,41 @@
       "target": "app/config.py"
     },
     {
+      "source": "app/routers/firestore_test.py",
+      "target": "app/logging.py"
+    },
+    {
       "source": "example_openai_usage.py",
       "target": "app/__init__.py"
     }
   ],
   "external_dependencies_summary": {
     "stdlib": [
+      "contextvars.ContextVar",
       "datetime.datetime",
       "datetime.timezone",
       "functools.lru_cache",
       "logging",
       "os",
+      "sys",
       "threading",
       "time",
       "typing.Annotated",
       "typing.Any",
+      "typing.Callable",
       "typing.Literal",
-      "typing.Optional"
+      "typing.Optional",
+      "uuid"
     ],
     "third-party": [
       "fastapi.APIRouter",
       "fastapi.Depends",
       "fastapi.FastAPI",
       "fastapi.HTTPException",
+      "fastapi.Request",
+      "fastapi.Response",
+      "fastapi.exceptions.RequestValidationError",
+      "fastapi.responses.JSONResponse",
       "fastapi.status",
       "google.cloud.firestore",
       "openai",
@@ -174,9 +247,14 @@
       "pydantic.field_validator",
       "pydantic_settings.BaseSettings",
       "pydantic_settings.SettingsConfigDict",
+      "starlette.middleware.base.BaseHTTPMiddleware",
+      "starlette.types.ASGIApp",
+      "structlog",
+      "structlog.types.EventDict",
+      "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 11,
-    "third-party_count": 15
+    "stdlib_count": 15,
+    "third-party_count": 24
   }
 }

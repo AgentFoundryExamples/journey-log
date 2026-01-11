@@ -106,7 +106,15 @@
         },
         {
           "type": "file",
+          "name": "logging.py"
+        },
+        {
+          "type": "file",
           "name": "main.py"
+        },
+        {
+          "type": "file",
+          "name": "middleware.py"
         }
       ]
     },

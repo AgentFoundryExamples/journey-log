@@ -23,7 +23,9 @@
   ├── config.py
   ├── dependencies.py
   ├── firestore.py
-  └── main.py
+  ├── logging.py
+  ├── main.py
+  └── middleware.py
 ├── docs
   └── deployment.md
 ├── .env.example

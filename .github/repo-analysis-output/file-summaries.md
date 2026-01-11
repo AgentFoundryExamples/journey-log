@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 8
+Total files: 10
 
 ## app/__init__.py
 **Language:** Python  
@@ -20,8 +20,8 @@ Total files: 8
 **Role:** configuration  
 **Role Justification:** configuration file name 'config'  
 **Summary:** Python configuration file (role: configuration)  
-**Size:** 3.57 KB  
-**LOC:** 70  
+**Size:** 3.73 KB  
+**LOC:** 74  
 **TODOs/FIXMEs:** 0  
 
 ## app/dependencies.py
@@ -42,13 +42,31 @@ Total files: 8
 **LOC:** 62  
 **TODOs/FIXMEs:** 0  
 
+## app/logging.py
+**Language:** Python  
+**Role:** implementation  
+**Role Justification:** general implementation file (default classification)  
+**Summary:** Python module for logging  
+**Size:** 6.76 KB  
+**LOC:** 158  
+**TODOs/FIXMEs:** 0  
+
 ## app/main.py
 **Language:** Python  
 **Role:** entry-point  
 **Role Justification:** common entry point name 'main'  
 **Summary:** Python main entry point (role: entry-point)  
-**Size:** 2.24 KB  
-**LOC:** 55  
+**Size:** 6.72 KB  
+**LOC:** 162  
+**TODOs/FIXMEs:** 0  
+
+## app/middleware.py
+**Language:** Python  
+**Role:** middleware  
+**Role Justification:** filename contains 'middleware'  
+**Summary:** Python middleware component (role: middleware)  
+**Size:** 3.87 KB  
+**LOC:** 74  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -65,8 +83,8 @@ Total files: 8
 **Role:** test  
 **Role Justification:** filename ends with '_test'  
 **Summary:** Python test file (role: test)  
-**Size:** 9.95 KB  
-**LOC:** 213  
+**Size:** 10.78 KB  
+**LOC:** 233  
 **TODOs/FIXMEs:** 0  
 
 ## example_openai_usage.py
