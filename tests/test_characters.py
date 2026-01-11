@@ -52,12 +52,19 @@ def mock_firestore_client():
     mock_collection = Mock()
     mock_query = Mock()
     mock_doc_ref = Mock()
+    mock_transaction = Mock()
+    
+    # Configure transaction mock to work with @firestore.transactional decorator
+    mock_transaction._max_attempts = 5
+    mock_transaction._id = None
     
     # Setup the mock chain
     mock_client.collection.return_value = mock_collection
+    mock_client.transaction.return_value = mock_transaction
     mock_collection.where.return_value = mock_query
     mock_query.where.return_value = mock_query
     mock_query.limit.return_value = mock_query
+    mock_query.stream.return_value = []  # No existing characters by default
     mock_collection.document.return_value = mock_doc_ref
     
     return mock_client
@@ -97,9 +104,9 @@ class TestCreateCharacter:
     ):
         """Test successful character creation with all defaults."""
         
-        # Mock Firestore operations
+        # Mock Firestore operations for transaction
         mock_query = mock_firestore_client.collection.return_value.where.return_value
-        mock_query.get.return_value = []  # No existing character
+        mock_query.stream.return_value = []  # No existing character
         
         mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
         
@@ -293,11 +300,11 @@ class TestCreateCharacter:
     ):
         """Test that duplicate (user_id, name, race, class) returns 409."""
         
-        # Mock existing character
+        # Mock existing character in transaction
         existing_doc = Mock()
         existing_doc.exists = True
         mock_query = mock_firestore_client.collection.return_value.where.return_value
-        mock_query.get.return_value = [existing_doc]  # Character exists
+        mock_query.stream.return_value = [existing_doc]  # Character exists
         
         response = test_client_with_mock_db.post(
             "/characters",
@@ -318,9 +325,9 @@ class TestCreateCharacter:
     ):
         """Test character creation with custom location override."""
         
-        # Mock Firestore operations
+        # Mock Firestore operations for transaction
         mock_query = mock_firestore_client.collection.return_value.where.return_value
-        mock_query.get.return_value = []  # No existing character
+        mock_query.stream.return_value = []  # No existing character
         
         mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
         
@@ -459,9 +466,9 @@ class TestCharacterDefaultValues:
     ):
         """Test that default status is Healthy."""
         
-        # Setup mocks
+        # Setup mocks for transaction
         mock_query = mock_firestore_client.collection.return_value.where.return_value
-        mock_query.get.return_value = []
+        mock_query.stream.return_value = []
         
         mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_doc_snapshot = Mock()
@@ -514,9 +521,9 @@ class TestCharacterDefaultValues:
     ):
         """Test that default location is origin:nexus/The Nexus."""
         
-        # Setup mocks
+        # Setup mocks for transaction
         mock_query = mock_firestore_client.collection.return_value.where.return_value
-        mock_query.get.return_value = []
+        mock_query.stream.return_value = []
         
         mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_doc_snapshot = Mock()

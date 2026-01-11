@@ -203,35 +203,46 @@ async def create_character(
     )
     
     try:
-        # Check for duplicate (user_id, name, race, class) tuple
+        # Use a transaction to atomically check for duplicates and create the character
+        transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
         
-        # Query for existing character with same tuple
-        # Note: Firestore queries are case-sensitive
-        query = (
-            characters_ref
-            .where("owner_user_id", "==", user_id)
-            .where("player_state.identity.name", "==", request.name)
-            .where("player_state.identity.race", "==", request.race)
-            .where("player_state.identity.class", "==", request.character_class)
-            .limit(1)
-        )
-        
-        existing = query.get()
-        if existing:
-            logger.warning(
-                "create_character_duplicate",
-                user_id=user_id,
-                name=request.name,
-                race=request.race,
-                character_class=request.character_class,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Character with name '{request.name}', race '{request.race}', and class '{request.character_class}' already exists for this user",
-            )
-        
         # Generate character ID (lowercase UUIDv4)
+        character_id = str(uuid.uuid4()).lower()
+        
+        @firestore.transactional
+        def create_in_transaction(transaction, character_data, character_id):
+            # Query for existing character with same tuple
+            # Note: Firestore queries are case-sensitive
+            query = (
+                characters_ref
+                .where("owner_user_id", "==", user_id)
+                .where("player_state.identity.name", "==", request.name)
+                .where("player_state.identity.race", "==", request.race)
+                .where("player_state.identity.class", "==", request.character_class)
+                .limit(1)
+            )
+            
+            # Run query within the transaction
+            existing = list(query.stream(transaction=transaction))
+            if existing:
+                # Abort transaction by raising an exception
+                logger.warning(
+                    "create_character_duplicate",
+                    user_id=user_id,
+                    name=request.name,
+                    race=request.race,
+                    character_class=request.character_class,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Character with name '{request.name}', race '{request.race}', and class '{request.character_class}' already exists for this user",
+                )
+            
+            # Persist to Firestore within the transaction
+            doc_ref = characters_ref.document(character_id)
+            transaction.set(doc_ref, character_data)
+            return doc_ref
         character_id = str(uuid.uuid4()).lower()
         
         # Determine location
@@ -268,7 +279,7 @@ async def create_character(
         )
         
         # Create character document
-        now = datetime.now(timezone.utc)
+        # Use epoch time as placeholder - will be replaced by SERVER_TIMESTAMP
         character = CharacterDocument(
             character_id=character_id,
             owner_user_id=user_id,
@@ -277,8 +288,8 @@ async def create_character(
             world_pois_reference=f"characters/{character_id}/pois",
             narrative_turns_reference=f"characters/{character_id}/narrative_turns",
             schema_version="1.0.0",
-            created_at=now,
-            updated_at=now,
+            created_at=datetime.fromtimestamp(0, timezone.utc),
+            updated_at=datetime.fromtimestamp(0, timezone.utc),
             world_state=None,
             active_quest=None,
             combat_state=None,
@@ -286,15 +297,10 @@ async def create_character(
         )
         
         # Serialize to Firestore format with server timestamps
-        character_data = character_to_firestore(character, use_server_timestamp=False)
+        character_data = character_to_firestore(character, use_server_timestamp=True)
         
-        # Override timestamps to use Firestore server timestamp for consistency
-        character_data["created_at"] = firestore.SERVER_TIMESTAMP
-        character_data["updated_at"] = firestore.SERVER_TIMESTAMP
-        
-        # Persist to Firestore
-        doc_ref = characters_ref.document(character_id)
-        doc_ref.set(character_data)
+        # Execute transaction
+        doc_ref = create_in_transaction(transaction, character_data, character_id)
         
         # Read back the document to get server timestamps
         created_doc = doc_ref.get()

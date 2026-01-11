@@ -17,6 +17,7 @@ Journey Log API Service - Main Application
 FastAPI application with health and info endpoints.
 """
 
+import json
 from typing import Any
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -119,6 +120,14 @@ async def validation_exception_handler(
         errors=exc.errors(),
     )
     
+    def _to_json_safe(value: Any) -> Any:
+        """Attempt to return a JSON-serializable value, or its string representation."""
+        try:
+            json.dumps(value)
+            return value
+        except (TypeError, ValueError):
+            return str(value)
+    
     # Serialize errors to JSON-safe format
     errors = []
     for error in exc.errors():
@@ -128,19 +137,9 @@ async def validation_exception_handler(
             "msg": str(error.get("msg", "")),
             "type": error.get("type", ""),
         }
-        # Include ctx if present, converting only non-serializable values
+        # Include ctx if present, converting values to be JSON-safe
         if "ctx" in error:
-            safe_ctx = {}
-            for k, v in error["ctx"].items():
-                try:
-                    # Test if value is JSON serializable
-                    import json
-                    json.dumps(v)
-                    safe_ctx[k] = v
-                except (TypeError, ValueError):
-                    # Convert non-serializable values to strings
-                    safe_ctx[k] = str(v)
-            safe_error["ctx"] = safe_ctx
+            safe_error["ctx"] = {k: _to_json_safe(v) for k, v in error["ctx"].items()}
         errors.append(safe_error)
 
     response = JSONResponse(
