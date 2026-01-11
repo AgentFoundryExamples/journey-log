@@ -910,7 +910,7 @@ class TestListCharacters:
         data = response.json()
         assert "characters" in data
         assert data["characters"] == []
-        assert data["total"] == 0
+        assert data["count"] == 0
     
     def test_list_characters_single_character(
         self,
@@ -953,7 +953,7 @@ class TestListCharacters:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["characters"]) == 1
-        assert data["total"] == 1
+        assert data["count"] == 1
         
         char = data["characters"][0]
         assert char["character_id"] == "char-001"
@@ -1037,7 +1037,7 @@ class TestListCharacters:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["characters"]) == 3
-        assert data["total"] == 3
+        assert data["count"] == 3
         
         # Verify order (newest first)
         assert data["characters"][0]["character_id"] == "char-newest"
@@ -1126,7 +1126,7 @@ class TestListCharacters:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert len(data["characters"]) == 1
-        assert data["total"] == 1
+        assert data["count"] == 1
         
         # Verify limit was called on query
         mock_query.limit.assert_called_once_with(1)
@@ -1175,6 +1175,57 @@ class TestListCharacters:
         
         # Verify offset was called on query
         mock_query.offset.assert_called_once_with(1)
+    
+    def test_list_characters_with_offset_and_limit(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test pagination with both offset and limit parameters."""
+        
+        # Mock character document (simulating page 2 with limit 1)
+        mock_doc = Mock()
+        mock_doc.id = "char-002"
+        mock_doc.to_dict.return_value = {
+            "character_id": "char-002",
+            "owner_user_id": "user123",
+            "player_state": {
+                "identity": {
+                    "name": "Hero Two",
+                    "race": "Elf",
+                    "class": "Mage",
+                },
+                "status": "Healthy",
+            },
+            "created_at": datetime(2026, 1, 10, 10, 0, 0, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        # Mock query with both offset and limit
+        mock_limit_query = Mock()
+        mock_limit_query.stream.return_value = [mock_doc]
+        mock_offset_query = Mock()
+        mock_offset_query.limit.return_value = mock_limit_query
+        mock_query = Mock()
+        mock_query.offset.return_value = mock_offset_query
+        mock_collection = mock_firestore_client.collection.return_value
+        mock_collection.where.return_value.order_by.return_value = mock_query
+        
+        # Make request with both offset and limit
+        response = test_client_with_mock_db.get(
+            "/characters?offset=1&limit=1",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert len(data["characters"]) == 1
+        assert data["count"] == 1
+        
+        # Verify both offset and limit were called on the query chain
+        mock_query.offset.assert_called_once_with(1)
+        mock_offset_query.limit.assert_called_once_with(1)
     
     def test_list_characters_default_status_healthy(
         self,

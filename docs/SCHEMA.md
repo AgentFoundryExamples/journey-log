@@ -1390,20 +1390,20 @@ The Journey Log API provides RESTful endpoints for managing character documents.
       "updated_at": "2026-01-11T12:00:00Z"
     }
   ],
-  "total": 1
+  "count": 1
 }
 ```
 
 **Response Fields:**
 - `characters` (array): List of character metadata objects
   - `character_id` (string): UUID character identifier
-  - `name` (string): Character name (from `player_state.identity.name`)
-  - `race` (string): Character race (from `player_state.identity.race`)
-  - `class` (string): Character class (from `player_state.identity.class`)
+  - `name` (string): Character name (from `player_state.identity.name`, defaults to "Unknown" if missing)
+  - `race` (string): Character race (from `player_state.identity.race`, defaults to "Unknown" if missing)
+  - `class` (string): Character class (from `player_state.identity.class`, defaults to "Unknown" if missing)
   - `status` (string): Character health status - "Healthy", "Wounded", or "Dead" (defaults to "Healthy" if missing)
   - `created_at` (string): ISO 8601 timestamp of character creation
   - `updated_at` (string): ISO 8601 timestamp of last update
-- `total` (integer): Total number of characters returned
+- `count` (integer): Number of characters returned in this response (after pagination is applied, not the total count of all user's characters)
 
 **Sorting:**
 Results are sorted by `updated_at` descending (most recently updated first).

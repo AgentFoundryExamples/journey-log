@@ -150,7 +150,9 @@ class ListCharactersResponse(BaseModel):
     characters: list[CharacterMetadata] = Field(
         description="List of character metadata objects"
     )
-    total: int = Field(description="Total number of characters returned")
+    count: int = Field(
+        description="Number of characters returned in this response (after pagination)"
+    )
 
 
 @router.get(
@@ -255,12 +257,19 @@ async def list_characters(
             # Default status to Healthy if missing (as per edge case requirements)
             status_value = player_state.get("status", "Healthy")
             
+            # Extract required identity fields
+            # Note: These fields are required by the CharacterDocument schema,
+            # but we use fallback values for robustness in case of data corruption
+            name = identity.get("name", "Unknown")
+            race = identity.get("race", "Unknown")
+            character_class = identity.get("class", "Unknown")
+            
             # Create metadata object
             metadata = CharacterMetadata(
                 character_id=character_id,
-                name=identity.get("name", "Unknown"),
-                race=identity.get("race", "Unknown"),
-                **{"class": identity.get("class", "Unknown")},
+                name=name,
+                race=race,
+                **{"class": character_class},
                 status=Status(status_value),
                 created_at=datetime_from_firestore(data.get("created_at")),
                 updated_at=datetime_from_firestore(data.get("updated_at")),
@@ -273,9 +282,11 @@ async def list_characters(
             count=len(characters),
         )
         
+        # Note: 'count' represents the number of characters returned in this response
+        # after pagination is applied, not the total number of characters the user owns
         return ListCharactersResponse(
             characters=characters,
-            total=len(characters),
+            count=len(characters),
         )
         
     except HTTPException:
