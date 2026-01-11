@@ -9,6 +9,9 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
 - **Firestore Connectivity Test**: `/firestore-test` - Verifies Firestore read/write access (operational endpoint)
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
+- **Structured Logging**: JSON-formatted logs compatible with Cloud Logging
+- **Request ID Tracking**: Automatic request ID generation and propagation for distributed tracing
+- **Global Error Handling**: Standardized JSON error responses with request IDs
 
 ## Requirements
 
@@ -176,6 +179,150 @@ See `.env.example` for a complete list of available environment variables with d
 - `API_HOST`: Defaults to `127.0.0.1`
 - `API_PORT`: Defaults to `8080`
 - `LOG_LEVEL`: Defaults to `INFO`
+- `REQUEST_ID_HEADER`: Defaults to `X-Request-ID` (for Cloud Run compatibility)
+
+## Structured Logging
+
+The service uses structured logging with JSON output compatible with Google Cloud Logging. All logs include:
+
+- **timestamp**: ISO 8601 formatted timestamp
+- **level**: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- **message**: Log message
+- **service**: Service name (from `SERVICE_NAME`)
+- **environment**: Environment (dev/staging/prod)
+- **request_id**: Unique request identifier for distributed tracing
+- **path**: Request path (for request-scoped logs)
+- **method**: HTTP method (for request-scoped logs)
+
+### Local Development Logging
+
+In **development mode** (`SERVICE_ENVIRONMENT=dev`), logs are formatted for human readability with color coding and pretty-printing:
+
+```
+2026-01-11T12:34:56.789012Z [info     ] request_started                environment=dev method=GET path=/health request_id=550e8400-e29b-41d4-a716-446655440000 service=journey-log
+```
+
+### Production Logging (Cloud Run)
+
+In **production and staging**, logs are emitted as JSON for Cloud Logging:
+
+```json
+{
+  "timestamp": "2026-01-11T12:34:56.789012Z",
+  "level": "info",
+  "message": "request_started",
+  "service": "journey-log",
+  "environment": "prod",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "path": "/health",
+  "method": "GET"
+}
+```
+
+Cloud Logging will automatically parse these JSON logs and extract fields for filtering and analysis.
+
+### Request ID Propagation
+
+Every request automatically gets a unique **request ID** that flows through all logs and responses:
+
+1. **Incoming Request**: The service checks for a `X-Request-ID` header (configurable via `REQUEST_ID_HEADER`)
+2. **Generation**: If no header is present, a UUID is automatically generated
+3. **Logging Context**: The request ID is added to all logs during that request
+4. **Response Header**: The request ID is included in the response `X-Request-ID` header
+5. **Error Responses**: All error responses include the `request_id` field
+
+This enables end-to-end request tracing across services and logs.
+
+### Debug Logging
+
+To enable debug logging locally:
+
+```bash
+# In your .env file
+LOG_LEVEL=DEBUG
+
+# Or via environment variable
+export LOG_LEVEL=DEBUG
+uvicorn app.main:app --reload
+```
+
+Debug logs include additional detail about internal operations, helpful for troubleshooting.
+
+### Custom Request ID Header
+
+If your load balancer or proxy uses a different header name for request IDs, configure it:
+
+```bash
+# In your .env file
+REQUEST_ID_HEADER=X-Cloud-Trace-Context
+
+# Or for GCP-specific tracing
+REQUEST_ID_HEADER=X-Cloud-Trace-Context
+```
+
+## Global Error Handling
+
+The service provides standardized JSON error responses for all errors, including:
+
+### HTTP Exceptions
+
+When a route raises an `HTTPException`, the response includes:
+
+```json
+{
+  "error": "http_error",
+  "message": "Not Found",
+  "status_code": 404,
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Validation Errors
+
+Request validation errors return:
+
+```json
+{
+  "error": "validation_error",
+  "message": "Request validation failed",
+  "errors": [
+    {
+      "loc": ["body", "field_name"],
+      "msg": "field required",
+      "type": "value_error.missing"
+    }
+  ],
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+### Unhandled Exceptions
+
+For unexpected errors:
+
+- **Development**: Returns detailed error information including exception type and message
+- **Production**: Returns generic error message to avoid leaking sensitive information
+
+Development response:
+```json
+{
+  "error": "internal_error",
+  "message": "ValueError: Invalid input",
+  "type": "ValueError",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+Production response:
+```json
+{
+  "error": "internal_error",
+  "message": "An internal error occurred. Please contact support with the request ID.",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+All errors are logged with stack traces for debugging, while responses protect sensitive information in production.
 
 ## Development
 

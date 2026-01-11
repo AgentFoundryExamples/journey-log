@@ -30,6 +30,9 @@ from pydantic import BaseModel, Field
 
 from app.dependencies import FirestoreClient
 from app.config import get_settings
+from app.logging import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(
     prefix="/firestore-test",
@@ -155,6 +158,8 @@ async def _perform_firestore_test(db: FirestoreClient) -> FirestoreTestResponse:
     test_collection = settings.firestore_test_collection
     timestamp = datetime.now(timezone.utc).isoformat()
 
+    logger.info("firestore_test_started", collection=test_collection)
+
     try:
         # Generate a unique document ID based on timestamp
         doc_id = f"test_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
@@ -171,11 +176,13 @@ async def _perform_firestore_test(db: FirestoreClient) -> FirestoreTestResponse:
         # Write the test document
         doc_ref = db.collection(test_collection).document(doc_id)
         doc_ref.set(test_data)
+        logger.info("firestore_document_written", document_id=doc_id)
 
         # Read the document back to verify read access
         doc_snapshot = doc_ref.get()
 
         if not doc_snapshot.exists:
+            logger.error("firestore_read_verification_failed", document_id=doc_id)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
@@ -187,6 +194,7 @@ async def _perform_firestore_test(db: FirestoreClient) -> FirestoreTestResponse:
 
         # Get the data from the snapshot
         read_data = doc_snapshot.to_dict()
+        logger.info("firestore_test_successful", document_id=doc_id)
 
         return FirestoreTestResponse(
             status="success",
@@ -202,6 +210,12 @@ async def _perform_firestore_test(db: FirestoreClient) -> FirestoreTestResponse:
     except Exception as e:
         # Catch any other exceptions and return structured error
         error_type = type(e).__name__
+        logger.error(
+            "firestore_operation_failed",
+            error_type=error_type,
+            error_message=str(e),
+            exc_info=True,
+        )
 
         # Don't expose sensitive error details in production
         if settings.service_environment == "prod":
@@ -242,6 +256,8 @@ async def _perform_cleanup(db: FirestoreClient) -> CleanupResponse:
     test_collection = settings.firestore_test_collection
     timestamp = datetime.now(timezone.utc).isoformat()
 
+    logger.info("firestore_cleanup_started", collection=test_collection)
+
     try:
         collection_ref = db.collection(test_collection)
         deleted_count = 0
@@ -263,6 +279,8 @@ async def _perform_cleanup(db: FirestoreClient) -> CleanupResponse:
             # Commit the batch
             batch.commit()
 
+        logger.info("firestore_cleanup_successful", deleted_count=deleted_count)
+
         return CleanupResponse(
             status="success",
             message=f"Successfully deleted {deleted_count} test document(s) from collection '{test_collection}'",
@@ -273,6 +291,12 @@ async def _perform_cleanup(db: FirestoreClient) -> CleanupResponse:
     except Exception as e:
         # Catch any exceptions and return structured error
         error_type = type(e).__name__
+        logger.error(
+            "firestore_cleanup_failed",
+            error_type=error_type,
+            error_message=str(e),
+            exc_info=True,
+        )
 
         # Don't expose sensitive error details in production
         if settings.service_environment == "prod":
