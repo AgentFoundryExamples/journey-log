@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
 from app.config import get_settings
-from app.routers import firestore_test
+from app.routers import firestore_test, characters
 from app.logging import configure_logging, get_logger
 from app.middleware import RequestIDMiddleware
 
@@ -47,6 +47,7 @@ app = FastAPI(
 app.add_middleware(RequestIDMiddleware)
 
 # Include routers
+app.include_router(characters.router)
 app.include_router(firestore_test.router)
 
 
@@ -117,13 +118,27 @@ async def validation_exception_handler(
         "validation_error",
         errors=exc.errors(),
     )
+    
+    # Serialize errors to JSON-safe format
+    errors = []
+    for error in exc.errors():
+        # Create a JSON-safe version of the error
+        safe_error = {
+            "loc": error.get("loc", []),
+            "msg": str(error.get("msg", "")),
+            "type": error.get("type", ""),
+        }
+        # Include ctx if present, but convert any non-serializable values
+        if "ctx" in error:
+            safe_error["ctx"] = {k: str(v) for k, v in error["ctx"].items()}
+        errors.append(safe_error)
 
     response = JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "error": "validation_error",
             "message": "Request validation failed",
-            "errors": exc.errors(),
+            "errors": errors,
             "request_id": request_id,
         },
     )

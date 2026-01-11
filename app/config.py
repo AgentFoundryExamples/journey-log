@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     )
 
     # Firestore Configuration
+    firestore_characters_collection: str = Field(
+        default="characters", description="Firestore collection name for characters"
+    )
     firestore_journeys_collection: str = Field(
         default="journeys", description="Firestore collection name for journeys"
     )
