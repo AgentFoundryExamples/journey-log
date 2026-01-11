@@ -23,11 +23,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, status
 from google.cloud import firestore  # type: ignore[import-untyped]
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.config import (
     get_settings,
-    DEFAULT_CHARACTER_STATUS,
     DEFAULT_LOCATION_ID,
     DEFAULT_LOCATION_DISPLAY_NAME,
 )
@@ -117,6 +116,11 @@ class CreateCharacterRequest(BaseModel):
 class CreateCharacterResponse(BaseModel):
     """Response model for character creation."""
     character: CharacterDocument = Field(description="The created character document")
+
+
+class GetCharacterResponse(BaseModel):
+    """Response model for character retrieval."""
+    character: CharacterDocument = Field(description="The character document")
 
 
 @router.post(
@@ -344,4 +348,142 @@ async def create_character(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create character: {str(e)}",
+        )
+
+
+@router.get(
+    "/{character_id}",
+    response_model=GetCharacterResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get a character by ID",
+    description=(
+        "Retrieve a complete character document by its character_id.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n\n"
+        "**Response:**\n"
+        "- Returns the complete CharacterDocument with all fields\n"
+        "- Includes player state, quests, combat state, and metadata\n"
+        "- Timestamps are returned as ISO 8601 strings\n\n"
+        "**Error Responses:**\n"
+        "- `404`: Character not found\n"
+        "- `403`: X-User-Id header provided but does not match character owner\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def get_character(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+) -> GetCharacterResponse:
+    """
+    Retrieve a character document by character_id.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Fetches the document from Firestore
+    3. Optionally verifies X-User-Id matches owner_user_id
+    4. Deserializes and returns the complete CharacterDocument
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        
+    Returns:
+        GetCharacterResponse with the character document
+        
+    Raises:
+        HTTPException:
+            - 404: Character not found
+            - 403: User ID mismatch (access denied)
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate UUID format
+    try:
+        uuid.UUID(character_id)
+    except ValueError:
+        logger.warning(
+            "get_character_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Normalize character_id to lowercase (UUIDs are case-insensitive)
+    character_id = character_id.lower()
+    
+    # Log retrieval attempt
+    logger.info(
+        "get_character_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+    )
+    
+    try:
+        # Fetch document from Firestore
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        doc_ref = characters_ref.document(character_id)
+        doc = doc_ref.get()
+        
+        # Check if document exists
+        if not doc.exists:
+            logger.warning(
+                "get_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        
+        # Deserialize document
+        character = character_from_firestore(
+            doc.to_dict(),
+            character_id=character_id,
+        )
+        
+        # Verify user_id if provided
+        if x_user_id is not None:
+            user_id = x_user_id.strip()
+            if user_id and user_id != character.owner_user_id:
+                logger.warning(
+                    "get_character_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=user_id,
+                    owner_user_id=character.owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+        
+        logger.info(
+            "get_character_success",
+            character_id=character_id,
+            owner_user_id=character.owner_user_id,
+        )
+        
+        return GetCharacterResponse(character=character)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_character_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve character: {str(e)}",
         )
