@@ -6,6 +6,7 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
 
 - **Health Check Endpoint**: `/health` - Returns service status and basic identifiers
 - **Info Endpoint**: `/info` - Returns build and configuration metadata
+- **Firestore Connectivity Test**: `/firestore-test` - Verifies Firestore read/write access (operational endpoint)
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
 
@@ -69,16 +70,82 @@ The service will be available at:
 - **API**: http://127.0.0.1:8080
 - **Health Check**: http://127.0.0.1:8080/health
 - **Info**: http://127.0.0.1:8080/info
+- **Firestore Test**: http://127.0.0.1:8080/firestore-test
 - **API Docs**: http://127.0.0.1:8080/docs
 - **ReDoc**: http://127.0.0.1:8080/redoc
 
 ## Running Without Firestore Credentials
 
-For local development, you can run the service without Firestore credentials. The `/health` and `/info` endpoints do not require Firestore access. When you add endpoints that use Firestore, you'll need to:
+For local development, you can run the service without Firestore credentials. The `/health` and `/info` endpoints do not require Firestore access.
 
-1. Create a GCP Service Account with Firestore permissions
-2. Download the credentials JSON file
-3. Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the file path
+### Testing Firestore Connectivity
+
+To test Firestore connectivity, you have two options:
+
+#### Option 1: Use Firestore Emulator (Recommended for Local Development)
+
+```bash
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Start Firestore emulator
+firebase emulators:start --only firestore --project=demo-project
+
+# In your .env file, set:
+FIRESTORE_EMULATOR_HOST=localhost:8080
+GCP_PROJECT_ID=demo-project
+
+# Run the service
+uvicorn app.main:app --reload
+```
+
+#### Option 2: Use Application Default Credentials
+
+```bash
+# Login with your Google account
+gcloud auth application-default login
+
+# Set your project
+gcloud config set project YOUR_PROJECT_ID
+
+# Ensure your user has Firestore permissions
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+    --member="user:your-email@example.com" \
+    --role="roles/datastore.user"
+
+# In your .env file, set:
+GCP_PROJECT_ID=YOUR_PROJECT_ID
+# Leave FIRESTORE_EMULATOR_HOST empty
+```
+
+### Using the Connectivity Test Endpoint
+
+Once configured, test Firestore connectivity:
+
+```bash
+# GET request
+curl http://localhost:8080/firestore-test
+
+# POST request
+curl -X POST http://localhost:8080/firestore-test
+
+# Expected response:
+{
+  "status": "success",
+  "message": "Successfully wrote to and read from Firestore collection 'connectivity_test'",
+  "document_id": "test_20260111_123456_789012",
+  "data": {
+    "test_type": "connectivity_check",
+    "timestamp": "2026-01-11T12:34:56.789012+00:00",
+    "message": "Firestore connectivity test document",
+    "service": "journey-log",
+    "environment": "dev"
+  },
+  "timestamp": "2026-01-11T12:34:56.789012+00:00"
+}
+```
+
+**Note**: Test documents are NOT automatically cleaned up. You can manually delete them from the Firestore console or use the cleanup commands in `docs/deployment.md`.
 
 ## Environment Variables
 
@@ -92,6 +159,8 @@ See `.env.example` for a complete list of available environment variables with d
 - `SERVICE_NAME`: Defaults to `journey-log`
 - `FIRESTORE_JOURNEYS_COLLECTION`: Defaults to `journeys`
 - `FIRESTORE_ENTRIES_COLLECTION`: Defaults to `entries`
+- `FIRESTORE_TEST_COLLECTION`: Defaults to `connectivity_test`
+- `FIRESTORE_EMULATOR_HOST`: Empty by default (set to `localhost:8080` for local emulator)
 - `API_HOST`: Defaults to `127.0.0.1`
 - `API_PORT`: Defaults to `8080`
 - `LOG_LEVEL`: Defaults to `INFO`
@@ -121,7 +190,15 @@ pytest
 
 ## Deployment
 
-This service is designed to run on Google Cloud Run. See `gcp_deployment_reference.md` for detailed deployment instructions.
+This service is designed to run on Google Cloud Run. See `docs/deployment.md` for detailed deployment instructions, including:
+
+- IAM roles and service account configuration
+- Firestore database setup
+- Application Default Credentials (ADC) setup
+- Local development with Firestore emulator
+- Cloud Run deployment steps
+- Connectivity testing procedures
+- Troubleshooting common issues
 
 
 

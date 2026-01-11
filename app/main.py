@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.config import get_settings
+from app.routers import firestore_test
 
 # Load settings
 settings = get_settings()
@@ -33,6 +34,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Include routers
+app.include_router(firestore_test.router)
 
 
 @app.get("/health")

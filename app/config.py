@@ -63,6 +63,14 @@ class Settings(BaseSettings):
         default="entries",
         description="Firestore collection name for entries"
     )
+    firestore_test_collection: str = Field(
+        default="connectivity_test",
+        description="Firestore collection name for connectivity tests"
+    )
+    firestore_emulator_host: str = Field(
+        default="",
+        description="Firestore emulator host (e.g., localhost:8080) for local development"
+    )
     
     # Build Metadata (Optional)
     build_version: str = Field(
