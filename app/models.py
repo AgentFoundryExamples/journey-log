@@ -70,12 +70,13 @@ class CharacterIdentity(BaseModel):
     
     Referenced in: docs/SCHEMA.md - Character Document Fields
     """
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     
     name: str = Field(description="Character name")
     race: str = Field(description="Character race (e.g., Human, Elf, Dwarf)")
     character_class: str = Field(
         alias="class",
+        serialization_alias="class",
         description="Character class (e.g., Warrior, Mage, Ranger)"
     )
 
@@ -179,16 +180,18 @@ class NarrativeTurn(BaseModel):
     
     Referenced in: docs/SCHEMA.md - Narrative Turns Subcollection
     """
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     
     turn_id: str = Field(description="Unique turn identifier (UUIDv4)")
     turn_number: Optional[int] = Field(default=None, description="Sequential turn counter")
     user_action: str = Field(
         alias="player_action",
+        serialization_alias="player_action",
         description="Player's action or input"
     )
     ai_response: str = Field(
         alias="gm_response",
+        serialization_alias="gm_response",
         description="Game master's/AI's response"
     )
     timestamp: Union[datetime, str] = Field(
@@ -213,9 +216,9 @@ class PointOfInterest(BaseModel):
     
     Referenced in: docs/SCHEMA.md - Points of Interest Subcollection
     """
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
     
-    id: str = Field(alias="poi_id", description="Unique POI identifier (UUIDv4)")
+    id: str = Field(alias="poi_id", serialization_alias="poi_id", description="Unique POI identifier (UUIDv4)")
     name: str = Field(description="POI name")
     description: str = Field(description="POI description")
     type: Optional[str] = Field(default=None, description="POI type (dungeon, town, landmark, etc.)")
@@ -226,11 +229,13 @@ class PointOfInterest(BaseModel):
     timestamp_discovered: Optional[Union[datetime, str]] = Field(
         default=None,
         alias="discovered_at",
+        serialization_alias="discovered_at",
         description="When the POI was discovered"
     )
     last_visited: Optional[Union[datetime, str]] = Field(
         default=None,
         alias="visited_at",
+        serialization_alias="visited_at",
         description="When the POI was last visited"
     )
     visited: Optional[bool] = Field(default=False, description="Whether the POI has been visited")
