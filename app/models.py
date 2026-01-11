@@ -753,6 +753,7 @@ def character_to_firestore(
         >>> char = CharacterDocument(
         ...     character_id="test-id",
         ...     owner_user_id="user_123",
+        ...     adventure_prompt="Test adventure",
         ...     player_state=player_state,
         ...     world_pois_reference="world",
         ...     narrative_turns_reference="narrative_turns",
@@ -808,6 +809,7 @@ def character_from_firestore(
         >>> data = {
         ...     'character_id': 'test-id',
         ...     'owner_user_id': 'user_123',
+        ...     'adventure_prompt': 'Test adventure',
         ...     'player_state': {
         ...         'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
         ...         'status': 'Healthy',
