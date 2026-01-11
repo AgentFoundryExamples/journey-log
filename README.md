@@ -2,6 +2,11 @@
 
 A FastAPI-based service for managing journey logs and entries. Built with Python 3.12+ (targeting Python 3.14), FastAPI, and Google Cloud Firestore.
 
+## Documentation
+
+- **[Data Schema](docs/SCHEMA.md)** - Comprehensive documentation of the character data schema, Firestore structure, and database design patterns
+- **[Deployment Guide](docs/deployment.md)** - Instructions for deploying to Google Cloud Run
+
 ## Features
 
 - **Health Check Endpoint**: `/health` - Returns service status and basic identifiers

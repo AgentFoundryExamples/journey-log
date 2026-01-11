@@ -1,0 +1,965 @@
+# Journey Log Data Schema
+
+This document defines the canonical data schema for the Journey Log system, specifically focusing on character data storage in Google Cloud Firestore.
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Character Collection Structure](#character-collection-structure)
+3. [Character Identifier Strategy](#character-identifier-strategy)
+4. [Character Document Fields](#character-document-fields)
+5. [Subcollections](#subcollections)
+6. [Embedded vs Subcollection Rationale](#embedded-vs-subcollection-rationale)
+7. [Timestamp Conventions](#timestamp-conventions)
+8. [Edge Cases and Migration](#edge-cases-and-migration)
+9. [Firestore Sizing and Consistency Considerations](#firestore-sizing-and-consistency-considerations)
+
+---
+
+## Overview
+
+The Journey Log system stores character data in Google Cloud Firestore using a single-document-per-character model with supporting subcollections for narrative history and points of interest (POIs). This design balances document size constraints with query efficiency and data consistency.
+
+**Key Design Principles:**
+- Single source of truth for character state
+- Separate subcollections for unbounded data (narrative history, POIs)
+- Schema versioning for backward compatibility
+- Owner-based access control support
+
+---
+
+## Character Collection Structure
+
+The primary collection for character data is:
+
+```
+characters/
+  {character_id}/                    # Document ID (UUIDv4 string)
+    - Core character data fields     # See "Character Document Fields" section
+    narrative_turns/                 # Subcollection
+      {turn_id}/                     # Individual narrative turn documents
+    pois/                            # Subcollection
+      {poi_id}/                      # Individual POI documents
+```
+
+**Collection Name:** `characters`
+
+**Document Path Format:** `characters/{character_id}`
+
+---
+
+## Character Identifier Strategy
+
+### Character ID Generation
+
+Each character is uniquely identified by a **UUIDv4 string** used as the Firestore document ID.
+
+**Format:** UUIDv4 (RFC 4122)
+- **Example:** `550e8400-e29b-41d4-a716-446655440000`
+- **Representation:** String (lowercase hexadecimal with hyphens)
+
+### Generation Rules
+
+1. **Client-Side Generation (Recommended):**
+   - Generate UUIDv4 on the client before creating the character document
+   - This allows the client to know the character_id immediately without a round-trip
+   - Use standard UUID libraries (Python: `uuid.uuid4()`, JavaScript: `crypto.randomUUID()`)
+
+2. **Server-Side Generation (Alternative):**
+   - Generate UUIDv4 on the server when creating a new character
+   - Return the character_id to the client in the response
+
+### Validation Rules
+
+- **Format:** Must be a valid UUIDv4 string (36 characters with hyphens)
+- **Case:** Accept both uppercase and lowercase, but **store as lowercase**
+- **Uniqueness:** Firestore document IDs are unique within a collection by design
+- **Immutability:** character_id should never change once created
+
+### Validation Error Handling
+
+**API Boundary Validation:**
+- **Invalid Format:** Reject requests with malformed UUIDs immediately at API boundaries
+- **HTTP Status:** Return `400 Bad Request` for invalid character_id format
+- **Error Response:** Include descriptive error message indicating the expected format
+- **Normalization:** Convert valid uppercase UUIDs to lowercase before storage
+
+**Example Validation:**
+```python
+import re
+import uuid
+
+def validate_character_id(character_id: str) -> tuple[bool, str]:
+    """
+    Validate character_id format.
+    
+    Returns:
+        Tuple of (is_valid, normalized_id or error_message)
+    """
+    # Check basic format (36 characters with hyphens)
+    uuid_pattern = re.compile(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    )
+    
+    if not uuid_pattern.match(character_id):
+        return False, "Invalid character_id format. Expected UUIDv4 (e.g., '550e8400-e29b-41d4-a716-446655440000')"
+    
+    # Verify it's a valid UUID (will raise ValueError if not)
+    try:
+        uuid_obj = uuid.UUID(character_id, version=4)
+        # Normalize to lowercase
+        return True, str(uuid_obj).lower()
+    except ValueError:
+        return False, "Invalid UUIDv4. Character ID must be a valid version 4 UUID"
+
+# Usage in API endpoint
+is_valid, result = validate_character_id(request.character_id)
+if not is_valid:
+    raise HTTPException(status_code=400, detail=result)
+character_id = result  # Use normalized ID
+```
+
+### Example Generation Code
+
+```python
+import uuid
+
+# Generate a new character_id
+character_id = str(uuid.uuid4())  # Returns: "550e8400-e29b-41d4-a716-446655440000"
+```
+
+```javascript
+// Generate a new character_id
+const character_id = crypto.randomUUID();  // Returns: "550e8400-e29b-41d4-a716-446655440000"
+```
+
+---
+
+## Character Document Fields
+
+Each character document contains the following top-level fields:
+
+### Required Fields
+
+| Field Name | Type | Description |
+|------------|------|-------------|
+| `character_id` | `string` | The UUIDv4 identifier (same as document ID, stored for convenience) |
+| `owner_user_id` | `string` | The user ID of the character owner (for access control) |
+| `player_state` | `map` | Current player state (HP, level, inventory, etc.) |
+| `active_quest` | `map` or `null` | Current quest information, or null if no active quest |
+| `world_pois_reference` | `string` | Reference to the world's POI collection or configuration |
+| `combat_state` | `map` or `null` | Current combat state, or null if not in combat |
+| `additional_metadata` | `map` | Extensible metadata (character name, creation date, etc.) |
+| `schema_version` | `string` | Schema version for this document (e.g., "1.0.0") |
+| `created_at` | `Timestamp` | Firestore Timestamp of character creation |
+| `updated_at` | `Timestamp` | Firestore Timestamp of last update |
+
+### Field Details
+
+#### `character_id`
+- **Type:** String (UUIDv4)
+- **Required:** Yes
+- **Immutable:** Yes
+- **Description:** Redundant with document ID, but stored for convenience when querying or returning documents
+- **Rationale for Redundancy:**
+  - **Convenience:** Simplifies API responses by including the ID in the document data without requiring clients to track the document path separately
+  - **Consistency:** Ensures all character data is self-contained when serialized
+  - **Queries:** Firestore queries can filter/return this field, while document IDs require separate handling
+  - **Cost:** Minimal storage overhead (~36 bytes) compared to benefits
+- **Note:** Always keep `character_id` synchronized with the Firestore document ID. Never allow mismatches.
+
+#### `owner_user_id`
+- **Type:** String
+- **Required:** Yes
+- **Immutable:** Yes (should not change after creation)
+- **Description:** Firebase Auth UID or equivalent user identifier for access control
+- **Usage:** Used in Firestore security rules to restrict access to the character owner
+- **Validation:** Must be a non-empty string matching your authentication system's user ID format
+- **Security:** 
+  - Always validate that the authenticated user matches the owner_user_id when accessing or modifying characters
+  - Never expose owner_user_id in public APIs or responses to unauthorized users
+  - Use Firestore security rules to enforce ownership: `allow read, write: if request.auth.uid == resource.data.owner_user_id`
+
+**Example Validation:**
+```python
+def validate_owner_user_id(owner_user_id: str, authenticated_user_id: str) -> bool:
+    """
+    Validate that the owner_user_id is valid and matches the authenticated user.
+    
+    Args:
+        owner_user_id: The claimed owner user ID
+        authenticated_user_id: The ID of the authenticated user making the request
+        
+    Returns:
+        True if valid, raises HTTPException otherwise
+    """
+    if not owner_user_id or not owner_user_id.strip():
+        raise HTTPException(status_code=400, detail="owner_user_id cannot be empty")
+    
+    # For new character creation, ensure authenticated user is the owner
+    if owner_user_id != authenticated_user_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Cannot create character for another user"
+        )
+    
+    return True
+```
+
+#### `player_state`
+- **Type:** Map (nested object)
+- **Required:** Yes
+- **Description:** Current state of the player character
+- **Example Structure:**
+  ```json
+  {
+    "level": 10,
+    "experience": 5000,
+    "health": {
+      "current": 100,
+      "max": 100
+    },
+    "stats": {
+      "strength": 18,
+      "dexterity": 14,
+      "constitution": 16,
+      "intelligence": 12,
+      "wisdom": 13,
+      "charisma": 15
+    },
+    "inventory": {
+      "weapon": "Anduril",
+      "armor": "Elven Mail",
+      "items": ["Healing Potion", "Rope", "Torch"]
+    },
+    "location": {
+      "world": "middle-earth",
+      "region": "gondor",
+      "coordinates": {"x": 100, "y": 200}
+    }
+  }
+  ```
+
+**Note:** Character name should be stored in `additional_metadata.character_name`, not in `player_state`, to maintain clear separation between game state and character metadata.
+
+#### `active_quest`
+- **Type:** Map or null
+- **Required:** Yes (can be null)
+- **Description:** Information about the currently active quest, or null if no quest is active
+- **Example Structure:**
+  ```json
+  {
+    "quest_id": "quest_001",
+    "title": "Destroy the Ring",
+    "description": "Take the One Ring to Mount Doom",
+    "objectives": [
+      {
+        "id": "obj_001",
+        "description": "Reach Rivendell",
+        "completed": true
+      },
+      {
+        "id": "obj_002",
+        "description": "Form the Fellowship",
+        "completed": true
+      },
+      {
+        "id": "obj_003",
+        "description": "Reach Mordor",
+        "completed": false
+      }
+    ],
+    "started_at": "2026-01-11T12:00:00.000000Z"
+  }
+  ```
+
+**Note:** Timestamps within nested objects like `started_at` should use ISO 8601 format for consistency when storing as strings, or use Firestore Timestamp objects if you need to query/sort by these dates.
+
+#### `world_pois_reference`
+- **Type:** String
+- **Required:** Yes
+- **Description:** Reference to the world's POI configuration or collection
+- **Format:** Can be a collection path, document ID, or configuration key
+- **Example:** `"worlds/middle-earth/pois"` or `"middle-earth-v1"`
+
+#### `combat_state`
+- **Type:** Map or null
+- **Required:** Yes (can be null)
+- **Description:** Current combat state, or null if not in combat
+- **Example Structure:**
+  ```json
+  {
+    "combat_id": "combat_123",
+    "started_at": "2026-01-11T14:30:00Z",
+    "turn": 3,
+    "enemies": [
+      {
+        "enemy_id": "orc_001",
+        "name": "Orc Warrior",
+        "health": {"current": 25, "max": 50},
+        "status_effects": ["poisoned"]
+      }
+    ],
+    "player_conditions": {
+      "status_effects": [],
+      "temporary_buffs": ["shield_of_valor"]
+    }
+  }
+  ```
+
+#### `additional_metadata`
+- **Type:** Map
+- **Required:** Yes
+- **Description:** Extensible metadata for character customization and game-specific data
+- **Example Structure:**
+  ```json
+  {
+    "character_name": "Aragorn",
+    "character_class": "Ranger",
+    "race": "Human",
+    "background": "Noble",
+    "tags": ["main-campaign", "multiplayer-ready"],
+    "preferences": {
+      "difficulty": "normal",
+      "tutorial_completed": true
+    }
+  }
+  ```
+
+#### `schema_version`
+- **Type:** String (semantic versioning)
+- **Required:** Yes
+- **Description:** Version of the schema this document conforms to
+- **Format:** Semantic versioning (e.g., "1.0.0", "1.1.0", "2.0.0")
+- **Usage:** Used for schema migrations and backward compatibility
+- **Current Version:** "1.0.0"
+
+#### `created_at`
+- **Type:** Firestore Timestamp
+- **Required:** Yes
+- **Immutable:** Yes
+- **Description:** Timestamp when the character was created
+- **Set By:** Server on document creation
+
+#### `updated_at`
+- **Type:** Firestore Timestamp
+- **Required:** Yes
+- **Mutable:** Yes (updated on every write)
+- **Description:** Timestamp of the last update to the character document
+- **Set By:** Server on every document update
+
+---
+
+## Subcollections
+
+Character documents have two required subcollections for unbounded data:
+
+### 1. Narrative Turns Subcollection
+
+**Path:** `characters/{character_id}/narrative_turns/{turn_id}`
+
+**Purpose:** Stores the history of narrative turns/interactions for the character.
+
+**Document Structure:**
+```json
+{
+  "turn_id": "turn_001",
+  "turn_number": 1,
+  "timestamp": "2026-01-11T12:00:00Z",
+  "player_action": "I draw my sword and approach the cave entrance.",
+  "gm_response": "As you approach the dark cave, you hear a low growl echoing from within.",
+  "game_state_snapshot": {
+    "location": "Cave Entrance",
+    "health": 100,
+    "active_effects": []
+  },
+  "metadata": {
+    "response_time_ms": 1250,
+    "llm_model": "gpt-5.1",
+    "tokens_used": 150
+  }
+}
+```
+
+**Key Fields:**
+- `turn_id`: Unique identifier for the turn (UUIDv4)
+- `turn_number`: Sequential turn counter
+- `timestamp`: When the turn occurred (Firestore Timestamp)
+- `player_action`: What the player did
+- `gm_response`: The game master's/AI's response
+- `game_state_snapshot`: Snapshot of relevant game state
+- `metadata`: Additional context (LLM metrics, etc.)
+
+**Ordering:** Query by `turn_number` or `timestamp` for chronological history
+
+### 2. Points of Interest (POIs) Subcollection
+
+**Path:** `characters/{character_id}/pois/{poi_id}`
+
+**Purpose:** Stores discovered or player-specific points of interest.
+
+**Document Structure:**
+```json
+{
+  "poi_id": "poi_123",
+  "name": "Hidden Temple",
+  "type": "dungeon",
+  "location": {
+    "world": "middle-earth",
+    "region": "mirkwood",
+    "coordinates": {"x": 250, "y": 300}
+  },
+  "discovered_at": "2026-01-10T15:30:00Z",
+  "visited": true,
+  "visited_at": "2026-01-10T16:00:00Z",
+  "notes": "Found a magical artifact here.",
+  "metadata": {
+    "difficulty": "hard",
+    "rewards": ["experience", "loot"],
+    "quest_related": true,
+    "quest_id": "quest_001"
+  }
+}
+```
+
+**Key Fields:**
+- `poi_id`: Unique identifier for the POI (UUIDv4)
+- `name`: Display name of the POI
+- `type`: Category (dungeon, town, landmark, etc.)
+- `location`: Where the POI is located
+- `discovered_at`: When the player discovered it (Firestore Timestamp)
+- `visited`: Whether the player has visited
+- `visited_at`: When the player visited (Firestore Timestamp)
+- `notes`: Player-specific notes
+- `metadata`: Additional POI metadata
+
+**Note:** POIs can be either world-global (referenced from `world_pois_reference`) or character-specific (stored in this subcollection). Character-specific POIs allow for personalized discoveries and notes.
+
+---
+
+## Embedded vs Subcollection Rationale
+
+### Why Core State is Embedded in the Character Document
+
+**Embedded Fields:** `player_state`, `active_quest`, `combat_state`, `additional_metadata`, `schema_version`, timestamps, `owner_user_id`
+
+**Rationale:**
+1. **Atomic Updates:** All core state can be updated in a single transaction
+2. **Read Efficiency:** One document read gets all essential character data
+3. **Document Size:** Core state is bounded and unlikely to exceed Firestore's 1 MB limit
+4. **Consistency:** Strong consistency for related fields (e.g., updating level and health together)
+5. **Simplicity:** Simpler code for common operations (get character state, update character)
+
+### Why Narrative History and POIs Use Subcollections
+
+**Subcollections:** `narrative_turns`, `pois`
+
+**Rationale:**
+1. **Unbounded Growth:** Narrative history and POIs can grow indefinitely over time
+2. **Document Size Limits:** Keeping these separate prevents the character document from exceeding Firestore's 1 MB limit
+3. **Query Flexibility:** Subcollections can be queried independently (e.g., "last 10 turns", "all dungeons")
+4. **Pagination:** Large datasets can be paginated efficiently
+5. **Partial Loading:** Load only what's needed (e.g., load character without entire narrative history)
+6. **Write Isolation:** Adding a narrative turn doesn't trigger a read-modify-write of the entire character document
+
+### Firestore Document Size Considerations
+
+- **Maximum Document Size:** 1 MB (Firestore hard limit)
+- **Practical Limit:** Keep documents under 100 KB for optimal performance
+- **Character Document Size:** Core state typically 5-50 KB
+- **Subcollection Documents:** Individual turns/POIs typically 1-10 KB each
+
+**Why This Matters:**
+- Large documents increase latency and bandwidth usage
+- Approaching the 1 MB limit risks write failures
+- Subcollections allow unlimited total data per character
+- Querying subcollections is more efficient than scanning large arrays
+
+---
+
+## Timestamp Conventions
+
+The system uses **Firestore Timestamp** objects for all timestamps stored in Firestore documents.
+
+### Firestore Timestamp
+
+- **Type:** Use `firestore.SERVER_TIMESTAMP` for writes, stored as Firestore `Timestamp` object
+- **Precision:** Microsecond precision (UTC)
+- **Usage:** All `*_at` fields in character documents and subcollections
+- **Serialization:** Automatically converted to ISO 8601 strings in API responses
+
+**Note:** `SERVER_TIMESTAMP` is a sentinel value that tells Firestore to use the server's current time when writing. The actual stored value is a `Timestamp` object.
+
+### When to Use Firestore Timestamp vs ISO String
+
+| Context | Use |
+|---------|-----|
+| **Stored in Firestore** | Firestore `Timestamp` object |
+| **API Request/Response** | ISO 8601 string (e.g., `"2026-01-11T12:34:56.789012Z"`) |
+| **Server-side logic** | Python `datetime` (convert from Firestore `Timestamp`) |
+| **Client-side logic** | Native Date object or ISO string |
+
+### Example: Setting Timestamps
+
+**Python (Server-Side):**
+```python
+from google.cloud import firestore
+
+# Use server timestamp for auto-generated timestamps
+character_doc = {
+    "character_id": character_id,
+    "created_at": firestore.SERVER_TIMESTAMP,
+    "updated_at": firestore.SERVER_TIMESTAMP,
+    # ... other fields
+}
+```
+
+**API Response (JSON):**
+```json
+{
+  "character_id": "550e8400-e29b-41d4-a716-446655440000",
+  "created_at": "2026-01-11T12:34:56.789012Z",
+  "updated_at": "2026-01-11T12:34:56.789012Z"
+}
+```
+
+### Best Practices
+
+1. **Always use `SERVER_TIMESTAMP`** for `created_at` and `updated_at` to ensure consistency
+2. **Convert to ISO 8601** when returning timestamps in API responses
+3. **Accept ISO 8601** in API requests, but convert to Firestore `Timestamp` before storing
+4. **Use UTC** for all timestamps (no local timezones in storage)
+
+---
+
+## Edge Cases and Migration
+
+### 1. Missing Subcollections for Fresh Characters
+
+**Scenario:** A newly created character has no narrative turns or POIs yet.
+
+**Handling:**
+- **Subcollections do not need to be pre-created** in Firestore
+- Subcollections are created automatically when the first document is added
+- Client code should handle empty subcollection queries gracefully
+
+**Lazy Initialization:**
+```python
+# Query returns empty result set if subcollection doesn't exist yet
+narrative_turns = character_ref.collection("narrative_turns").limit(10).stream()
+turns_list = list(narrative_turns)  # Empty list if no turns yet
+
+if not turns_list:
+    # Handle fresh character case
+    print("This character has no narrative history yet.")
+```
+
+**Best Practice:**
+- Check for empty results when querying subcollections
+- Show appropriate UI for "no data" states (e.g., "No narrative history yet")
+
+### 2. Legacy Documents Lacking `schema_version` or Metadata Fields
+
+**Scenario:** Characters created before schema versioning was implemented.
+
+**Detection:**
+```python
+character_doc = character_ref.get().to_dict()
+
+if "schema_version" not in character_doc:
+    # Legacy document detected
+    current_version = "unknown"
+else:
+    current_version = character_doc["schema_version"]
+```
+
+**Migration Strategy:**
+
+**Option 1: On-Demand Migration (Recommended)**
+- Detect missing fields when reading a character
+- Apply default values or migrate to current schema
+- Write back the updated document with `schema_version` set
+- Use transactions to prevent race conditions
+
+```python
+from google.cloud import firestore
+
+@firestore.transactional
+def migrate_character_if_needed(transaction, character_ref):
+    """
+    Migrate a character document to the current schema version.
+    
+    Uses a transaction to prevent race conditions when multiple
+    requests attempt to migrate the same document simultaneously.
+    
+    Args:
+        transaction: Firestore transaction object
+        character_ref: Reference to the character document
+        
+    Returns:
+        dict: The migrated character document data
+    """
+    character_snapshot = character_ref.get(transaction=transaction)
+    
+    if not character_snapshot.exists:
+        raise ValueError(f"Character document does not exist: {character_ref.id}")
+    
+    character_doc = character_snapshot.to_dict()
+    
+    needs_migration = False
+    updates = {}
+    
+    # Check for missing schema_version
+    if "schema_version" not in character_doc:
+        updates["schema_version"] = "1.0.0"
+        needs_migration = True
+    
+    # Check for missing additional_metadata
+    if "additional_metadata" not in character_doc:
+        updates["additional_metadata"] = {
+            "character_name": character_doc.get("name", "Unknown"),
+            "tags": [],
+            "preferences": {}
+        }
+        needs_migration = True
+    
+    # Check for missing timestamps
+    if "created_at" not in character_doc:
+        updates["created_at"] = firestore.SERVER_TIMESTAMP
+        needs_migration = True
+    
+    if "updated_at" not in character_doc:
+        updates["updated_at"] = firestore.SERVER_TIMESTAMP
+        needs_migration = True
+    
+    # Apply migration within the transaction
+    if needs_migration:
+        transaction.update(character_ref, updates)
+        print(f"Migrated character {character_doc['character_id']} to schema 1.0.0")
+        # Return the migrated document data
+        migrated_doc = character_doc.copy()
+        migrated_doc.update(updates)
+        return migrated_doc
+    
+    return character_doc
+
+# Usage example
+db = firestore.Client()
+character_ref = db.collection("characters").document(character_id)
+transaction = db.transaction()
+migrated_character = migrate_character_if_needed(transaction, character_ref)
+```
+
+**Option 2: Batch Migration**
+- Run a one-time migration script to update all legacy documents
+- Useful for large-scale schema changes
+
+```python
+def batch_migrate_characters():
+    db = firestore.Client()
+    characters_ref = db.collection("characters")
+    
+    batch = db.batch()
+    count = 0
+    
+    for character_doc in characters_ref.stream():
+        character_data = character_doc.to_dict()
+        
+        if "schema_version" not in character_data:
+            # Apply migration
+            batch.update(character_doc.reference, {
+                "schema_version": "1.0.0",
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            count += 1
+            
+            # Firestore batch limit is 500 operations
+            if count >= 500:
+                batch.commit()
+                batch = db.batch()
+                count = 0
+    
+    # Commit remaining updates
+    if count > 0:
+        batch.commit()
+```
+
+### 3. Handling Missing Required Fields
+
+**Scenario:** A character document is missing required fields due to a bug or incomplete creation.
+
+**Validation:**
+```python
+REQUIRED_FIELDS = [
+    "character_id",
+    "owner_user_id",
+    "player_state",
+    "active_quest",  # Can be null, but must exist
+    "world_pois_reference",
+    "combat_state",  # Can be null, but must exist
+    "additional_metadata",
+    "schema_version",
+    "created_at",
+    "updated_at"
+]
+
+def validate_character_document(character_doc):
+    missing_fields = [field for field in REQUIRED_FIELDS if field not in character_doc]
+    
+    if missing_fields:
+        raise ValueError(f"Character document missing required fields: {missing_fields}")
+    
+    return True
+```
+
+**Recovery:**
+- If a required field is missing, either:
+  1. Reject the document and require re-creation (strict)
+  2. Apply sensible defaults and migrate (lenient)
+
+### 4. Schema Version Mismatch
+
+**Scenario:** A character has `schema_version: "2.0.0"` but the current code expects `"1.0.0"`.
+
+**Handling:**
+```python
+CURRENT_SCHEMA_VERSION = "1.0.0"
+
+def check_schema_compatibility(character_doc):
+    doc_version = character_doc.get("schema_version", "unknown")
+    
+    if doc_version == "unknown":
+        # Legacy document, needs migration
+        return "needs_migration"
+    
+    if doc_version == CURRENT_SCHEMA_VERSION:
+        return "compatible"
+    
+    # Parse versions
+    doc_major = int(doc_version.split(".")[0])
+    current_major = int(CURRENT_SCHEMA_VERSION.split(".")[0])
+    
+    if doc_major > current_major:
+        # Future schema version, cannot read
+        return "incompatible"
+    
+    if doc_major < current_major:
+        # Old schema version, needs migration
+        return "needs_migration"
+    
+    # Same major version, compatible with differences
+    return "compatible"
+```
+
+**Best Practice:**
+- Use semantic versioning for `schema_version`
+- Major version changes = breaking changes (require migration)
+- Minor version changes = backward-compatible additions
+- Patch version changes = fixes (no schema change)
+
+---
+
+## Firestore Sizing and Consistency Considerations
+
+### Document Size Management
+
+**Character Document Size Estimates:**
+- **Minimal character:** ~2 KB (basic fields only)
+- **Typical character:** ~10-20 KB (with player state, quest, combat)
+- **Complex character:** ~50-100 KB (with large inventory, detailed stats)
+- **Maximum safe size:** 100 KB (leave headroom for Firestore's 1 MB limit)
+
+**Monitoring Document Size:**
+
+⚠️ **IMPORTANT:** The following method provides only a rough approximation of Firestore document size. Due to Firestore's internal binary encoding, actual storage size can differ significantly from JSON estimates, especially for documents with many Timestamp objects, References, or GeoPoints.
+
+```python
+import json
+
+character_doc = character_ref.get().to_dict()
+
+# Helper function to serialize Firestore types
+def firestore_serializer(obj):
+    """Serialize Firestore-specific types for size estimation."""
+    if hasattr(obj, 'isoformat'):  # datetime/Timestamp
+        return obj.isoformat()
+    return str(obj)
+
+# Estimate Firestore document size (in bytes)
+doc_size_bytes = len(json.dumps(character_doc, default=firestore_serializer).encode('utf-8'))
+doc_size_kb = doc_size_bytes / 1024
+
+if doc_size_kb > 100:
+    print(f"Warning: Character document is {doc_size_kb:.2f} KB (consider moving data to subcollections)")
+```
+
+**Important Limitations of Size Estimation:**
+- **Binary Encoding:** Firestore uses Protocol Buffers internally, which is more space-efficient than JSON for most data
+- **Type Overhead:** Firestore-specific types (Timestamps, References, GeoPoints) have different sizes than their JSON string representations
+- **Metadata:** Firestore adds metadata that isn't reflected in the document data
+- **Inaccuracy Range:** Estimates can be off by 20-50% or more depending on document composition
+
+**For Critical Sizing Decisions:**
+1. Test with actual Firestore documents in your project
+2. Monitor document sizes via the Firestore console
+3. Check quota usage in Google Cloud Console
+4. Use Firestore's built-in size limits (1 MB) as a hard constraint, but aim for 100 KB practical limit
+5. Consider moving data to subcollections well before approaching the 1 MB limit
+
+**When to Move Data to Subcollections:**
+- Arrays with unbounded growth (use subcollections instead)
+- Historical data that doesn't need to be loaded every time
+- Data that can be queried independently
+
+### Consistency Guarantees
+
+**Strong Consistency (Character Document):**
+- All fields in the character document are strongly consistent
+- Reads immediately reflect the latest writes
+- Transactions ensure atomic updates across multiple fields
+
+**Eventual Consistency (Subcollections):**
+- Subcollection queries may not immediately reflect recent writes
+- Usually consistent within milliseconds, but not guaranteed
+- For real-time applications, consider reading specific documents by ID
+
+**Transaction Example:**
+```python
+@firestore.transactional
+def update_character_level(transaction, character_ref, new_level):
+    # Read current state
+    character_doc = character_ref.get(transaction=transaction).to_dict()
+    
+    # Calculate new stats
+    new_stats = calculate_stats_for_level(new_level)
+    
+    # Atomic update
+    transaction.update(character_ref, {
+        "player_state.level": new_level,
+        "player_state.stats": new_stats,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    })
+```
+
+### Query Performance Considerations
+
+**Efficient Queries:**
+```python
+# Good: Load character without subcollections
+character_doc = db.collection("characters").document(character_id).get()
+
+# Good: Load last 10 narrative turns
+recent_turns = (db.collection("characters")
+                .document(character_id)
+                .collection("narrative_turns")
+                .order_by("turn_number", direction=firestore.Query.DESCENDING)
+                .limit(10)
+                .stream())
+
+# Avoid: Loading all turns for every character read (inefficient)
+```
+
+**Indexing:**
+- Firestore automatically indexes all fields
+- Composite indexes needed for complex queries (e.g., `where` + `order_by`)
+- Define indexes in `firestore.indexes.json` for production
+
+### Write Frequency Limits
+
+**Firestore Limits:**
+- **Document writes:** 1 write per second per document (recommended maximum)
+- **Sustained writes:** Can exceed 1/sec, but may be throttled
+
+**Implications:**
+- High-frequency updates (e.g., real-time position updates) should be batched
+- Use subcollections for frequent writes (e.g., narrative turns)
+- Consider caching or local state for rapid updates
+
+**Batched Writes Example:**
+```python
+# Batch multiple updates together
+batch = db.batch()
+
+# Update character
+character_ref = db.collection("characters").document(character_id)
+batch.update(character_ref, {"player_state.health.current": 95})
+
+# Add narrative turn
+turn_ref = character_ref.collection("narrative_turns").document()
+batch.set(turn_ref, {
+    "turn_id": str(uuid.uuid4()),
+    "timestamp": firestore.SERVER_TIMESTAMP,
+    "player_action": "Drinks healing potion",
+    "gm_response": "You feel refreshed."
+})
+
+# Commit all at once
+batch.commit()
+```
+
+### Cost Considerations
+
+**Read Costs:**
+- Each document read = 1 read operation
+- Subcollection queries count each document returned
+- Use `.limit()` to control read costs
+
+**Write Costs:**
+- Each document write/update = 1 write operation
+- Batch writes count each document
+
+**Optimization Tips:**
+- Cache frequently read data (e.g., character state) on the client
+- Use subcollections to avoid reading unnecessary data
+- Batch writes when possible to reduce round-trips
+
+---
+
+## Future Considerations
+
+### Planned Schema Enhancements
+
+**Version 1.1.0:**
+- Add `skills` map to `player_state` for skill progression
+- Add `achievements` array to `additional_metadata`
+- Add `party_id` field for multiplayer support
+
+**Version 2.0.0 (Breaking Changes):**
+- Separate `player_state` into multiple subcollections for scalability
+- Introduce shared world POIs collection (separate from character POIs)
+- Add support for multiple active quests
+
+### Migration Path
+
+When introducing schema changes:
+1. Increment `schema_version` appropriately
+2. Write migration logic (see "Edge Cases and Migration" section)
+3. Test migration with a subset of characters
+4. Roll out migration gradually (on-demand or batch)
+5. Monitor for errors and rollback if needed
+
+---
+
+## Summary
+
+This schema provides a robust foundation for character data storage in Journey Log:
+
+- **Identifier Strategy:** UUIDv4 strings for character_id, generated client or server-side
+- **Core State:** Embedded in character document for atomic updates and read efficiency
+- **Unbounded Data:** Subcollections for narrative history and POIs to avoid document size limits
+- **Schema Versioning:** `schema_version` field for backward compatibility and migrations
+- **Timestamps:** Firestore Timestamps for storage, ISO 8601 for APIs
+- **Edge Cases:** Lazy subcollection initialization, on-demand migration for legacy documents
+- **Firestore Best Practices:** Document size management, consistency guarantees, query optimization
+
+For API endpoint implementation, refer to the character-related routers in `app/routers/` and follow the patterns established in this schema.
+
+---
+
+## References
+
+- [Firestore Data Model](https://cloud.google.com/firestore/docs/data-model)
+- [Firestore Best Practices](https://cloud.google.com/firestore/docs/best-practices)
+- [Firestore Quotas and Limits](https://cloud.google.com/firestore/quotas)
+- [UUID RFC 4122](https://tools.ietf.org/html/rfc4122)
+- [Semantic Versioning](https://semver.org/)
