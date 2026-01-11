@@ -98,6 +98,18 @@ class Settings(BaseSettings):
         return v
 
 
+# ==============================================================================
+# Character Defaults and Constants
+# ==============================================================================
+
+# Default character status when creating new characters
+DEFAULT_CHARACTER_STATUS = "Healthy"
+
+# Default starting location for new characters
+DEFAULT_LOCATION_ID = "origin:nexus"
+DEFAULT_LOCATION_DISPLAY_NAME = "The Nexus"
+
+
 @lru_cache
 def get_settings() -> Settings:
     """

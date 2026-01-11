@@ -149,6 +149,7 @@ class TestCharacterDocumentSerialization:
         return CharacterDocument(
             character_id="test-char-id",
             owner_user_id="user_123",
+            adventure_prompt="Test adventure prompt",
             player_state=player_state,
             world_pois_reference="world-v1",
             narrative_turns_reference="narrative_turns",
@@ -236,6 +237,7 @@ class TestCharacterDocumentSerialization:
         data = {
             'character_id': 'test-char-id',
             'owner_user_id': 'user_123',
+            'adventure_prompt': 'Test adventure',
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
@@ -254,6 +256,7 @@ class TestCharacterDocumentSerialization:
         
         assert char.character_id == 'test-char-id'
         assert char.owner_user_id == 'user_123'
+        assert char.adventure_prompt == 'Test adventure'
         assert char.schema_version == '1.0.0'
         assert char.player_state.identity.name == 'Test'
         assert isinstance(char.created_at, datetime)
@@ -264,6 +267,7 @@ class TestCharacterDocumentSerialization:
         data = {
             'character_id': 'old-id',
             'owner_user_id': 'user_123',
+            'adventure_prompt': 'Override test adventure',
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
@@ -312,6 +316,7 @@ class TestCharacterDocumentSerialization:
         data = {
             'character_id': 'test-char-id',
             'owner_user_id': 'user_123',
+            'adventure_prompt': 'Timestamp test adventure',
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
@@ -570,6 +575,7 @@ class TestEdgeCases:
         data = {
             'character_id': 'test-id',
             'owner_user_id': 'user_123',
+            'adventure_prompt': 'Missing optional fields test',
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
@@ -582,13 +588,14 @@ class TestEdgeCases:
             'schema_version': '1.0.0',
             'created_at': '2026-01-11T12:00:00Z',
             'updated_at': '2026-01-11T12:00:00Z'
-            # Note: active_quest and combat_state are missing
+            # Note: active_quest, combat_state, world_state are missing
         }
         
         char = character_from_firestore(data)
         
         assert char.active_quest is None
         assert char.combat_state is None
+        assert char.world_state is None
     
     def test_narrative_turn_without_turn_number(self):
         """Test narrative turn without optional turn_number."""

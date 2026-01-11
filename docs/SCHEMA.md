@@ -145,15 +145,23 @@ Each character document contains the following top-level fields:
 | Field Name | Type | Description |
 |------------|------|-------------|
 | `character_id` | `string` | The UUIDv4 identifier (same as document ID, stored for convenience) |
-| `owner_user_id` | `string` | The user ID of the character owner (for access control) |
-| `player_state` | `map` | Current player state (HP, level, inventory, etc.) |
-| `active_quest` | `map` or `null` | Current quest information, or null if no active quest |
+| `owner_user_id` | `string` | The user ID of the character owner (from X-User-Id header, for access control) |
+| `adventure_prompt` | `string` | Initial adventure prompt or backstory (1+ chars, whitespace normalized) |
+| `player_state` | `map` | Current player state (HP, level, inventory, location, etc.) |
 | `world_pois_reference` | `string` | Reference to the world's POI collection or configuration |
-| `combat_state` | `map` or `null` | Current combat state, or null if not in combat |
-| `additional_metadata` | `map` | Extensible metadata (character name, creation date, etc.) |
+| `narrative_turns_reference` | `string` | Reference to narrative turns subcollection |
 | `schema_version` | `string` | Schema version for this document (e.g., "1.0.0") |
 | `created_at` | `Timestamp` | Firestore Timestamp of character creation |
 | `updated_at` | `Timestamp` | Firestore Timestamp of last update |
+
+### Optional Fields
+
+| Field Name | Type | Description |
+|------------|------|-------------|
+| `world_state` | `map` or `null` | Optional world state metadata or game-specific data |
+| `active_quest` | `map` or `null` | Current quest information, or null if no active quest |
+| `combat_state` | `map` or `null` | Current combat state, or null if not in combat |
+| `additional_metadata` | `map` | Extensible metadata (character name, tags, etc.) - defaults to empty dict |
 
 ### Field Details
 
@@ -207,13 +215,114 @@ def validate_owner_user_id(owner_user_id: str, authenticated_user_id: str) -> bo
     return True
 ```
 
+#### `adventure_prompt`
+- **Type:** String
+- **Required:** Yes
+- **Immutable:** No (but typically set once at character creation)
+- **Description:** Initial adventure prompt or character backstory that guides the narrative
+- **Validation:** 
+  - Must be at least 1 character long after whitespace normalization
+  - Cannot be empty or only whitespace
+  - Whitespace is automatically normalized (multiple spaces collapsed to single spaces, leading/trailing trimmed)
+- **Default:** None (must be provided)
+- **Usage:** 
+  - Set during character creation to establish the character's background and motivation
+  - Used by AI/LLM to generate contextually appropriate narrative responses
+  - Can be updated during gameplay if the character's direction changes significantly
+- **Examples:**
+  - `"A brave warrior seeking to avenge their fallen comrades"`
+  - `"An exiled mage searching for forbidden knowledge to restore their homeland"`
+  - `"A cunning rogue fleeing from a dark past and seeking redemption"`
+
+**Example Validation:**
+```python
+from pydantic import BaseModel, Field, model_validator
+
+class CharacterDocument(BaseModel):
+    adventure_prompt: str = Field(min_length=1, description="Adventure prompt")
+    
+    @model_validator(mode='after')
+    def normalize_adventure_prompt(self) -> 'CharacterDocument':
+        """Normalize whitespace in adventure_prompt."""
+        self.adventure_prompt = ' '.join(self.adventure_prompt.split())
+        if not self.adventure_prompt:
+            raise ValueError("adventure_prompt cannot be empty or only whitespace")
+        return self
+```
+
 #### `player_state`
 - **Type:** Map (nested object)
 - **Required:** Yes
-- **Description:** Current state of the player character
-- **Example Structure:**
+- **Description:** Current state of the player character including identity, stats, equipment, and location
+- **Nested Fields:**
+  - `identity` (map): Character name, race, and class with validation
+    - `name` (string, 1-64 chars): Character name with normalized whitespace
+    - `race` (string, 1-64 chars): Character race with normalized whitespace
+    - `class` (string, 1-64 chars): Character class with normalized whitespace
+  - `status` (string): Character health status (enum: "Healthy", "Wounded", "Dead")
+  - `level` (integer): Character level (≥1)
+  - `experience` (integer): Experience points (≥0)
+  - `health` (map): Current and max health points
+    - `current` (integer, ≥0): Current health
+    - `max` (integer, ≥0): Maximum health
+  - `stats` (map): Character stats (strength, dexterity, etc.)
+  - `equipment` (array): List of weapon objects
+  - `inventory` (array): List of inventory item objects
+  - `location` (map, string, or Location object): Current location (see Location Structure below)
+  - `additional_fields` (map): Extensible fields for game-specific data
+
+**Location Structure:**
+
+The `location` field supports three formats for backward compatibility:
+
+1. **Location Object (Recommended):**
+   ```json
+   {
+     "id": "origin:nexus",
+     "display_name": "The Nexus"
+   }
+   ```
+   - `id` (string): Location identifier for internal logic (e.g., "origin:nexus", "town:rivendell", "dungeon:dragon-lair")
+   - `display_name` (string): Human-readable location name shown to players
+
+2. **String (Legacy):**
+   ```json
+   "location": "Rivendell"
+   ```
+
+3. **Dict (Legacy):**
+   ```json
+   {
+     "world": "middle-earth",
+     "region": "gondor",
+     "coordinates": {"x": 100, "y": 200}
+   }
+   ```
+
+**Default Location:**
+- When creating a new character, use the default starting location defined in `app/config.py`:
+  - `DEFAULT_LOCATION_ID = "origin:nexus"`
+  - `DEFAULT_LOCATION_DISPLAY_NAME = "The Nexus"`
+
+**Identity Validation:**
+All identity fields (name, race, class) are validated to:
+- Be between 1 and 64 characters in length (inclusive)
+- Have normalized whitespace (multiple spaces collapsed, leading/trailing trimmed)
+- Be non-empty after normalization
+
+**Default Character Status:**
+- The default character status is defined in `app/config.py`:
+  - `DEFAULT_CHARACTER_STATUS = "Healthy"`
+
+**Example Structure:**
   ```json
   {
+    "identity": {
+      "name": "Aragorn",
+      "race": "Human",
+      "class": "Ranger"
+    },
+    "status": "Healthy",
     "level": 10,
     "experience": 5000,
     "health": {
@@ -228,20 +337,57 @@ def validate_owner_user_id(owner_user_id: str, authenticated_user_id: str) -> bo
       "wisdom": 13,
       "charisma": 15
     },
-    "inventory": {
-      "weapon": "Anduril",
-      "armor": "Elven Mail",
-      "items": ["Healing Potion", "Rope", "Torch"]
-    },
+    "equipment": [
+      {
+        "name": "Anduril",
+        "damage": "2d6",
+        "special_effects": "Glows blue near enemies"
+      }
+    ],
+    "inventory": [
+      {
+        "name": "Healing Potion",
+        "quantity": 3,
+        "effect": "Restores 50 HP"
+      }
+    ],
     "location": {
-      "world": "middle-earth",
-      "region": "gondor",
-      "coordinates": {"x": 100, "y": 200}
-    }
+      "id": "town:rivendell",
+      "display_name": "Rivendell"
+    },
+    "additional_fields": {}
   }
   ```
 
-**Note:** Character name should be stored in `additional_metadata.character_name`, not in `player_state`, to maintain clear separation between game state and character metadata.
+**Character Name Storage:**
+- The character's name is stored in `player_state.identity.name` as the authoritative source
+- The `additional_metadata.character_name` field may also contain the name for convenience and backward compatibility, but `identity.name` should be considered the primary field
+
+#### `world_state`
+- **Type:** Map or null
+- **Required:** No (optional)
+- **Description:** Optional world state metadata or game-specific global data
+- **Default:** null (not present unless explicitly set)
+- **Usage:**
+  - Store global world state that affects gameplay (time of day, weather, faction relations)
+  - Track world-level events or conditions (dragon awakened, kingdom at war)
+  - Maintain persistent world data across game sessions
+  - Flexible structure allows for game-specific extensions
+- **Example Structure:**
+  ```json
+  {
+    "time_of_day": "morning",
+    "weather": "sunny",
+    "factions": {
+      "kingdom": "friendly",
+      "orcs": "hostile",
+      "elves": "neutral"
+    },
+    "global_events": ["dragon_awakened", "festival_in_progress"],
+    "season": "spring",
+    "game_day": 42
+  }
+  ```
 
 #### `active_quest`
 - **Type:** Map or null

@@ -77,6 +77,31 @@ class Health(BaseModel):
         return self
 
 
+class Location(BaseModel):
+    """
+    Location information with ID and display name.
+    
+    Represents a character's current location in the game world.
+    The ID is used for internal references and logic, while display_name
+    is shown to the player.
+    
+    Referenced in: docs/SCHEMA.md - Character Document Fields
+    """
+    model_config = ConfigDict(extra="forbid")
+    
+    id: str = Field(min_length=1, description="Location identifier (e.g., 'origin:nexus', 'town:rivendell')")
+    display_name: str = Field(min_length=1, description="Human-readable location name")
+    
+    @model_validator(mode='after')
+    def validate_non_empty(self) -> 'Location':
+        """Ensure id and display_name are not just whitespace."""
+        if not self.id.strip():
+            raise ValueError("id cannot be empty or only whitespace")
+        if not self.display_name.strip():
+            raise ValueError("display_name cannot be empty or only whitespace")
+        return self
+
+
 class CharacterIdentity(BaseModel):
     """
     Character identity information (name, race, class).
@@ -85,13 +110,32 @@ class CharacterIdentity(BaseModel):
     """
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     
-    name: str = Field(description="Character name")
-    race: str = Field(description="Character race (e.g., Human, Elf, Dwarf)")
+    name: str = Field(min_length=1, max_length=64, description="Character name (1-64 characters)")
+    race: str = Field(min_length=1, max_length=64, description="Character race (1-64 characters, e.g., Human, Elf, Dwarf)")
     character_class: str = Field(
+        min_length=1,
+        max_length=64,
         alias="class",
         serialization_alias="class",
-        description="Character class (e.g., Warrior, Mage, Ranger)"
+        description="Character class (1-64 characters, e.g., Warrior, Mage, Ranger)"
     )
+    
+    @model_validator(mode='after')
+    def normalize_whitespace(self) -> 'CharacterIdentity':
+        """Normalize whitespace in identity fields and ensure non-empty after normalization."""
+        self.name = ' '.join(self.name.split())
+        self.race = ' '.join(self.race.split())
+        self.character_class = ' '.join(self.character_class.split())
+        
+        # Validate non-empty after normalization
+        if not self.name:
+            raise ValueError("name cannot be empty or only whitespace")
+        if not self.race:
+            raise ValueError("race cannot be empty or only whitespace")
+        if not self.character_class:
+            raise ValueError("character_class cannot be empty or only whitespace")
+        
+        return self
 
 
 class Weapon(BaseModel):
@@ -173,14 +217,36 @@ class PlayerState(BaseModel):
         default_factory=list,
         description="Inventory items"
     )
-    location: Union[str, dict[str, Any]] = Field(
-        description="Current location as string or structured object",
-        examples=["Rivendell", {"world": "middle-earth", "region": "gondor", "coordinates": {"x": 100, "y": 200}}]
+    location: Union[Location, str, dict[str, Any]] = Field(
+        description="Current location as Location object, string, or structured object (for backward compatibility)",
+        examples=[
+            {"id": "origin:nexus", "display_name": "The Nexus"},
+            "Rivendell",
+            {"world": "middle-earth", "region": "gondor", "coordinates": {"x": 100, "y": 200}}
+        ]
     )
     additional_fields: dict[str, Any] = Field(
         default_factory=dict,
         description="Extensible fields for game-specific data"
     )
+    
+    @model_validator(mode='after')
+    def validate_location(self) -> 'PlayerState':
+        """Validate location field ensures meaningful data regardless of format."""
+        if isinstance(self.location, str):
+            # String locations must be non-empty
+            if not self.location or not self.location.strip():
+                raise ValueError("location string cannot be empty or only whitespace")
+        elif isinstance(self.location, dict):
+            # Dict locations should have at least one meaningful key
+            if not self.location:
+                raise ValueError("location dict cannot be empty")
+            # If it looks like a Location dict, validate required fields
+            if "id" in self.location or "display_name" in self.location:
+                if not self.location.get("id") or not self.location.get("display_name"):
+                    raise ValueError("location dict with id/display_name must have both non-empty fields")
+        # Location objects are already validated by the Location model
+        return self
 
 
 class NarrativeTurn(BaseModel):
@@ -413,7 +479,11 @@ class CharacterDocument(BaseModel):
         description="UUIDv4 character identifier (matches Firestore document ID)"
     )
     owner_user_id: str = Field(
-        description="User ID of the character owner (for access control)"
+        description="User ID of the character owner (for access control, from X-User-Id header)"
+    )
+    adventure_prompt: str = Field(
+        min_length=1,
+        description="Initial adventure prompt or backstory (non-empty, whitespace normalized)"
     )
     player_state: PlayerState = Field(
         description="Current player character state"
@@ -435,6 +505,10 @@ class CharacterDocument(BaseModel):
     )
     
     # Optional fields
+    world_state: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Optional world state metadata or game-specific data"
+    )
     active_quest: Optional[Quest] = Field(
         default=None,
         description="Current active quest (None if no active quest)"
@@ -449,6 +523,14 @@ class CharacterDocument(BaseModel):
         default_factory=dict,
         description="Extensible metadata including character name, timestamps, owner info, etc."
     )
+    
+    @model_validator(mode='after')
+    def normalize_adventure_prompt(self) -> 'CharacterDocument':
+        """Normalize whitespace in adventure_prompt."""
+        self.adventure_prompt = ' '.join(self.adventure_prompt.split())
+        if not self.adventure_prompt:
+            raise ValueError("adventure_prompt cannot be empty or only whitespace")
+        return self
 
 
 # ==============================================================================
@@ -707,6 +789,7 @@ def character_to_firestore(
         >>> char = CharacterDocument(
         ...     character_id="test-id",
         ...     owner_user_id="user_123",
+        ...     adventure_prompt="Test adventure",
         ...     player_state=player_state,
         ...     world_pois_reference="world",
         ...     narrative_turns_reference="narrative_turns",
@@ -762,6 +845,7 @@ def character_from_firestore(
         >>> data = {
         ...     'character_id': 'test-id',
         ...     'owner_user_id': 'user_123',
+        ...     'adventure_prompt': 'Test adventure',
         ...     'player_state': {
         ...         'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
         ...         'status': 'Healthy',
