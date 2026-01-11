@@ -456,12 +456,15 @@ class CharacterDocument(BaseModel):
 # ==============================================================================
 
 
-def datetime_to_firestore(dt: Union[datetime, str, None]) -> Union[firestore.SERVER_TIMESTAMP, datetime, None]:
+def datetime_to_firestore(dt: Union[datetime, str, None]) -> Optional[datetime]:
     """
     Convert a datetime object or ISO string to a Firestore-compatible value.
     
     This helper handles timezone-aware datetimes and ensures consistent UTC
     conversion for storage in Firestore.
+    
+    Note: For server-generated timestamps (created_at, updated_at), use
+    firestore.SERVER_TIMESTAMP directly in your calling code instead of this function.
     
     Args:
         dt: A datetime object, ISO 8601 string, or None
@@ -469,10 +472,9 @@ def datetime_to_firestore(dt: Union[datetime, str, None]) -> Union[firestore.SER
     Returns:
         - None if input is None
         - datetime object (timezone-aware, UTC) if input is datetime or string
-        - For new documents, use firestore.SERVER_TIMESTAMP directly in the calling code
         
     Raises:
-        ValueError: If ISO string cannot be parsed
+        ValueError: If ISO string cannot be parsed or input type is invalid
         
     Examples:
         >>> from datetime import datetime, timezone
@@ -494,9 +496,14 @@ def datetime_to_firestore(dt: Union[datetime, str, None]) -> Union[firestore.SER
         # Handle both with and without 'Z' suffix
         if dt.endswith('Z'):
             dt = dt[:-1] + '+00:00'
-        parsed_dt = datetime.fromisoformat(dt)
+        try:
+            parsed_dt = datetime.fromisoformat(dt)
+        except ValueError as e:
+            raise ValueError(f"Cannot parse ISO 8601 string '{dt}': {e}")
+        
         # Ensure timezone-aware
         if parsed_dt.tzinfo is None:
+            # Naive datetimes are assumed to be UTC (explicit assumption for security)
             parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
         else:
             # Convert to UTC
@@ -506,13 +513,13 @@ def datetime_to_firestore(dt: Union[datetime, str, None]) -> Union[firestore.SER
     if isinstance(dt, datetime):
         # Ensure timezone-aware and convert to UTC
         if dt.tzinfo is None:
-            # Assume UTC if no timezone
+            # Naive datetimes are assumed to be UTC (explicit assumption for security)
             return dt.replace(tzinfo=timezone.utc)
         else:
             # Convert to UTC
             return dt.astimezone(timezone.utc)
     
-    raise ValueError(f"Cannot convert {type(dt)} to Firestore timestamp")
+    raise ValueError(f"Cannot convert {type(dt).__name__} to Firestore timestamp. Expected datetime, ISO 8601 string, or None.")
 
 
 def datetime_from_firestore(value: Any) -> Optional[datetime]:
@@ -528,6 +535,9 @@ def datetime_from_firestore(value: Any) -> Optional[datetime]:
     Returns:
         datetime object (timezone-aware, UTC) or None
         
+    Raises:
+        ValueError: If value cannot be converted to datetime
+        
     Examples:
         >>> from google.cloud.firestore import SERVER_TIMESTAMP
         >>> datetime_from_firestore(None)
@@ -542,6 +552,7 @@ def datetime_from_firestore(value: Any) -> Optional[datetime]:
     # If it's already a datetime, ensure it's timezone-aware
     if isinstance(value, datetime):
         if value.tzinfo is None:
+            # Naive datetimes are assumed to be UTC (explicit assumption for security)
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
     
@@ -550,15 +561,11 @@ def datetime_from_firestore(value: Any) -> Optional[datetime]:
         return datetime_to_firestore(value)
     
     # If it's a Firestore Timestamp, convert to datetime
-    # Firestore Timestamp objects have a to_datetime() method
+    # Firestore Timestamp objects have a to_datetime() method that returns a UTC-aware datetime
     if hasattr(value, 'to_datetime'):
-        dt = value.to_datetime()
-        # Ensure UTC timezone
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
+        return value.to_datetime()
     
-    raise ValueError(f"Cannot convert {type(value)} to datetime")
+    raise ValueError(f"Cannot convert {type(value).__name__} to datetime. Expected Firestore Timestamp, datetime, ISO 8601 string, or None.")
 
 
 def serialize_model_to_dict(model: BaseModel) -> dict[str, Any]:
@@ -630,11 +637,20 @@ def _convert_timestamps_in_dict(data: Any) -> Any:
     """
     Recursively convert datetime objects to Firestore-compatible format.
     
+    This function handles nested dictionaries, lists, and datetime objects.
+    Other types (including sets, tuples, and custom objects) are passed through
+    unchanged, as they should be handled by Pydantic serialization before
+    reaching this function.
+    
     Args:
-        data: A dict, list, or primitive value
+        data: A dict, list, datetime, or primitive value
         
     Returns:
         Data with datetime objects converted to UTC
+        
+    Note:
+        This function expects data already serialized by Pydantic's model_dump(),
+        which converts sets, tuples, and custom objects to JSON-compatible types.
     """
     if isinstance(data, dict):
         return {
@@ -646,6 +662,8 @@ def _convert_timestamps_in_dict(data: Any) -> Any:
     elif isinstance(data, datetime):
         return datetime_to_firestore(data)
     else:
+        # Pass through all other types (str, int, float, bool, None, etc.)
+        # Pydantic's model_dump() should have already converted complex types
         return data
 
 
