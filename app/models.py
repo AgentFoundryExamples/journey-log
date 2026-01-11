@@ -89,8 +89,17 @@ class Location(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
     
-    id: str = Field(description="Location identifier (e.g., 'origin:nexus', 'town:rivendell')")
-    display_name: str = Field(description="Human-readable location name")
+    id: str = Field(min_length=1, description="Location identifier (e.g., 'origin:nexus', 'town:rivendell')")
+    display_name: str = Field(min_length=1, description="Human-readable location name")
+    
+    @model_validator(mode='after')
+    def validate_non_empty(self) -> 'Location':
+        """Ensure id and display_name are not just whitespace."""
+        if not self.id.strip():
+            raise ValueError("id cannot be empty or only whitespace")
+        if not self.display_name.strip():
+            raise ValueError("display_name cannot be empty or only whitespace")
+        return self
 
 
 class CharacterIdentity(BaseModel):
@@ -113,10 +122,19 @@ class CharacterIdentity(BaseModel):
     
     @model_validator(mode='after')
     def normalize_whitespace(self) -> 'CharacterIdentity':
-        """Normalize whitespace in identity fields."""
+        """Normalize whitespace in identity fields and ensure non-empty after normalization."""
         self.name = ' '.join(self.name.split())
         self.race = ' '.join(self.race.split())
         self.character_class = ' '.join(self.character_class.split())
+        
+        # Validate non-empty after normalization
+        if not self.name:
+            raise ValueError("name cannot be empty or only whitespace")
+        if not self.race:
+            raise ValueError("race cannot be empty or only whitespace")
+        if not self.character_class:
+            raise ValueError("character_class cannot be empty or only whitespace")
+        
         return self
 
 
@@ -211,6 +229,24 @@ class PlayerState(BaseModel):
         default_factory=dict,
         description="Extensible fields for game-specific data"
     )
+    
+    @model_validator(mode='after')
+    def validate_location(self) -> 'PlayerState':
+        """Validate location field ensures meaningful data regardless of format."""
+        if isinstance(self.location, str):
+            # String locations must be non-empty
+            if not self.location or not self.location.strip():
+                raise ValueError("location string cannot be empty or only whitespace")
+        elif isinstance(self.location, dict):
+            # Dict locations should have at least one meaningful key
+            if not self.location:
+                raise ValueError("location dict cannot be empty")
+            # If it looks like a Location dict, validate required fields
+            if "id" in self.location or "display_name" in self.location:
+                if not self.location.get("id") or not self.location.get("display_name"):
+                    raise ValueError("location dict with id/display_name must have both non-empty fields")
+        # Location objects are already validated by the Location model
+        return self
 
 
 class NarrativeTurn(BaseModel):

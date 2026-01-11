@@ -359,7 +359,9 @@ All identity fields (name, race, class) are validated to:
   }
   ```
 
-**Note:** Character name should be stored in `additional_metadata.character_name`, not in `player_state`, to maintain clear separation between game state and character metadata.
+**Character Name Storage:**
+- The character's name is stored in `player_state.identity.name` as the authoritative source
+- The `additional_metadata.character_name` field may also contain the name for convenience and backward compatibility, but `identity.name` should be considered the primary field
 
 #### `world_state`
 - **Type:** Map or null

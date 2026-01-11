@@ -708,6 +708,20 @@ class TestCharacterIdentityValidation:
         assert identity.race == "Human"
         assert identity.character_class == "Warrior"
     
+    def test_whitespace_only_fails_validation(self):
+        """Test that whitespace-only fields fail validation after normalization."""
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="   ", race="Human", **{"class": "Warrior"})
+        assert "name cannot be empty or only whitespace" in str(exc_info.value)
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="Test", race="   ", **{"class": "Warrior"})
+        assert "race cannot be empty or only whitespace" in str(exc_info.value)
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="Test", race="Human", **{"class": "   "})
+        assert "character_class cannot be empty or only whitespace" in str(exc_info.value)
+    
     def test_valid_identity_at_bounds(self):
         """Test valid identity fields at boundary lengths."""
         # Single character
@@ -858,6 +872,30 @@ class TestLocationModel:
         with pytest.raises(ValidationError):
             Location(id="test", display_name="Test", extra_field="should fail")
     
+    def test_location_id_empty_fails(self):
+        """Test that empty id fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            Location(id="", display_name="Test")
+        assert "at least 1 character" in str(exc_info.value)
+    
+    def test_location_display_name_empty_fails(self):
+        """Test that empty display_name fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            Location(id="test", display_name="")
+        assert "at least 1 character" in str(exc_info.value)
+    
+    def test_location_id_whitespace_only_fails(self):
+        """Test that whitespace-only id fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            Location(id="   ", display_name="Test")
+        assert "id cannot be empty or only whitespace" in str(exc_info.value)
+    
+    def test_location_display_name_whitespace_only_fails(self):
+        """Test that whitespace-only display_name fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            Location(id="test", display_name="   ")
+        assert "display_name cannot be empty or only whitespace" in str(exc_info.value)
+    
     def test_location_in_player_state(self):
         """Test using Location in PlayerState."""
         location = Location(id="town:rivendell", display_name="Rivendell")
@@ -894,6 +932,66 @@ class TestLocationModel:
             location=location_dict
         )
         assert player_state.location == location_dict
+    
+    def test_location_string_empty_fails(self):
+        """Test that empty string location fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                health=Health(current=100, max=100),
+                stats={},
+                location=""
+            )
+        assert "location string cannot be empty" in str(exc_info.value)
+    
+    def test_location_string_whitespace_only_fails(self):
+        """Test that whitespace-only string location fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                health=Health(current=100, max=100),
+                stats={},
+                location="   "
+            )
+        assert "location string cannot be empty" in str(exc_info.value)
+    
+    def test_location_dict_empty_fails(self):
+        """Test that empty dict location fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                health=Health(current=100, max=100),
+                stats={},
+                location={}
+            )
+        assert "location dict cannot be empty" in str(exc_info.value)
+    
+    def test_location_dict_with_id_but_no_display_name_fails(self):
+        """Test that location dict with id but no display_name fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                health=Health(current=100, max=100),
+                stats={},
+                location={"id": "origin:nexus"}
+            )
+        assert "must have both non-empty fields" in str(exc_info.value)
+    
+    def test_location_dict_with_display_name_but_no_id_fails(self):
+        """Test that location dict with display_name but no id fails validation."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                health=Health(current=100, max=100),
+                stats={},
+                location={"display_name": "The Nexus"}
+            )
+        assert "must have both non-empty fields" in str(exc_info.value)
 
 
 class TestWorldState:
