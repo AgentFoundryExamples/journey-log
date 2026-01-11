@@ -19,14 +19,12 @@ and default value application.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import CharacterDocument, Status as CharacterStatus
 from app.dependencies import get_db
 
 
@@ -566,3 +564,320 @@ class TestCharacterDefaultValues:
         character = response.json()["character"]
         assert character["player_state"]["location"]["id"] == "origin:nexus"
         assert character["player_state"]["location"]["display_name"] == "The Nexus"
+
+
+class TestGetCharacter:
+    """Tests for GET /characters/{character_id} endpoint."""
+    
+    @pytest.fixture
+    def sample_character_data(self):
+        """Sample character data for testing."""
+        return {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "A brave hero seeks adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "level": 5,
+                "experience": 1000,
+                "health": {"current": 80, "max": 100},
+                "stats": {"strength": 18, "dexterity": 14},
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    
+    def test_get_character_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test successful character retrieval."""
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = sample_character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "character" in data
+        
+        character = data["character"]
+        assert character["character_id"] == "550e8400-e29b-41d4-a716-446655440000"
+        assert character["owner_user_id"] == "user123"
+        assert character["player_state"]["identity"]["name"] == "Test Hero"
+        assert character["player_state"]["level"] == 5
+        assert character["player_state"]["experience"] == 1000
+    
+    def test_get_character_with_matching_user_id(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test successful retrieval with matching X-User-Id header."""
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = sample_character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request with matching user ID
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["character"]["owner_user_id"] == "user123"
+    
+    def test_get_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 404 when character does not exist."""
+        
+        # Mock non-existent document
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = False
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        response_data = response.json()
+        assert "error" in response_data
+        assert "not found" in response_data["message"].lower()
+    
+    def test_get_character_invalid_uuid(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 422 for malformed UUID."""
+        
+        # Make request with invalid UUID
+        response = test_client_with_mock_db.get(
+            "/characters/not-a-valid-uuid",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        response_data = response.json()
+        assert "error" in response_data
+        assert "uuid" in response_data["message"].lower()
+    
+    def test_get_character_user_id_mismatch(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test 403 when X-User-Id does not match owner."""
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = sample_character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request with mismatched user ID
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+            headers={"X-User-Id": "different_user"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        response_data = response.json()
+        assert "error" in response_data
+        assert "access denied" in response_data["message"].lower()
+    
+    def test_get_character_case_insensitive_uuid(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that UUID is case-insensitive."""
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = sample_character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request with uppercase UUID
+        response = test_client_with_mock_db.get(
+            "/characters/550E8400-E29B-41D4-A716-446655440000",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        
+        # Verify that document was queried with lowercase UUID
+        mock_firestore_client.collection.return_value.document.assert_called_with(
+            "550e8400-e29b-41d4-a716-446655440000"
+        )
+    
+    def test_get_character_with_optional_fields(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test retrieval of character with all optional fields populated."""
+        
+        # Sample character with combat and quest
+        character_data = {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "A brave hero seeks adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "level": 5,
+                "experience": 1000,
+                "health": {"current": 80, "max": 100},
+                "stats": {},
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "origin:nexus", "display_name": "The Nexus"},
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "world_state": {"region": "north"},
+            "active_quest": {
+                "quest_id": "quest_001",
+                "title": "Find the Sword",
+                "description": "Locate the legendary sword",
+                "completion_state": "InProgress",
+                "objectives": [],
+                "requirements": [],
+                "rewards": [],
+            },
+            "combat_state": {
+                "combat_id": "combat_001",
+                "started_at": datetime.now(timezone.utc),
+                "turn": 1,
+                "enemies": [
+                    {
+                        "enemy_id": "enemy_001",
+                        "name": "Goblin",
+                        "health": {"current": 20, "max": 20},
+                        "status_effects": [],
+                    }
+                ],
+            },
+        }
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        character = data["character"]
+        
+        # Verify optional fields are present
+        assert character["world_state"] == {"region": "north"}
+        assert character["active_quest"]["quest_id"] == "quest_001"
+        assert character["combat_state"]["combat_id"] == "combat_001"
+    
+    def test_get_character_firestore_error_returns_500(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that Firestore errors return 500."""
+        
+        # Mock Firestore error
+        mock_firestore_client.collection.side_effect = Exception("Firestore connection error")
+        
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+        )
+        
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        response_data = response.json()
+        assert "error" in response_data
+        assert "internal error" in response_data["message"].lower()
+    
+    def test_get_character_empty_user_id_header(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that empty X-User-Id header returns 400 error."""
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = sample_character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request with empty user ID (should trigger validation error)
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+            headers={"X-User-Id": "   "},
+        )
+        
+        # Assertions - should fail with 400 because empty header is a client error
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "empty" in response_data["message"].lower()
