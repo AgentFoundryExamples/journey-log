@@ -19,7 +19,7 @@ Provides reusable dependency functions for FastAPI routes.
 
 from typing import Annotated
 from fastapi import Depends
-from google.cloud import firestore
+from google.cloud import firestore  # type: ignore[import-untyped]
 
 from app.firestore import get_firestore_client
 
@@ -27,14 +27,14 @@ from app.firestore import get_firestore_client
 def get_db() -> firestore.Client:
     """
     FastAPI dependency that provides a Firestore client.
-    
+
     This dependency can be injected into any FastAPI route to get
     access to the Firestore client. It uses the lazy-initialized
     singleton from app.firestore.
-    
+
     Returns:
         firestore.Client: The Firestore client instance
-        
+
     Example:
         @app.get("/example")
         async def example_route(db: Annotated[firestore.Client, Depends(get_db)]):
