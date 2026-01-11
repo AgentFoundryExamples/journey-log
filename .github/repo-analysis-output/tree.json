@@ -75,6 +75,20 @@
       "name": "app",
       "children": [
         {
+          "type": "directory",
+          "name": "routers",
+          "children": [
+            {
+              "type": "file",
+              "name": "__init__.py"
+            },
+            {
+              "type": "file",
+              "name": "firestore_test.py"
+            }
+          ]
+        },
+        {
           "type": "file",
           "name": "__init__.py"
         },
@@ -84,7 +98,25 @@
         },
         {
           "type": "file",
+          "name": "dependencies.py"
+        },
+        {
+          "type": "file",
+          "name": "firestore.py"
+        },
+        {
+          "type": "file",
           "name": "main.py"
+        }
+      ]
+    },
+    {
+      "type": "directory",
+      "name": "docs",
+      "children": [
+        {
+          "type": "file",
+          "name": "deployment.md"
         }
       ]
     },

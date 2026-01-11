@@ -16,9 +16,16 @@
   └── workflows
     └── af_maintenance.yml
 ├── app
+  ├── routers
+    ├── __init__.py
+    └── firestore_test.py
   ├── __init__.py
   ├── config.py
+  ├── dependencies.py
+  ├── firestore.py
   └── main.py
+├── docs
+  └── deployment.md
 ├── .env.example
 ├── .gitignore
 ├── example_openai_usage.py

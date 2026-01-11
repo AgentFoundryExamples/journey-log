@@ -28,6 +28,35 @@
       }
     },
     {
+      "id": "app/dependencies.py",
+      "path": "app/dependencies.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "typing.Annotated"
+        ],
+        "third-party": [
+          "fastapi.Depends",
+          "google.cloud.firestore"
+        ]
+      }
+    },
+    {
+      "id": "app/firestore.py",
+      "path": "app/firestore.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "os",
+          "threading",
+          "typing.Optional"
+        ],
+        "third-party": [
+          "google.cloud.firestore"
+        ]
+      }
+    },
+    {
       "id": "app/main.py",
       "path": "app/main.py",
       "type": "file",
@@ -38,6 +67,34 @@
         "third-party": [
           "fastapi.FastAPI",
           "uvicorn"
+        ]
+      }
+    },
+    {
+      "id": "app/routers/__init__.py",
+      "path": "app/routers/__init__.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [],
+        "third-party": []
+      }
+    },
+    {
+      "id": "app/routers/firestore_test.py",
+      "path": "app/routers/firestore_test.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone",
+          "typing.Any"
+        ],
+        "third-party": [
+          "fastapi.APIRouter",
+          "fastapi.HTTPException",
+          "fastapi.status",
+          "pydantic.BaseModel",
+          "pydantic.Field"
         ]
       }
     },
@@ -60,7 +117,27 @@
   ],
   "edges": [
     {
+      "source": "app/dependencies.py",
+      "target": "app/firestore.py"
+    },
+    {
+      "source": "app/firestore.py",
+      "target": "app/config.py"
+    },
+    {
       "source": "app/main.py",
+      "target": "app/config.py"
+    },
+    {
+      "source": "app/main.py",
+      "target": "app/routers/firestore_test.py"
+    },
+    {
+      "source": "app/routers/firestore_test.py",
+      "target": "app/dependencies.py"
+    },
+    {
+      "source": "app/routers/firestore_test.py",
       "target": "app/config.py"
     },
     {
@@ -70,17 +147,28 @@
   ],
   "external_dependencies_summary": {
     "stdlib": [
+      "datetime.datetime",
+      "datetime.timezone",
       "functools.lru_cache",
       "logging",
+      "os",
+      "threading",
       "time",
+      "typing.Annotated",
       "typing.Any",
       "typing.Literal",
       "typing.Optional"
     ],
     "third-party": [
+      "fastapi.APIRouter",
+      "fastapi.Depends",
       "fastapi.FastAPI",
+      "fastapi.HTTPException",
+      "fastapi.status",
+      "google.cloud.firestore",
       "openai",
       "openai.OpenAI",
+      "pydantic.BaseModel",
       "pydantic.Field",
       "pydantic.ValidationInfo",
       "pydantic.field_validator",
@@ -88,7 +176,7 @@
       "pydantic_settings.SettingsConfigDict",
       "uvicorn"
     ],
-    "stdlib_count": 6,
-    "third-party_count": 9
+    "stdlib_count": 11,
+    "third-party_count": 15
   }
 }

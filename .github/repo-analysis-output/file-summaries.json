@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 4,
+  "total_files": 8,
   "files": [
     {
       "schema_version": "2.0",
@@ -25,8 +25,36 @@
       "summary": "Python configuration file (role: configuration)",
       "summary_text": "Python configuration file (role: configuration)",
       "metrics": {
-        "size_bytes": 3547,
-        "loc": 82,
+        "size_bytes": 3656,
+        "loc": 70,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/dependencies.py",
+      "language": "Python",
+      "role": "implementation",
+      "role_justification": "general implementation file (default classification)",
+      "summary": "Python module for dependencies",
+      "summary_text": "Python module for dependencies",
+      "metrics": {
+        "size_bytes": 1555,
+        "loc": 23,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/firestore.py",
+      "language": "Python",
+      "role": "implementation",
+      "role_justification": "general implementation file (default classification)",
+      "summary": "Python module for firestore",
+      "summary_text": "Python module for firestore",
+      "metrics": {
+        "size_bytes": 3848,
+        "loc": 62,
         "todo_count": 0
       }
     },
@@ -39,8 +67,36 @@
       "summary": "Python main entry point (role: entry-point)",
       "summary_text": "Python main entry point (role: entry-point)",
       "metrics": {
-        "size_bytes": 2206,
-        "loc": 53,
+        "size_bytes": 2295,
+        "loc": 55,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/routers/__init__.py",
+      "language": "Python",
+      "role": "module-init",
+      "role_justification": "module initialization file '__init__'",
+      "summary": "Python module initialization (role: module-init)",
+      "summary_text": "Python module initialization (role: module-init)",
+      "metrics": {
+        "size_bytes": 615,
+        "loc": 1,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "app/routers/firestore_test.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename ends with '_test'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 10190,
+        "loc": 213,
         "todo_count": 0
       }
     },
@@ -53,8 +109,8 @@
       "summary": "Python module for example openai usage",
       "summary_text": "Python module for example openai usage",
       "metrics": {
-        "size_bytes": 20786,
-        "loc": 402,
+        "size_bytes": 21089,
+        "loc": 415,
         "todo_count": 0
       }
     }
