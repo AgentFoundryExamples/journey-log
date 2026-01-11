@@ -76,6 +76,49 @@ Each character is uniquely identified by a **UUIDv4 string** used as the Firesto
 - **Uniqueness:** Firestore document IDs are unique within a collection by design
 - **Immutability:** character_id should never change once created
 
+### Validation Error Handling
+
+**API Boundary Validation:**
+- **Invalid Format:** Reject requests with malformed UUIDs immediately at API boundaries
+- **HTTP Status:** Return `400 Bad Request` for invalid character_id format
+- **Error Response:** Include descriptive error message indicating the expected format
+- **Normalization:** Convert valid uppercase UUIDs to lowercase before storage
+
+**Example Validation:**
+```python
+import re
+import uuid
+
+def validate_character_id(character_id: str) -> tuple[bool, str]:
+    """
+    Validate character_id format.
+    
+    Returns:
+        Tuple of (is_valid, normalized_id or error_message)
+    """
+    # Check basic format (36 characters with hyphens)
+    uuid_pattern = re.compile(
+        r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+    )
+    
+    if not uuid_pattern.match(character_id):
+        return False, "Invalid character_id format. Expected UUIDv4 (e.g., '550e8400-e29b-41d4-a716-446655440000')"
+    
+    # Verify it's a valid UUID (will raise ValueError if not)
+    try:
+        uuid_obj = uuid.UUID(character_id, version=4)
+        # Normalize to lowercase
+        return True, str(uuid_obj).lower()
+    except ValueError:
+        return False, "Invalid UUIDv4. Character ID must be a valid version 4 UUID"
+
+# Usage in API endpoint
+is_valid, result = validate_character_id(request.character_id)
+if not is_valid:
+    raise HTTPException(status_code=400, detail=result)
+character_id = result  # Use normalized ID
+```
+
 ### Example Generation Code
 
 ```python
@@ -118,6 +161,12 @@ Each character document contains the following top-level fields:
 - **Required:** Yes
 - **Immutable:** Yes
 - **Description:** Redundant with document ID, but stored for convenience when querying or returning documents
+- **Rationale for Redundancy:**
+  - **Convenience:** Simplifies API responses by including the ID in the document data without requiring clients to track the document path separately
+  - **Consistency:** Ensures all character data is self-contained when serialized
+  - **Queries:** Firestore queries can filter/return this field, while document IDs require separate handling
+  - **Cost:** Minimal storage overhead (~36 bytes) compared to benefits
+- **Note:** Always keep `character_id` synchronized with the Firestore document ID. Never allow mismatches.
 
 #### `owner_user_id`
 - **Type:** String
@@ -125,6 +174,37 @@ Each character document contains the following top-level fields:
 - **Immutable:** Yes (should not change after creation)
 - **Description:** Firebase Auth UID or equivalent user identifier for access control
 - **Usage:** Used in Firestore security rules to restrict access to the character owner
+- **Validation:** Must be a non-empty string matching your authentication system's user ID format
+- **Security:** 
+  - Always validate that the authenticated user matches the owner_user_id when accessing or modifying characters
+  - Never expose owner_user_id in public APIs or responses to unauthorized users
+  - Use Firestore security rules to enforce ownership: `allow read, write: if request.auth.uid == resource.data.owner_user_id`
+
+**Example Validation:**
+```python
+def validate_owner_user_id(owner_user_id: str, authenticated_user_id: str) -> bool:
+    """
+    Validate that the owner_user_id is valid and matches the authenticated user.
+    
+    Args:
+        owner_user_id: The claimed owner user ID
+        authenticated_user_id: The ID of the authenticated user making the request
+        
+    Returns:
+        True if valid, raises HTTPException otherwise
+    """
+    if not owner_user_id or not owner_user_id.strip():
+        raise HTTPException(status_code=400, detail="owner_user_id cannot be empty")
+    
+    # For new character creation, ensure authenticated user is the owner
+    if owner_user_id != authenticated_user_id:
+        raise HTTPException(
+            status_code=403, 
+            detail="Cannot create character for another user"
+        )
+    
+    return True
+```
 
 #### `player_state`
 - **Type:** Map (nested object)
@@ -133,7 +213,6 @@ Each character document contains the following top-level fields:
 - **Example Structure:**
   ```json
   {
-    "name": "Aragorn",
     "level": 10,
     "experience": 5000,
     "health": {
@@ -160,6 +239,8 @@ Each character document contains the following top-level fields:
     }
   }
   ```
+
+**Note:** Character name should be stored in `additional_metadata.character_name`, not in `player_state`, to maintain clear separation between game state and character metadata.
 
 #### `active_quest`
 - **Type:** Map or null
@@ -188,9 +269,11 @@ Each character document contains the following top-level fields:
         "completed": false
       }
     ],
-    "started_at": "2026-01-11T12:00:00Z"
+    "started_at": "2026-01-11T12:00:00.000000Z"
   }
   ```
+
+**Note:** Timestamps within nested objects like `started_at` should use ISO 8601 format for consistency when storing as strings, or use Firestore Timestamp objects if you need to query/sort by these dates.
 
 #### `world_pois_reference`
 - **Type:** String
@@ -496,10 +579,32 @@ else:
 - Detect missing fields when reading a character
 - Apply default values or migrate to current schema
 - Write back the updated document with `schema_version` set
+- Use transactions to prevent race conditions
 
 ```python
-def migrate_character_if_needed(character_ref):
-    character_doc = character_ref.get().to_dict()
+from google.cloud import firestore
+
+@firestore.transactional
+def migrate_character_if_needed(transaction, character_ref):
+    """
+    Migrate a character document to the current schema version.
+    
+    Uses a transaction to prevent race conditions when multiple
+    requests attempt to migrate the same document simultaneously.
+    
+    Args:
+        transaction: Firestore transaction object
+        character_ref: Reference to the character document
+        
+    Returns:
+        dict: The migrated character document data
+    """
+    character_snapshot = character_ref.get(transaction=transaction)
+    
+    if not character_snapshot.exists:
+        raise ValueError(f"Character document does not exist: {character_ref.id}")
+    
+    character_doc = character_snapshot.to_dict()
     
     needs_migration = False
     updates = {}
@@ -527,12 +632,22 @@ def migrate_character_if_needed(character_ref):
         updates["updated_at"] = firestore.SERVER_TIMESTAMP
         needs_migration = True
     
-    # Apply migration
+    # Apply migration within the transaction
     if needs_migration:
-        character_ref.update(updates)
+        transaction.update(character_ref, updates)
         print(f"Migrated character {character_doc['character_id']} to schema 1.0.0")
+        # Return the migrated document data
+        migrated_doc = character_doc.copy()
+        migrated_doc.update(updates)
+        return migrated_doc
     
-    return character_ref.get().to_dict()
+    return character_doc
+
+# Usage example
+db = firestore.Client()
+character_ref = db.collection("characters").document(character_id)
+transaction = db.transaction()
+migrated_character = migrate_character_if_needed(transaction, character_ref)
 ```
 
 **Option 2: Batch Migration**
@@ -655,6 +770,9 @@ def check_schema_compatibility(character_doc):
 - **Maximum safe size:** 100 KB (leave headroom for Firestore's 1 MB limit)
 
 **Monitoring Document Size:**
+
+⚠️ **IMPORTANT:** The following method provides only a rough approximation of Firestore document size. Due to Firestore's internal binary encoding, actual storage size can differ significantly from JSON estimates, especially for documents with many Timestamp objects, References, or GeoPoints.
+
 ```python
 import json
 
@@ -675,11 +793,18 @@ if doc_size_kb > 100:
     print(f"Warning: Character document is {doc_size_kb:.2f} KB (consider moving data to subcollections)")
 ```
 
-**Note:** This provides an approximation. Actual Firestore document size may vary due to:
-- Internal binary encoding (more efficient than JSON)
-- Firestore-specific types (Timestamps, References, GeoPoints)
-- Metadata overhead
-For critical sizing decisions, test with actual Firestore documents and monitor via Firestore console or quotas.
+**Important Limitations of Size Estimation:**
+- **Binary Encoding:** Firestore uses Protocol Buffers internally, which is more space-efficient than JSON for most data
+- **Type Overhead:** Firestore-specific types (Timestamps, References, GeoPoints) have different sizes than their JSON string representations
+- **Metadata:** Firestore adds metadata that isn't reflected in the document data
+- **Inaccuracy Range:** Estimates can be off by 20-50% or more depending on document composition
+
+**For Critical Sizing Decisions:**
+1. Test with actual Firestore documents in your project
+2. Monitor document sizes via the Firestore console
+3. Check quota usage in Google Cloud Console
+4. Use Firestore's built-in size limits (1 MB) as a hard constraint, but aim for 100 KB practical limit
+5. Consider moving data to subcollections well before approaching the 1 MB limit
 
 **When to Move Data to Subcollections:**
 - Arrays with unbounded growth (use subcollections instead)
