@@ -73,7 +73,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         """
         # Extract or generate request ID
         request_id = request.headers.get(
-            self.settings.request_id_header.lower()
+            self.settings.request_id_header
         ) or str(uuid.uuid4())
 
         # Store request ID in request state for access by exception handlers

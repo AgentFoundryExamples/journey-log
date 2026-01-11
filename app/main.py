@@ -68,7 +68,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     """
     # Get request ID from request state (set by middleware) or headers
     request_id = getattr(request.state, "request_id", None) or request.headers.get(
-        settings.request_id_header.lower(), "unknown"
+        settings.request_id_header, "unknown"
     )
 
     # Log the exception
@@ -111,7 +111,7 @@ async def validation_exception_handler(
     """
     # Get request ID from request state (set by middleware) or headers
     request_id = getattr(request.state, "request_id", None) or request.headers.get(
-        settings.request_id_header.lower(), "unknown"
+        settings.request_id_header, "unknown"
     )
 
     # Log the validation error
@@ -152,7 +152,7 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     """
     # Get request ID from request state (set by middleware) or headers
     request_id = getattr(request.state, "request_id", None) or request.headers.get(
-        settings.request_id_header.lower(), "unknown"
+        settings.request_id_header, "unknown"
     )
 
     # Log the exception with stack trace
