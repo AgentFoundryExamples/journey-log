@@ -110,6 +110,7 @@ def character_healthy(base_player_state):
     return CharacterDocument(
         character_id="char-healthy-001",
         owner_user_id="user_001",
+        adventure_prompt="Begin your journey as a brave hero seeking glory and adventure",
         player_state=base_player_state,
         world_pois_reference="world-v1",
         narrative_turns_reference="narrative_turns",
@@ -166,6 +167,7 @@ def character_wounded_with_quest(base_player_state):
     return CharacterDocument(
         character_id="char-wounded-002",
         owner_user_id="user_002",
+        adventure_prompt="Wounded but not defeated, continue the quest to slay the dragon",
         player_state=player_state,
         world_pois_reference="world-v1",
         narrative_turns_reference="narrative_turns",
@@ -216,6 +218,7 @@ def character_in_combat_multiple_enemies(base_player_state):
     return CharacterDocument(
         character_id="char-combat-003",
         owner_user_id="user_003",
+        adventure_prompt="Fight your way through waves of enemies in an epic battle",
         player_state=base_player_state,
         world_pois_reference="world-v1",
         narrative_turns_reference="narrative_turns",
@@ -256,6 +259,7 @@ def character_dead_completed_quest(base_player_state):
     return CharacterDocument(
         character_id="char-dead-004",
         owner_user_id="user_004",
+        adventure_prompt="A heroic quest that ended in tragedy but not in vain",
         player_state=base_player_state,
         world_pois_reference="world-v1",
         narrative_turns_reference="narrative_turns",
@@ -294,6 +298,7 @@ def character_empty_arrays():
     return CharacterDocument(
         character_id="char-empty-005",
         owner_user_id="user_005",
+        adventure_prompt="Start fresh with no equipment or objectives",
         player_state=player_state,
         world_pois_reference="world-v1",
         narrative_turns_reference="narrative_turns",
@@ -320,6 +325,7 @@ def character_future_schema():
     return CharacterDocument(
         character_id="char-future-006",
         owner_user_id="user_006",
+        adventure_prompt="Hack the system and break the simulation",
         player_state=player_state,
         world_pois_reference="world-v2",
         narrative_turns_reference="narrative_turns",
@@ -923,6 +929,7 @@ class TestRoundTripEdgeCases:
         char = CharacterDocument(
             character_id="test-id",
             owner_user_id="user_001",
+            adventure_prompt="Test empty arrays",
             player_state=player_state,
             world_pois_reference="world",
             narrative_turns_reference="narrative_turns",
@@ -956,6 +963,7 @@ class TestRoundTripEdgeCases:
             char = CharacterDocument(
                 character_id=f"test-{version}",
                 owner_user_id="user_001",
+                adventure_prompt="Test schema version handling",
                 player_state=player_state,
                 world_pois_reference="world",
                 narrative_turns_reference="narrative_turns",

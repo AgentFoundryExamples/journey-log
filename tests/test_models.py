@@ -30,6 +30,7 @@ from app.models import (
     Enemy,
     Health,
     InventoryItem,
+    Location,
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
@@ -434,6 +435,7 @@ class TestCharacterDocument:
         doc = CharacterDocument(
             character_id="550e8400-e29b-41d4-a716-446655440000",
             owner_user_id="user_123",
+            adventure_prompt="A ranger from the North seeking to reclaim the throne of Gondor",
             player_state=player_state,
             world_pois_reference="middle-earth-v1",
             narrative_turns_reference="narrative_turns",
@@ -445,6 +447,7 @@ class TestCharacterDocument:
         
         assert doc.character_id == "550e8400-e29b-41d4-a716-446655440000"
         assert doc.owner_user_id == "user_123"
+        assert doc.adventure_prompt == "A ranger from the North seeking to reclaim the throne of Gondor"
         assert doc.schema_version == "1.0.0"
         assert doc.player_state.identity.name == "Aragorn"
     
@@ -461,6 +464,7 @@ class TestCharacterDocument:
         doc = CharacterDocument(
             character_id="test-id",
             owner_user_id="user_123",
+            adventure_prompt="A simple test adventure",
             player_state=player_state,
             world_pois_reference="world",
             narrative_turns_reference="narrative_turns",
@@ -473,6 +477,7 @@ class TestCharacterDocument:
         
         assert doc.active_quest is None
         assert doc.combat_state is None
+        assert doc.world_state is None
     
     def test_character_document_with_active_quest(self):
         """Test CharacterDocument with active quest."""
@@ -494,6 +499,7 @@ class TestCharacterDocument:
         doc = CharacterDocument(
             character_id="test-id",
             owner_user_id="user_123",
+            adventure_prompt="Embark on a quest to save the kingdom",
             player_state=player_state,
             world_pois_reference="world",
             narrative_turns_reference="narrative_turns",
@@ -532,6 +538,7 @@ class TestCharacterDocument:
         doc = CharacterDocument(
             character_id="test-id",
             owner_user_id="user_123",
+            adventure_prompt="Battle your way through the dungeon",
             player_state=player_state,
             world_pois_reference="world",
             narrative_turns_reference="narrative_turns",
@@ -557,6 +564,7 @@ class TestCharacterDocument:
         doc = CharacterDocument(
             character_id="test-id",
             owner_user_id="user_123",
+            adventure_prompt="An epic adventure awaits",
             player_state=player_state,
             world_pois_reference="world",
             narrative_turns_reference="narrative_turns",
@@ -587,9 +595,10 @@ class TestCharacterDocument:
             CharacterDocument(
                 character_id="test-id",
                 owner_user_id="user_123",
+                adventure_prompt="Test adventure",
                 player_state=player_state,
                 world_pois_reference="world",
-            narrative_turns_reference="narrative_turns",
+                narrative_turns_reference="narrative_turns",
                 schema_version="1.0.0",
                 created_at="2026-01-11T12:00:00Z",
                 updated_at="2026-01-11T12:00:00Z",
@@ -644,3 +653,310 @@ class TestEdgeCases:
         assert player_state.additional_fields["key2"] == 123
         assert isinstance(player_state.additional_fields["key3"], dict)
         assert isinstance(player_state.additional_fields["key4"], list)
+
+
+class TestCharacterIdentityValidation:
+    """Test CharacterIdentity validation rules."""
+    
+    def test_name_length_validation_min(self):
+        """Test that name must be at least 1 character."""
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="", race="Human", **{"class": "Warrior"})
+        assert "at least 1 character" in str(exc_info.value)
+    
+    def test_name_length_validation_max(self):
+        """Test that name cannot exceed 64 characters."""
+        long_name = "A" * 65
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name=long_name, race="Human", **{"class": "Warrior"})
+        assert "at most 64 characters" in str(exc_info.value)
+    
+    def test_race_length_validation_min(self):
+        """Test that race must be at least 1 character."""
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="Test", race="", **{"class": "Warrior"})
+        assert "at least 1 character" in str(exc_info.value)
+    
+    def test_race_length_validation_max(self):
+        """Test that race cannot exceed 64 characters."""
+        long_race = "A" * 65
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="Test", race=long_race, **{"class": "Warrior"})
+        assert "at most 64 characters" in str(exc_info.value)
+    
+    def test_class_length_validation_min(self):
+        """Test that class must be at least 1 character."""
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="Test", race="Human", **{"class": ""})
+        assert "at least 1 character" in str(exc_info.value)
+    
+    def test_class_length_validation_max(self):
+        """Test that class cannot exceed 64 characters."""
+        long_class = "A" * 65
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterIdentity(name="Test", race="Human", **{"class": long_class})
+        assert "at most 64 characters" in str(exc_info.value)
+    
+    def test_whitespace_normalization(self):
+        """Test that whitespace is normalized in identity fields."""
+        identity = CharacterIdentity(
+            name="  Test   Hero  ",
+            race="  Human  ",
+            **{"class": "  Warrior   "}
+        )
+        assert identity.name == "Test Hero"
+        assert identity.race == "Human"
+        assert identity.character_class == "Warrior"
+    
+    def test_valid_identity_at_bounds(self):
+        """Test valid identity fields at boundary lengths."""
+        # Single character
+        identity = CharacterIdentity(name="A", race="B", **{"class": "C"})
+        assert identity.name == "A"
+        
+        # 64 characters exactly
+        name_64 = "A" * 64
+        identity = CharacterIdentity(name=name_64, race="Human", **{"class": "Warrior"})
+        assert len(identity.name) == 64
+
+
+class TestAdventurePromptValidation:
+    """Test adventure_prompt validation rules."""
+    
+    def test_adventure_prompt_required(self):
+        """Test that adventure_prompt is required."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterDocument(
+                character_id="test-id",
+                owner_user_id="user_123",
+                # adventure_prompt missing
+                player_state=player_state,
+                world_pois_reference="world",
+                narrative_turns_reference="narrative_turns",
+                schema_version="1.0.0",
+                created_at="2026-01-11T12:00:00Z",
+                updated_at="2026-01-11T12:00:00Z"
+            )
+        assert "adventure_prompt" in str(exc_info.value)
+    
+    def test_adventure_prompt_empty_string(self):
+        """Test that adventure_prompt cannot be empty."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterDocument(
+                character_id="test-id",
+                owner_user_id="user_123",
+                adventure_prompt="",
+                player_state=player_state,
+                world_pois_reference="world",
+                narrative_turns_reference="narrative_turns",
+                schema_version="1.0.0",
+                created_at="2026-01-11T12:00:00Z",
+                updated_at="2026-01-11T12:00:00Z"
+            )
+        assert "at least 1 character" in str(exc_info.value)
+    
+    def test_adventure_prompt_whitespace_only(self):
+        """Test that adventure_prompt cannot be only whitespace."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterDocument(
+                character_id="test-id",
+                owner_user_id="user_123",
+                adventure_prompt="   ",
+                player_state=player_state,
+                world_pois_reference="world",
+                narrative_turns_reference="narrative_turns",
+                schema_version="1.0.0",
+                created_at="2026-01-11T12:00:00Z",
+                updated_at="2026-01-11T12:00:00Z"
+            )
+        assert "cannot be empty or only whitespace" in str(exc_info.value)
+    
+    def test_adventure_prompt_whitespace_normalization(self):
+        """Test that adventure_prompt whitespace is normalized."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        doc = CharacterDocument(
+            character_id="test-id",
+            owner_user_id="user_123",
+            adventure_prompt="  A   brave   warrior   sets   out  ",
+            player_state=player_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at="2026-01-11T12:00:00Z",
+            updated_at="2026-01-11T12:00:00Z"
+        )
+        
+        assert doc.adventure_prompt == "A brave warrior sets out"
+    
+    def test_adventure_prompt_valid(self):
+        """Test valid adventure_prompt."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        doc = CharacterDocument(
+            character_id="test-id",
+            owner_user_id="user_123",
+            adventure_prompt="A brave warrior sets out to save the kingdom from darkness",
+            player_state=player_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at="2026-01-11T12:00:00Z",
+            updated_at="2026-01-11T12:00:00Z"
+        )
+        
+        assert doc.adventure_prompt == "A brave warrior sets out to save the kingdom from darkness"
+
+
+class TestLocationModel:
+    """Test Location model."""
+    
+    def test_create_location(self):
+        """Test creating a Location."""
+        location = Location(id="origin:nexus", display_name="The Nexus")
+        assert location.id == "origin:nexus"
+        assert location.display_name == "The Nexus"
+    
+    def test_location_forbids_extra_fields(self):
+        """Test that Location forbids extra fields."""
+        with pytest.raises(ValidationError):
+            Location(id="test", display_name="Test", extra_field="should fail")
+    
+    def test_location_in_player_state(self):
+        """Test using Location in PlayerState."""
+        location = Location(id="town:rivendell", display_name="Rivendell")
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Elf", **{"class": "Ranger"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location=location
+        )
+        assert isinstance(player_state.location, Location)
+        assert player_state.location.id == "town:rivendell"
+        assert player_state.location.display_name == "Rivendell"
+    
+    def test_location_backward_compatibility_string(self):
+        """Test that PlayerState still accepts location as string."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="Test Location"
+        )
+        assert player_state.location == "Test Location"
+    
+    def test_location_backward_compatibility_dict(self):
+        """Test that PlayerState still accepts location as dict."""
+        location_dict = {"world": "middle-earth", "region": "gondor"}
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location=location_dict
+        )
+        assert player_state.location == location_dict
+
+
+class TestWorldState:
+    """Test world_state field."""
+    
+    def test_world_state_optional(self):
+        """Test that world_state is optional."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        doc = CharacterDocument(
+            character_id="test-id",
+            owner_user_id="user_123",
+            adventure_prompt="Test adventure",
+            player_state=player_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at="2026-01-11T12:00:00Z",
+            updated_at="2026-01-11T12:00:00Z"
+        )
+        
+        assert doc.world_state is None
+    
+    def test_world_state_with_data(self):
+        """Test world_state with data."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        world_state = {
+            "time_of_day": "morning",
+            "weather": "sunny",
+            "factions": {
+                "kingdom": "friendly",
+                "orcs": "hostile"
+            },
+            "global_events": ["dragon_awakened"]
+        }
+        
+        doc = CharacterDocument(
+            character_id="test-id",
+            owner_user_id="user_123",
+            adventure_prompt="Test adventure",
+            player_state=player_state,
+            world_state=world_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at="2026-01-11T12:00:00Z",
+            updated_at="2026-01-11T12:00:00Z"
+        )
+        
+        assert doc.world_state is not None
+        assert doc.world_state["time_of_day"] == "morning"
+        assert doc.world_state["weather"] == "sunny"
+        assert "dragon_awakened" in doc.world_state["global_events"]
