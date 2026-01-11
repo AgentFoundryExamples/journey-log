@@ -4,7 +4,7 @@ Journey Log API Service - Main Application
 FastAPI application with health and info endpoints.
 """
 
-from typing import Dict, Any
+from typing import Any
 from fastapi import FastAPI
 
 from app.config import get_settings
@@ -22,8 +22,8 @@ app = FastAPI(
 )
 
 
-@app.get("/health", response_model=Dict[str, Any])
-async def health() -> Dict[str, Any]:
+@app.get("/health")
+async def health() -> dict[str, Any]:
     """
     Health check endpoint.
     
@@ -38,8 +38,8 @@ async def health() -> Dict[str, Any]:
     }
 
 
-@app.get("/info", response_model=Dict[str, Any])
-async def info() -> Dict[str, Any]:
+@app.get("/info")
+async def info() -> dict[str, Any]:
     """
     Service information endpoint.
     
