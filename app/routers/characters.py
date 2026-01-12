@@ -2245,10 +2245,8 @@ async def set_quest(
                 return None, "quest_exists"
             
             # 4. Serialize quest for Firestore
-            quest_data = quest.model_dump(mode='json')
-            # Ensure updated_at is a datetime object
-            if isinstance(quest_data.get('updated_at'), str):
-                quest_data['updated_at'] = datetime_to_firestore(quest_data['updated_at'])
+            # Use mode='python' to get datetime objects (not JSON strings)
+            quest_data = quest.model_dump(mode='python')
             
             # 5. Update character with new quest and updated_at timestamp
             transaction.update(char_ref, {
