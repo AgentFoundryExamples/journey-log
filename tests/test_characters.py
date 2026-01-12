@@ -19,7 +19,7 @@ and default value application.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -1337,3 +1337,560 @@ class TestListCharacters:
         
         # Verify Firestore was queried with correct user_id filter
         mock_collection.where.assert_called_once_with("owner_user_id", "==", "user123")
+
+
+class TestAppendNarrativeTurn:
+    """Tests for POST /characters/{character_id}/narrative endpoint."""
+    
+    @pytest.fixture
+    def valid_append_request(self):
+        """Valid narrative turn append request data."""
+        return {
+            "user_action": "I explore the ancient ruins",
+            "ai_response": "You discover a hidden chamber filled with mysterious artifacts",
+        }
+    
+    @pytest.fixture
+    def sample_character_data(self):
+        """Sample character data for testing."""
+        return {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "A brave hero seeks adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "level": 5,
+                "experience": 1000,
+                "health": {"current": 80, "max": 100},
+                "stats": {"strength": 18, "dexterity": 14},
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    
+    def test_append_narrative_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_append_request,
+        sample_character_data,
+    ):
+        """Test successful narrative turn append."""
+        
+        # Mock transaction
+        mock_transaction = Mock()
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        mock_firestore_client.transaction.return_value = mock_transaction
+        
+        # Mock character document retrieval in transaction
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock turn subcollection reference
+        mock_turn_collection = Mock()
+        mock_turn_ref = Mock()
+        mock_char_ref.collection.return_value = mock_turn_collection
+        mock_turn_collection.document.return_value = mock_turn_ref
+        
+        # Mock turn document retrieval after creation
+        mock_turn_snapshot = Mock()
+        mock_turn_snapshot.exists = True
+        mock_turn_snapshot.to_dict.return_value = {
+            "turn_id": "turn-001",
+            "player_action": valid_append_request["user_action"],
+            "gm_response": valid_append_request["ai_response"],
+            "timestamp": datetime.now(timezone.utc),
+        }
+        mock_turn_ref.get.return_value = mock_turn_snapshot
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Mock count_narrative_turns
+        with patch('app.routers.characters.count_narrative_turns', return_value=5):
+            # Make request
+            response = test_client_with_mock_db.post(
+                "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+                json=valid_append_request,
+                headers={"X-User-Id": "user123"},
+            )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert "turn" in data
+        assert "total_turns" in data
+        assert data["total_turns"] == 5
+        
+        turn = data["turn"]
+        assert turn["player_action"] == valid_append_request["user_action"]
+        assert turn["gm_response"] == valid_append_request["ai_response"]
+        assert "timestamp" in turn
+    
+    def test_append_narrative_with_timestamp(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_append_request,
+        sample_character_data,
+    ):
+        """Test narrative append with custom timestamp."""
+        
+        # Mock transaction and documents
+        mock_transaction = Mock()
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        mock_firestore_client.transaction.return_value = mock_transaction
+        
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        mock_turn_collection = Mock()
+        mock_turn_ref = Mock()
+        mock_char_ref.collection.return_value = mock_turn_collection
+        mock_turn_collection.document.return_value = mock_turn_ref
+        
+        custom_timestamp = "2026-01-11T12:00:00Z"
+        mock_turn_snapshot = Mock()
+        mock_turn_snapshot.exists = True
+        mock_turn_snapshot.to_dict.return_value = {
+            "turn_id": "turn-001",
+            "player_action": valid_append_request["user_action"],
+            "gm_response": valid_append_request["ai_response"],
+            "timestamp": datetime.fromisoformat(custom_timestamp.replace("Z", "+00:00")),
+        }
+        mock_turn_ref.get.return_value = mock_turn_snapshot
+        
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Add timestamp to request
+        request_with_timestamp = {
+            **valid_append_request,
+            "timestamp": custom_timestamp,
+        }
+        
+        with patch('app.routers.characters.count_narrative_turns', return_value=1):
+            response = test_client_with_mock_db.post(
+                "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+                json=request_with_timestamp,
+                headers={"X-User-Id": "user123"},
+            )
+        
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert "turn" in data
+        # Verify timestamp is present
+        assert "timestamp" in data["turn"]
+    
+    def test_append_narrative_user_action_too_long(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that user_action exceeding 8000 characters returns 422."""
+        request_data = {
+            "user_action": "A" * 8001,  # Over limit
+            "ai_response": "Response",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_ai_response_too_long(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that ai_response exceeding 32000 characters returns 422."""
+        request_data = {
+            "user_action": "Action",
+            "ai_response": "B" * 32001,  # Over limit
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_combined_length_exceeds_limit(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that combined length exceeding 40000 characters returns 413."""
+        request_data = {
+            "user_action": "A" * 8000,
+            "ai_response": "B" * 32001,  # Combined = 40001
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Should fail at Pydantic validation first (ai_response too long)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_combined_validation_at_limit(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test combined validation error when fields individually valid but combined too large."""
+        # This tests the combined validator
+        request_data = {
+            "user_action": "A" * 8000,
+            "ai_response": "B" * 32001,  # 40001 combined
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_append_request,
+    ):
+        """Test 404 when character does not exist."""
+        
+        # Mock transaction
+        mock_transaction = Mock()
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        mock_firestore_client.transaction.return_value = mock_transaction
+        
+        # Mock character not found
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=valid_append_request,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        response_data = response.json()
+        assert "error" in response_data
+        assert "not found" in response_data["message"].lower()
+    
+    def test_append_narrative_access_denied(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_append_request,
+        sample_character_data,
+    ):
+        """Test 403 when user does not own the character."""
+        
+        # Mock transaction
+        mock_transaction = Mock()
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        mock_firestore_client.transaction.return_value = mock_transaction
+        
+        # Mock character owned by different user
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Request with different user
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=valid_append_request,
+            headers={"X-User-Id": "different_user"},
+        )
+        
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        response_data = response.json()
+        assert "error" in response_data
+        assert "access denied" in response_data["message"].lower()
+    
+    def test_append_narrative_missing_user_id(
+        self,
+        test_client_with_mock_db,
+        valid_append_request,
+    ):
+        """Test that missing X-User-Id header returns 422."""
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=valid_append_request,
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_empty_user_id(
+        self,
+        test_client_with_mock_db,
+        valid_append_request,
+    ):
+        """Test that empty X-User-Id header returns 400."""
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=valid_append_request,
+            headers={"X-User-Id": "   "},
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "X-User-Id" in response_data["message"]
+    
+    def test_append_narrative_invalid_uuid(
+        self,
+        test_client_with_mock_db,
+        valid_append_request,
+    ):
+        """Test 422 for malformed character UUID."""
+        response = test_client_with_mock_db.post(
+            "/characters/not-a-valid-uuid/narrative",
+            json=valid_append_request,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        response_data = response.json()
+        assert "error" in response_data
+        assert "uuid" in response_data["message"].lower()
+    
+    def test_append_narrative_invalid_timestamp_format(
+        self,
+        test_client_with_mock_db,
+        valid_append_request,
+    ):
+        """Test 422 for invalid timestamp format."""
+        request_data = {
+            **valid_append_request,
+            "timestamp": "not-a-valid-timestamp",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        response_data = response.json()
+        assert "error" in response_data
+        assert "timestamp" in response_data["message"].lower()
+    
+    def test_append_narrative_missing_user_action(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that missing user_action returns 422."""
+        request_data = {
+            "ai_response": "Response",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_missing_ai_response(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that missing ai_response returns 422."""
+        request_data = {
+            "user_action": "Action",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_empty_user_action(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that empty user_action returns 422."""
+        request_data = {
+            "user_action": "",
+            "ai_response": "Response",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_empty_ai_response(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that empty ai_response returns 422."""
+        request_data = {
+            "user_action": "Action",
+            "ai_response": "",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_extra_fields_rejected(
+        self,
+        test_client_with_mock_db,
+        valid_append_request,
+    ):
+        """Test that extra fields in request are rejected."""
+        request_data = {
+            **valid_append_request,
+            "extra_field": "should be rejected",
+        }
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_append_narrative_at_field_limits(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test appending with fields at maximum allowed length."""
+        
+        # Mock transaction and documents
+        mock_transaction = Mock()
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        mock_firestore_client.transaction.return_value = mock_transaction
+        
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        mock_turn_collection = Mock()
+        mock_turn_ref = Mock()
+        mock_char_ref.collection.return_value = mock_turn_collection
+        mock_turn_collection.document.return_value = mock_turn_ref
+        
+        # Create request at limits
+        user_action_at_limit = "A" * 8000
+        ai_response_at_limit = "B" * 32000
+        
+        mock_turn_snapshot = Mock()
+        mock_turn_snapshot.exists = True
+        mock_turn_snapshot.to_dict.return_value = {
+            "turn_id": "turn-001",
+            "player_action": user_action_at_limit,
+            "gm_response": ai_response_at_limit,
+            "timestamp": datetime.now(timezone.utc),
+        }
+        mock_turn_ref.get.return_value = mock_turn_snapshot
+        
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        request_data = {
+            "user_action": user_action_at_limit,
+            "ai_response": ai_response_at_limit,
+        }
+        
+        with patch('app.routers.characters.count_narrative_turns', return_value=1):
+            response = test_client_with_mock_db.post(
+                "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+                json=request_data,
+                headers={"X-User-Id": "user123"},
+            )
+        
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert len(data["turn"]["player_action"]) == 8000
+        assert len(data["turn"]["gm_response"]) == 32000
+    
+    def test_append_narrative_firestore_error_returns_500(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_append_request,
+    ):
+        """Test that Firestore errors return 500."""
+        
+        # Mock Firestore error
+        mock_firestore_client.transaction.side_effect = Exception("Firestore connection error")
+        
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=valid_append_request,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        response_data = response.json()
+        assert "error" in response_data
+        assert "Failed to append narrative turn" in response_data["message"]
