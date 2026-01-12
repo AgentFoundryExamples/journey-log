@@ -62,89 +62,89 @@ router = APIRouter(
 class CreateCharacterRequest(BaseModel):
     """
     Request model for creating a new character.
-    
+
     Required fields:
     - name: Character name (1-64 characters)
     - race: Character race (1-64 characters)
     - class: Character class (1-64 characters)
     - adventure_prompt: Initial adventure prompt or backstory (non-empty)
-    
+
     Optional fields:
     - location_id: Override default starting location (default: origin:nexus)
     - location_display_name: Display name for location override
     """
+
     model_config = {"extra": "forbid"}
-    
+
     name: str = Field(
-        min_length=1,
-        max_length=64,
-        description="Character name (1-64 characters)"
+        min_length=1, max_length=64, description="Character name (1-64 characters)"
     )
     race: str = Field(
-        min_length=1,
-        max_length=64,
-        description="Character race (1-64 characters)"
+        min_length=1, max_length=64, description="Character race (1-64 characters)"
     )
     character_class: str = Field(
         min_length=1,
         max_length=64,
         alias="class",
-        description="Character class (1-64 characters)"
+        description="Character class (1-64 characters)",
     )
     adventure_prompt: str = Field(
-        min_length=1,
-        description="Initial adventure prompt or backstory"
+        min_length=1, description="Initial adventure prompt or backstory"
     )
     location_id: Optional[str] = Field(
         default=None,
-        description="Optional location ID override (default: origin:nexus)"
+        description="Optional location ID override (default: origin:nexus)",
     )
     location_display_name: Optional[str] = Field(
-        default=None,
-        description="Display name for location override"
+        default=None, description="Display name for location override"
     )
-    
-    @model_validator(mode='after')
-    def validate_location_override(self) -> 'CreateCharacterRequest':
+
+    @model_validator(mode="after")
+    def validate_location_override(self) -> "CreateCharacterRequest":
         """Validate that if one location field is provided, both must be provided."""
         location_id = self.location_id
         location_display_name = self.location_display_name
-        
+
         # Both must be provided or both must be None
         if (location_id is None) != (location_display_name is None):
             if location_id is not None:
-                raise ValueError("location_display_name is required when location_id is provided")
+                raise ValueError(
+                    "location_display_name is required when location_id is provided"
+                )
             else:
-                raise ValueError("location_id is required when location_display_name is provided")
-        
+                raise ValueError(
+                    "location_id is required when location_display_name is provided"
+                )
+
         return self
 
 
 class CreateCharacterResponse(BaseModel):
     """Response model for character creation."""
+
     character: CharacterDocument = Field(description="The created character document")
 
 
 class GetCharacterResponse(BaseModel):
     """Response model for character retrieval."""
+
     character: CharacterDocument = Field(description="The character document")
 
 
 class CharacterMetadata(BaseModel):
     """
     Lightweight character metadata for list responses.
-    
+
     Contains essential character information without full state details.
     """
+
     model_config = {"extra": "forbid"}
-    
+
     character_id: str = Field(description="UUID character identifier")
     name: str = Field(description="Character name")
     race: str = Field(description="Character race")
     character_class: str = Field(
-        alias="class",
-        serialization_alias="class",
-        description="Character class"
+        alias="class", serialization_alias="class", description="Character class"
     )
     status: Status = Field(description="Character health status")
     created_at: datetime = Field(description="When the character was created")
@@ -153,6 +153,7 @@ class CharacterMetadata(BaseModel):
 
 class ListCharactersResponse(BaseModel):
     """Response model for character list retrieval."""
+
     characters: list[CharacterMetadata] = Field(
         description="List of character metadata objects"
     )
@@ -191,23 +192,23 @@ async def list_characters(
 ) -> ListCharactersResponse:
     """
     List all characters owned by a user.
-    
+
     This endpoint:
     1. Validates required X-User-Id header
     2. Queries Firestore for all characters owned by the user
     3. Projects lightweight metadata (character_id, name, race, class, status, timestamps)
     4. Sorts by updated_at descending
     5. Supports optional pagination via limit/offset
-    
+
     Args:
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
         limit: Optional maximum number of results to return
         offset: Number of results to skip (for pagination)
-        
+
     Returns:
         ListCharactersResponse with array of character metadata
-        
+
     Raises:
         HTTPException:
             - 400: Missing or invalid X-User-Id
@@ -220,9 +221,9 @@ async def list_characters(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Log list attempt
     logger.info(
         "list_characters_attempt",
@@ -230,46 +231,46 @@ async def list_characters(
         limit=limit,
         offset=offset,
     )
-    
+
     try:
         # Query Firestore for characters owned by user
         characters_ref = db.collection(settings.firestore_characters_collection)
         query = characters_ref.where("owner_user_id", "==", user_id)
-        
+
         # Order by updated_at descending
         query = query.order_by("updated_at", direction=firestore.Query.DESCENDING)
-        
+
         # Apply offset if specified
         if offset > 0:
             query = query.offset(offset)
-        
+
         # Apply limit if specified
         if limit is not None and limit > 0:
             query = query.limit(limit)
-        
+
         # Execute query
         docs = query.stream()
-        
+
         # Project to metadata
         characters = []
         for doc in docs:
             data = doc.to_dict()
             character_id = doc.id
-            
+
             # Extract fields from nested player_state
             player_state = data.get("player_state", {})
             identity = player_state.get("identity", {})
-            
+
             # Default status to Healthy if missing (as per edge case requirements)
             status_value = player_state.get("status", "Healthy")
-            
+
             # Extract required identity fields
             # Note: These fields are required by the CharacterDocument schema,
             # but we use fallback values for robustness in case of data corruption
             name = identity.get("name", "Unknown")
             race = identity.get("race", "Unknown")
             character_class = identity.get("class", "Unknown")
-            
+
             # Create metadata object
             metadata = CharacterMetadata(
                 character_id=character_id,
@@ -281,20 +282,20 @@ async def list_characters(
                 updated_at=datetime_from_firestore(data.get("updated_at")),
             )
             characters.append(metadata)
-        
+
         logger.info(
             "list_characters_success",
             user_id=user_id,
             count=len(characters),
         )
-        
+
         # Note: 'count' represents the number of characters returned in this response
         # after pagination is applied, not the total number of characters the user owns
         return ListCharactersResponse(
             characters=characters,
             count=len(characters),
         )
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -352,7 +353,7 @@ async def create_character(
 ) -> CreateCharacterResponse:
     """
     Create a new character with default values and persist to Firestore.
-    
+
     This endpoint:
     1. Validates required fields and X-User-Id header
     2. Checks uniqueness of (user_id, name, race, class) tuple
@@ -360,15 +361,15 @@ async def create_character(
     4. Applies default values for new characters
     5. Persists to Firestore
     6. Returns the complete character document
-    
+
     Args:
         request: Character creation request data
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
-        
+
     Returns:
         CreateCharacterResponse with the created character document
-        
+
     Raises:
         HTTPException:
             - 400: Missing or invalid X-User-Id
@@ -383,9 +384,9 @@ async def create_character(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Log character creation attempt
     logger.info(
         "create_character_attempt",
@@ -394,28 +395,27 @@ async def create_character(
         race=request.race,
         character_class=request.character_class,
     )
-    
+
     try:
         # Use a transaction to atomically check for duplicates and create the character
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
-        
+
         # Generate character ID (lowercase UUIDv4)
         character_id = str(uuid.uuid4()).lower()
-        
+
         @firestore.transactional
         def create_in_transaction(transaction, character_data, character_id):
             # Query for existing character with same tuple
             # Note: Firestore queries are case-sensitive
             query = (
-                characters_ref
-                .where("owner_user_id", "==", user_id)
+                characters_ref.where("owner_user_id", "==", user_id)
                 .where("player_state.identity.name", "==", request.name)
                 .where("player_state.identity.race", "==", request.race)
                 .where("player_state.identity.class", "==", request.character_class)
                 .limit(1)
             )
-            
+
             # Run query within the transaction
             existing = list(query.stream(transaction=transaction))
             if existing:
@@ -431,13 +431,14 @@ async def create_character(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Character with name '{request.name}', race '{request.race}', and class '{request.character_class}' already exists for this user",
                 )
-            
+
             # Persist to Firestore within the transaction
             doc_ref = characters_ref.document(character_id)
             transaction.set(doc_ref, character_data)
             return doc_ref
+
         character_id = str(uuid.uuid4()).lower()
-        
+
         # Determine location
         if request.location_id and request.location_display_name:
             location = Location(
@@ -449,14 +450,12 @@ async def create_character(
                 id=DEFAULT_LOCATION_ID,
                 display_name=DEFAULT_LOCATION_DISPLAY_NAME,
             )
-        
+
         # Create character identity
         identity = CharacterIdentity(
-            name=request.name,
-            race=request.race,
-            **{"class": request.character_class}
+            name=request.name, race=request.race, **{"class": request.character_class}
         )
-        
+
         # Create player state with defaults
         player_state = PlayerState(
             identity=identity,
@@ -469,7 +468,7 @@ async def create_character(
             location=location,
             additional_fields={},
         )
-        
+
         # Create character document
         # Use epoch time as placeholder - will be replaced by SERVER_TIMESTAMP
         character = CharacterDocument(
@@ -487,13 +486,13 @@ async def create_character(
             combat_state=None,
             additional_metadata={},
         )
-        
+
         # Serialize to Firestore format with server timestamps
         character_data = character_to_firestore(character, use_server_timestamp=True)
-        
+
         # Execute transaction
         doc_ref = create_in_transaction(transaction, character_data, character_id)
-        
+
         # Read back the document to get server timestamps
         created_doc = doc_ref.get()
         if not created_doc.exists:
@@ -505,22 +504,22 @@ async def create_character(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Character was created but could not be retrieved",
             )
-        
+
         # Deserialize back to CharacterDocument
         created_character = character_from_firestore(
             created_doc.to_dict(),
             character_id=character_id,
         )
-        
+
         logger.info(
             "create_character_success",
             character_id=character_id,
             user_id=user_id,
             name=request.name,
         )
-        
+
         return CreateCharacterResponse(character=created_character)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -567,25 +566,27 @@ async def create_character(
 async def get_character(
     character_id: str,
     db: FirestoreClient,
-    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
 ) -> GetCharacterResponse:
     """
     Retrieve a character document by character_id.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Fetches the document from Firestore
     3. Optionally verifies X-User-Id matches owner_user_id
     4. Deserializes and returns the complete CharacterDocument
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
-        
+
     Returns:
         GetCharacterResponse with the character document
-        
+
     Raises:
         HTTPException:
             - 404: Character not found
@@ -606,20 +607,20 @@ async def get_character(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Log retrieval attempt
     logger.info(
         "get_character_attempt",
         character_id=character_id,
         user_id=x_user_id if x_user_id else "anonymous",
     )
-    
+
     try:
         # Fetch document from Firestore
         characters_ref = db.collection(settings.firestore_characters_collection)
         doc_ref = characters_ref.document(character_id)
         doc = doc_ref.get()
-        
+
         # Check if document exists
         if not doc.exists:
             logger.warning(
@@ -630,13 +631,13 @@ async def get_character(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Character with ID '{character_id}' not found",
             )
-        
+
         # Deserialize document
         character = character_from_firestore(
             doc.to_dict(),
             character_id=character_id,
         )
-        
+
         # Verify user_id if provided
         if x_user_id is not None:
             stripped_user_id = x_user_id.strip()
@@ -661,15 +662,15 @@ async def get_character(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-        
+
         logger.info(
             "get_character_success",
             character_id=character_id,
             owner_user_id=character.owner_user_id,
         )
-        
+
         return GetCharacterResponse(character=character)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -691,38 +692,39 @@ async def get_character(
 class AppendNarrativeRequest(BaseModel):
     """
     Request model for appending a narrative turn to a character.
-    
+
     Required fields:
     - user_action: Player's action or input (1-8000 characters)
     - ai_response: Game master's/AI's response (1-32000 characters)
-    
+
     Optional fields:
     - timestamp: When the turn occurred (ISO 8601 string). Defaults to server UTC now if omitted.
-    
+
     Validation:
     - user_action: max 8000 characters
     - ai_response: max 32000 characters
     - Combined length: max 40000 characters
     """
+
     model_config = {"extra": "forbid"}
-    
+
     user_action: str = Field(
         min_length=1,
         max_length=8000,
-        description="Player's action or input (max 8000 characters)"
+        description="Player's action or input (max 8000 characters)",
     )
     ai_response: str = Field(
         min_length=1,
         max_length=32000,
-        description="Game master's/AI's response (max 32000 characters)"
+        description="Game master's/AI's response (max 32000 characters)",
     )
     timestamp: Optional[str] = Field(
         default=None,
-        description="Optional ISO 8601 timestamp. Defaults to server UTC now if omitted."
+        description="Optional ISO 8601 timestamp. Defaults to server UTC now if omitted.",
     )
-    
-    @model_validator(mode='after')
-    def validate_combined_length(self) -> 'AppendNarrativeRequest':
+
+    @model_validator(mode="after")
+    def validate_combined_length(self) -> "AppendNarrativeRequest":
         """Validate that combined length does not exceed 40000 characters."""
         combined_length = len(self.user_action) + len(self.ai_response)
         if combined_length > 40000:
@@ -735,22 +737,31 @@ class AppendNarrativeRequest(BaseModel):
 
 class AppendNarrativeResponse(BaseModel):
     """Response model for narrative turn append."""
+
     turn: NarrativeTurn = Field(description="The stored narrative turn")
-    total_turns: int = Field(description="Total number of narrative turns for this character")
+    total_turns: int = Field(
+        description="Total number of narrative turns for this character"
+    )
 
 
 class NarrativeMetadata(BaseModel):
     """Metadata for narrative retrieval response."""
+
     model_config = {"extra": "forbid"}
-    
+
     requested_n: int = Field(description="Number of turns requested (n parameter)")
     returned_count: int = Field(description="Number of turns actually returned")
-    total_available: int = Field(description="Total number of turns available for this character")
+    total_available: int = Field(
+        description="Total number of turns available for this character"
+    )
 
 
 class GetNarrativeResponse(BaseModel):
     """Response model for GET narrative endpoint."""
-    turns: list[NarrativeTurn] = Field(description="List of narrative turns ordered oldest-to-newest")
+
+    turns: list[NarrativeTurn] = Field(
+        description="List of narrative turns ordered oldest-to-newest"
+    )
     metadata: NarrativeMetadata = Field(description="Metadata about the query results")
 
 
@@ -798,7 +809,7 @@ async def append_narrative_turn(
 ) -> AppendNarrativeResponse:
     """
     Append a narrative turn to a character's history with atomic transaction.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates X-User-Id matches character owner
@@ -808,16 +819,16 @@ async def append_narrative_turn(
        - Add narrative turn to subcollection with server timestamp if absent
        - Update character.updated_at
     6. Returns stored turn with count metadata
-    
+
     Args:
         character_id: UUID-formatted character identifier
         request: Narrative turn append request data
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
-        
+
     Returns:
         AppendNarrativeResponse with stored turn and total count
-        
+
     Raises:
         HTTPException:
             - 400: Invalid X-User-Id
@@ -839,7 +850,7 @@ async def append_narrative_turn(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate X-User-Id
     if not x_user_id or not x_user_id.strip():
         logger.warning("append_narrative_missing_user_id", character_id=character_id)
@@ -847,9 +858,9 @@ async def append_narrative_turn(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Log oversized attempts for metrics (Pydantic validation already enforces limits)
     combined_length = len(request.user_action) + len(request.ai_response)
     if len(request.user_action) > 7000 or len(request.ai_response) > 30000:
@@ -861,7 +872,7 @@ async def append_narrative_turn(
             ai_response_length=len(request.ai_response),
             combined_length=combined_length,
         )
-    
+
     # Parse and validate timestamp if provided
     turn_timestamp: Optional[datetime] = None
     if request.timestamp:
@@ -878,7 +889,7 @@ async def append_narrative_turn(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid timestamp format: {str(e)}",
             )
-    
+
     # Log append attempt
     logger.info(
         "append_narrative_attempt",
@@ -888,22 +899,22 @@ async def append_narrative_turn(
         ai_response_length=len(request.ai_response),
         has_timestamp=turn_timestamp is not None,
     )
-    
+
     try:
         # Create transaction
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
-        
+
         @firestore.transactional
         def append_in_transaction(transaction):
             """Atomically append turn and update character."""
             # Generate turn ID inside transaction to avoid race condition on retry
             turn_id = str(uuid.uuid4()).lower()
-            
+
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
-            
+
             if not char_snapshot.exists:
                 logger.warning(
                     "append_narrative_character_not_found",
@@ -913,11 +924,11 @@ async def append_narrative_turn(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Character with ID '{character_id}' not found",
                 )
-            
+
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if owner_user_id != user_id:
                 logger.warning(
                     "append_narrative_access_denied",
@@ -929,25 +940,25 @@ async def append_narrative_turn(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-            
+
             # 3. Create narrative turn document
             # Use server timestamp if not provided by client
             turn_data = {
                 "turn_id": turn_id,
                 "player_action": request.user_action,
                 "gm_response": request.ai_response,
-                "timestamp": turn_timestamp if turn_timestamp else firestore.SERVER_TIMESTAMP,
+                "timestamp": turn_timestamp
+                if turn_timestamp
+                else firestore.SERVER_TIMESTAMP,
             }
-            
+
             # 4. Write turn to subcollection
             turn_ref = char_ref.collection("narrative_turns").document(turn_id)
             transaction.set(turn_ref, turn_data)
-            
+
             # 5. Update character.updated_at
-            transaction.update(char_ref, {
-                "updated_at": firestore.SERVER_TIMESTAMP
-            })
-            
+            transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
+
             # 6. Count turns atomically within transaction using aggregation
             # Note: Firestore aggregation count is efficient and atomic within transaction
             turns_collection = char_ref.collection("narrative_turns")
@@ -955,12 +966,12 @@ async def append_narrative_turn(
             count_result = count_query.get(transaction=transaction)
             # The result structure is [[AggregationResult]] where AggregationResult has a value attribute
             total_turns = count_result[0][0].value
-            
+
             return turn_ref, turn_data, turn_id, total_turns
-        
+
         # Execute transaction
         turn_ref, turn_data, turn_id, total_turns = append_in_transaction(transaction)
-        
+
         # Read back the written turn to get server timestamps
         turn_snapshot = turn_ref.get()
         if not turn_snapshot.exists:
@@ -973,10 +984,10 @@ async def append_narrative_turn(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Narrative turn was created but could not be retrieved",
             )
-        
+
         # Convert to NarrativeTurn model
         turn_dict = turn_snapshot.to_dict()
-        
+
         # Convert Firestore timestamp to datetime
         # Timestamp should always be present since we write it in the transaction,
         # but handle defensively
@@ -990,7 +1001,7 @@ async def append_narrative_turn(
                 turn_id=turn_id,
             )
             turn_dict["timestamp"] = datetime.now(timezone.utc)
-        
+
         # Create NarrativeTurn object (using aliases for conversion)
         # Use direct access for required fields that were written in the transaction
         stored_turn = NarrativeTurn(
@@ -1002,19 +1013,19 @@ async def append_narrative_turn(
             game_state_snapshot=turn_dict.get("game_state_snapshot"),
             metadata=turn_dict.get("metadata"),
         )
-        
+
         logger.info(
             "append_narrative_success",
             character_id=character_id,
             turn_id=turn_id,
             total_turns=total_turns,
         )
-        
+
         return AppendNarrativeResponse(
             turn=stored_turn,
             total_turns=total_turns,
         )
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -1068,13 +1079,15 @@ async def append_narrative_turn(
 async def get_narrative_turns(
     character_id: str,
     db: FirestoreClient,
-    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
     n: int = 10,
     since: Optional[str] = None,
 ) -> GetNarrativeResponse:
     """
     Retrieve last N narrative turns for a character with optional time filtering.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates n parameter (default 10, max 100)
@@ -1082,17 +1095,17 @@ async def get_narrative_turns(
     4. Optionally verifies X-User-Id matches owner_user_id
     5. Queries Firestore for narrative turns with filtering (timestamp > since)
     6. Returns turns in oldest-to-newest order with metadata
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         n: Number of turns to retrieve (default 10, max 100)
         since: Optional ISO 8601 timestamp to filter turns strictly after this time (exclusive)
-        
+
     Returns:
         GetNarrativeResponse with turns list and metadata
-        
+
     Raises:
         HTTPException:
             - 400: Invalid parameters (n out of range, invalid since timestamp)
@@ -1113,7 +1126,7 @@ async def get_narrative_turns(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate n parameter
     if n < 1 or n > settings.narrative_turns_max_query_size:
         logger.warning(
@@ -1126,7 +1139,7 @@ async def get_narrative_turns(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Parameter 'n' must be between 1 and {settings.narrative_turns_max_query_size} (got {n})",
         )
-    
+
     # Parse and validate since timestamp if provided
     since_dt: Optional[datetime] = None
     if since:
@@ -1143,7 +1156,7 @@ async def get_narrative_turns(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid timestamp format for 'since' parameter: {str(e)}",
             )
-    
+
     # Log retrieval attempt
     logger.info(
         "get_narrative_attempt",
@@ -1152,13 +1165,13 @@ async def get_narrative_turns(
         n=n,
         has_since_filter=since_dt is not None,
     )
-    
+
     try:
         # 1. Verify character exists
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
-        
+
         if not char_snapshot.exists:
             logger.warning(
                 "get_narrative_character_not_found",
@@ -1168,7 +1181,7 @@ async def get_narrative_turns(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Character with ID '{character_id}' not found",
             )
-        
+
         # 2. Verify ownership if X-User-Id is provided
         if x_user_id is not None:
             stripped_user_id = x_user_id.strip()
@@ -1182,10 +1195,10 @@ async def get_narrative_turns(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="X-User-Id header cannot be empty",
                 )
-            
+
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if stripped_user_id != owner_user_id:
                 logger.warning(
                     "get_narrative_user_mismatch",
@@ -1197,35 +1210,37 @@ async def get_narrative_turns(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-        
+
         # 3. Build query for narrative turns
         turns_collection = char_ref.collection("narrative_turns")
         # Query Strategy: Order by timestamp DESCENDING to efficiently get the N most recent turns
         # The DESCENDING order ensures we get the latest turns first, then we reverse to chronological
-        query = turns_collection.order_by("timestamp", direction=firestore.Query.DESCENDING)
-        
+        query = turns_collection.order_by(
+            "timestamp", direction=firestore.Query.DESCENDING
+        )
+
         # Apply since filter if provided (strict inequality: turns AFTER the timestamp)
         # Note: The filter is applied BEFORE ordering, so it correctly limits the result set
         # before selecting the N most recent turns from the filtered set
         if since_dt:
             query = query.where("timestamp", ">", since_dt)
-        
+
         # Apply limit to get at most N turns
         query = query.limit(n)
-        
+
         # Execute query - returns up to N turns in DESCENDING order (newest first)
         turn_docs = list(query.stream())
-        
+
         # Reverse to get oldest-to-newest order (chronological reading order for LLM context)
         turn_docs.reverse()
-        
+
         # Convert to NarrativeTurn models
         turns = []
         for doc in turn_docs:
             turn_data = doc.to_dict()
             turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
             turns.append(turn)
-        
+
         # 4. Get total count (expensive, but needed for metadata)
         # Note: This is a separate query that counts all matching documents
         # Performance consideration: For characters with many turns, consider caching
@@ -1234,17 +1249,17 @@ async def get_narrative_turns(
             count_query = turns_collection.where("timestamp", ">", since_dt).count()
         else:
             count_query = turns_collection.count()
-        
+
         count_result = count_query.get()
         total_available = count_result[0][0].value
-        
+
         # 5. Prepare metadata
         metadata = NarrativeMetadata(
             requested_n=n,
             returned_count=len(turns),
             total_available=total_available,
         )
-        
+
         logger.info(
             "get_narrative_success",
             character_id=character_id,
@@ -1252,12 +1267,12 @@ async def get_narrative_turns(
             returned_count=len(turns),
             total_available=total_available,
         )
-        
+
         return GetNarrativeResponse(
             turns=turns,
             metadata=metadata,
         )
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -1284,39 +1299,36 @@ async def get_narrative_turns(
 class CreatePOIRequest(BaseModel):
     """
     Request model for creating a new POI for a character.
-    
+
     Required fields:
     - name: POI name (1-200 characters)
     - description: POI description (1-2000 characters)
-    
+
     Optional fields:
     - timestamp: When the POI was discovered (ISO 8601 string, defaults to server UTC now)
     - tags: List of tags for categorizing the POI (max 20 tags, each max 50 chars)
     """
+
     model_config = {"extra": "forbid"}
-    
+
     name: str = Field(
-        min_length=1,
-        max_length=200,
-        description="POI name (1-200 characters)"
+        min_length=1, max_length=200, description="POI name (1-200 characters)"
     )
     description: str = Field(
-        min_length=1,
-        max_length=2000,
-        description="POI description (1-2000 characters)"
+        min_length=1, max_length=2000, description="POI description (1-2000 characters)"
     )
     timestamp: Optional[str] = Field(
         default=None,
-        description="Optional ISO 8601 timestamp when POI was discovered. Defaults to server UTC now if omitted."
+        description="Optional ISO 8601 timestamp when POI was discovered. Defaults to server UTC now if omitted.",
     )
     tags: Optional[list[str]] = Field(
         default=None,
         max_length=20,
-        description="Optional list of tags for categorizing the POI (max 20 tags)"
+        description="Optional list of tags for categorizing the POI (max 20 tags)",
     )
-    
-    @model_validator(mode='after')
-    def validate_tags(self) -> 'CreatePOIRequest':
+
+    @model_validator(mode="after")
+    def validate_tags(self) -> "CreatePOIRequest":
         """Validate tags list size and individual tag lengths."""
         if self.tags is not None:
             if len(self.tags) > 20:
@@ -1336,21 +1348,27 @@ class CreatePOIRequest(BaseModel):
 
 class CreatePOIResponse(BaseModel):
     """Response model for POI creation."""
-    poi: PointOfInterest = Field(description="The created POI with server-assigned created_at")
+
+    poi: PointOfInterest = Field(
+        description="The created POI with server-assigned created_at"
+    )
 
 
 class GetPOIsResponse(BaseModel):
     """Response model for getting POIs with pagination."""
-    pois: list[PointOfInterest] = Field(description="List of POIs sorted by created_at desc")
+
+    pois: list[PointOfInterest] = Field(
+        description="List of POIs sorted by created_at desc"
+    )
     count: int = Field(description="Number of POIs returned in this response")
     cursor: Optional[str] = Field(
-        default=None,
-        description="Cursor for next page (None if no more results)"
+        default=None, description="Cursor for next page (None if no more results)"
     )
 
 
 class GetRandomPOIsResponse(BaseModel):
     """Response model for random POI sampling."""
+
     pois: list[PointOfInterest] = Field(description="Randomly sampled POIs")
     count: int = Field(description="Number of POIs returned")
     requested_n: int = Field(description="Number of POIs requested")
@@ -1402,7 +1420,7 @@ async def create_poi(
 ) -> CreatePOIResponse:
     """
     Create and append a POI to a character's world_pois array.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates X-User-Id matches character owner
@@ -1410,16 +1428,16 @@ async def create_poi(
     4. Generates POI id and assigns server timestamp if not provided
     5. Uses Firestore transaction to atomically append POI and update character
     6. Returns stored POI with generated id and timestamp
-    
+
     Args:
         character_id: UUID-formatted character identifier
         request: POI creation request data
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
-        
+
     Returns:
         CreatePOIResponse with the created POI
-        
+
     Raises:
         HTTPException:
             - 400: Invalid X-User-Id or POI capacity exceeded
@@ -1440,7 +1458,7 @@ async def create_poi(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate X-User-Id
     if not x_user_id or not x_user_id.strip():
         logger.warning("create_poi_missing_user_id", character_id=character_id)
@@ -1448,9 +1466,9 @@ async def create_poi(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Parse and validate timestamp if provided
     poi_timestamp: Optional[datetime] = None
     if request.timestamp:
@@ -1467,7 +1485,7 @@ async def create_poi(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid timestamp format: {str(e)}",
             )
-    
+
     # Log creation attempt
     logger.info(
         "create_poi_attempt",
@@ -1477,41 +1495,41 @@ async def create_poi(
         has_timestamp=poi_timestamp is not None,
         has_tags=request.tags is not None,
     )
-    
+
     try:
         # Generate POI ID outside transaction to avoid race condition on retry
         poi_id = str(uuid.uuid4()).lower()
-        
+
         # Create transaction
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
-        
+
         @firestore.transactional
         def create_poi_in_transaction(transaction):
             """Atomically append POI and update character."""
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
-            
+
             if not char_snapshot.exists:
                 return None, "not_found"
-            
+
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if owner_user_id != user_id:
                 return None, "access_denied"
-            
+
             # 3. Check world_pois capacity (max 200 per schema)
             existing_pois = char_data.get("world_pois", [])
             if len(existing_pois) >= 200:
                 return None, "capacity_exceeded"
-            
+
             # 4. Create POI data
             # Use server timestamp if not provided by client
             created_at = poi_timestamp if poi_timestamp else datetime.now(timezone.utc)
-            
+
             poi_data = {
                 "id": poi_id,
                 "name": request.name,
@@ -1519,21 +1537,21 @@ async def create_poi(
                 "created_at": created_at,
                 "tags": request.tags,
             }
-            
+
             # 5. Append POI to world_pois array (create new list to avoid mutation)
             updated_pois = existing_pois + [poi_data]
-            
+
             # 6. Update character with new POI and updated_at timestamp
-            transaction.update(char_ref, {
-                "world_pois": updated_pois,
-                "updated_at": firestore.SERVER_TIMESTAMP
-            })
-            
+            transaction.update(
+                char_ref,
+                {"world_pois": updated_pois, "updated_at": firestore.SERVER_TIMESTAMP},
+            )
+
             return poi_data, "success"
-        
+
         # Execute transaction
         poi_data, result = create_poi_in_transaction(transaction)
-        
+
         # Handle transaction results
         if result == "not_found":
             logger.warning(
@@ -1562,9 +1580,9 @@ async def create_poi(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="POI capacity exceeded: character has 200 POIs (max 200). "
-                       "Consider archiving or removing old POIs before adding new ones.",
+                "Consider archiving or removing old POIs before adding new ones.",
             )
-        
+
         # Convert to PointOfInterest model
         created_poi = PointOfInterest(
             id=poi_data["id"],
@@ -1573,16 +1591,16 @@ async def create_poi(
             created_at=poi_data["created_at"],
             tags=poi_data.get("tags"),
         )
-        
+
         logger.info(
             "create_poi_success",
             character_id=character_id,
             poi_id=poi_id,
             name=request.name,
         )
-        
+
         return CreatePOIResponse(poi=created_poi)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -1636,12 +1654,14 @@ async def create_poi(
 async def get_random_pois(
     character_id: str,
     db: FirestoreClient,
-    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
     n: int = 3,
 ) -> GetRandomPOIsResponse:
     """
     Retrieve N randomly sampled POIs from a character's world_pois array.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates n parameter (default 3, min 1, max 20)
@@ -1649,16 +1669,16 @@ async def get_random_pois(
     4. Fetches character's world_pois array
     5. Samples up to N unique POIs uniformly at random
     6. Returns sampled POIs with metadata
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         n: Number of POIs to sample (default 3, max 20)
-        
+
     Returns:
         GetRandomPOIsResponse with sampled POIs and metadata
-        
+
     Raises:
         HTTPException:
             - 400: Invalid parameters (n out of range)
@@ -1679,7 +1699,7 @@ async def get_random_pois(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate n parameter
     if n < 1 or n > 20:
         logger.warning(
@@ -1691,7 +1711,7 @@ async def get_random_pois(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Parameter 'n' must be between 1 and 20 (got {n})",
         )
-    
+
     # Log retrieval attempt
     logger.info(
         "get_random_pois_attempt",
@@ -1699,13 +1719,13 @@ async def get_random_pois(
         user_id=x_user_id if x_user_id else "anonymous",
         n=n,
     )
-    
+
     try:
         # 1. Verify character exists
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
-        
+
         if not char_snapshot.exists:
             logger.warning(
                 "get_random_pois_character_not_found",
@@ -1715,7 +1735,7 @@ async def get_random_pois(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Character with ID '{character_id}' not found",
             )
-        
+
         # 2. Verify ownership if X-User-Id is provided
         char_data = char_snapshot.to_dict()
         if x_user_id is not None:
@@ -1730,9 +1750,9 @@ async def get_random_pois(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="X-User-Id header cannot be empty",
                 )
-            
+
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if stripped_user_id != owner_user_id:
                 logger.warning(
                     "get_random_pois_user_mismatch",
@@ -1744,15 +1764,15 @@ async def get_random_pois(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-        
+
         # 3. Get world_pois array
         world_pois_data = char_data.get("world_pois", [])
         total_available = len(world_pois_data)
-        
+
         # 4. Sample POIs
         # Determine how many to sample (min of n and total available)
         sample_size = min(n, total_available)
-        
+
         if sample_size == 0:
             # No POIs available, return empty list
             sampled_pois_data = []
@@ -1762,7 +1782,7 @@ async def get_random_pois(
         else:
             # Sample without replacement
             sampled_pois_data = random.sample(world_pois_data, sample_size)
-        
+
         # 5. Convert to PointOfInterest models
         sampled_pois = []
         for poi_data in sampled_pois_data:
@@ -1770,7 +1790,7 @@ async def get_random_pois(
             created_at = poi_data.get("created_at")
             if created_at is not None:
                 created_at = datetime_from_firestore(created_at)
-            
+
             poi = PointOfInterest(
                 id=poi_data["id"],
                 name=poi_data["name"],
@@ -1779,7 +1799,7 @@ async def get_random_pois(
                 tags=poi_data.get("tags"),
             )
             sampled_pois.append(poi)
-        
+
         logger.info(
             "get_random_pois_success",
             character_id=character_id,
@@ -1787,14 +1807,14 @@ async def get_random_pois(
             returned_count=len(sampled_pois),
             total_available=total_available,
         )
-        
+
         return GetRandomPOIsResponse(
             pois=sampled_pois,
             count=len(sampled_pois),
             requested_n=n,
             total_available=total_available,
         )
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -1848,13 +1868,15 @@ async def get_random_pois(
 async def get_pois(
     character_id: str,
     db: FirestoreClient,
-    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
     limit: Optional[int] = None,
     cursor: Optional[str] = None,
 ) -> GetPOIsResponse:
     """
     Retrieve all POIs for a character with optional pagination.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates limit parameter (max 200)
@@ -1863,17 +1885,17 @@ async def get_pois(
     5. Sorts by created_at descending (newest first)
     6. Applies pagination if limit/cursor provided
     7. Returns POIs with pagination metadata
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         limit: Optional maximum number of results to return (max 200)
         cursor: Optional pagination cursor from previous response
-        
+
     Returns:
         GetPOIsResponse with POIs list and pagination metadata
-        
+
     Raises:
         HTTPException:
             - 400: Invalid parameters (limit out of range)
@@ -1894,7 +1916,7 @@ async def get_pois(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate limit parameter
     if limit is not None and (limit < 1 or limit > 200):
         logger.warning(
@@ -1906,7 +1928,7 @@ async def get_pois(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Parameter 'limit' must be between 1 and 200 (got {limit})",
         )
-    
+
     # Log retrieval attempt
     logger.info(
         "get_pois_attempt",
@@ -1915,13 +1937,13 @@ async def get_pois(
         limit=limit,
         has_cursor=cursor is not None,
     )
-    
+
     try:
         # 1. Verify character exists
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
-        
+
         if not char_snapshot.exists:
             logger.warning(
                 "get_pois_character_not_found",
@@ -1931,7 +1953,7 @@ async def get_pois(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Character with ID '{character_id}' not found",
             )
-        
+
         # 2. Verify ownership if X-User-Id is provided
         char_data = char_snapshot.to_dict()
         if x_user_id is not None:
@@ -1946,9 +1968,9 @@ async def get_pois(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="X-User-Id header cannot be empty",
                 )
-            
+
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if stripped_user_id != owner_user_id:
                 logger.warning(
                     "get_pois_user_mismatch",
@@ -1960,10 +1982,10 @@ async def get_pois(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-        
+
         # 3. Get world_pois array
         world_pois_data = char_data.get("world_pois", [])
-        
+
         # 4. Sort POIs by created_at descending (newest first)
         # Handle missing created_at by using datetime.min as fallback (oldest possible)
         def get_created_at(poi_data):
@@ -1975,13 +1997,13 @@ async def get_pois(
                 return created_at
             # Handle Firestore timestamp
             return datetime_from_firestore(created_at)
-        
+
         sorted_pois_data = sorted(
             world_pois_data,
             key=get_created_at,
-            reverse=True  # Descending order (newest first)
+            reverse=True,  # Descending order (newest first)
         )
-        
+
         # 5. Apply pagination
         # Simple offset-based pagination using cursor as index
         start_index = 0
@@ -1998,21 +2020,21 @@ async def get_pois(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid cursor format: {cursor}",
                 )
-        
+
         # Determine end index based on limit
         if limit is not None:
             end_index = start_index + limit
         else:
             end_index = len(sorted_pois_data)
-        
+
         # Slice the sorted POIs
         page_pois_data = sorted_pois_data[start_index:end_index]
-        
+
         # Determine next cursor
         next_cursor = None
         if end_index < len(sorted_pois_data):
             next_cursor = str(end_index)
-        
+
         # 6. Convert to PointOfInterest models
         pois = []
         for poi_data in page_pois_data:
@@ -2020,7 +2042,7 @@ async def get_pois(
             created_at = poi_data.get("created_at")
             if created_at is not None:
                 created_at = datetime_from_firestore(created_at)
-            
+
             poi = PointOfInterest(
                 id=poi_data["id"],
                 name=poi_data["name"],
@@ -2029,7 +2051,7 @@ async def get_pois(
                 tags=poi_data.get("tags"),
             )
             pois.append(poi)
-        
+
         logger.info(
             "get_pois_success",
             character_id=character_id,
@@ -2037,13 +2059,13 @@ async def get_pois(
             total_available=len(sorted_pois_data),
             has_next_page=next_cursor is not None,
         )
-        
+
         return GetPOIsResponse(
             pois=pois,
             count=len(pois),
             cursor=next_cursor,
         )
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -2069,12 +2091,16 @@ async def get_pois(
 
 class SetQuestResponse(BaseModel):
     """Response model for setting active quest."""
+
     quest: Quest = Field(description="The stored active quest")
 
 
 class GetQuestResponse(BaseModel):
     """Response model for getting active quest."""
-    quest: Optional[Quest] = Field(description="The active quest or null if none exists")
+
+    quest: Optional[Quest] = Field(
+        description="The active quest or null if none exists"
+    )
 
 
 @router.put(
@@ -2125,23 +2151,23 @@ async def set_quest(
 ) -> SetQuestResponse:
     """
     Set the active quest for a character.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates X-User-Id matches character owner
     3. Validates Quest payload (name, description, completion_state, etc.)
     4. Uses Firestore transaction to atomically check for existing quest and set new quest
     5. Returns stored quest
-    
+
     Args:
         character_id: UUID-formatted character identifier
         quest: Quest object to set as active
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
-        
+
     Returns:
         SetQuestResponse with the stored quest
-        
+
     Raises:
         HTTPException:
             - 400: Invalid X-User-Id
@@ -2163,7 +2189,7 @@ async def set_quest(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate X-User-Id
     if not x_user_id or not x_user_id.strip():
         logger.warning("set_quest_missing_user_id", character_id=character_id)
@@ -2171,9 +2197,9 @@ async def set_quest(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Log attempt
     logger.info(
         "set_quest_attempt",
@@ -2182,49 +2208,49 @@ async def set_quest(
         quest_name=quest.name,
         completion_state=quest.completion_state,
     )
-    
+
     try:
         # Create transaction
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
-        
+
         @firestore.transactional
         def set_quest_in_transaction(transaction):
             """Atomically verify no quest exists and set new quest."""
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
-            
+
             if not char_snapshot.exists:
                 return None, "not_found"
-            
+
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if owner_user_id != user_id:
                 return None, "access_denied"
-            
+
             # 3. Check for existing active quest
             existing_quest = char_data.get("active_quest")
             if existing_quest is not None:
                 return None, "quest_exists"
-            
+
             # 4. Serialize quest for Firestore
             # Use mode='python' to get datetime objects (not JSON strings)
-            quest_data = quest.model_dump(mode='python')
-            
+            quest_data = quest.model_dump(mode="python")
+
             # 5. Update character with new quest and updated_at timestamp
-            transaction.update(char_ref, {
-                "active_quest": quest_data,
-                "updated_at": firestore.SERVER_TIMESTAMP
-            })
-            
+            transaction.update(
+                char_ref,
+                {"active_quest": quest_data, "updated_at": firestore.SERVER_TIMESTAMP},
+            )
+
             return quest_data, "success"
-        
+
         # Execute transaction
         quest_data, result = set_quest_in_transaction(transaction)
-        
+
         # Handle transaction results
         if result == "not_found":
             logger.warning(
@@ -2253,19 +2279,19 @@ async def set_quest(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="An active quest already exists for this character. "
-                       "Please DELETE the existing quest before setting a new one.",
+                "Please DELETE the existing quest before setting a new one.",
             )
-        
+
         logger.info(
             "set_quest_success",
             character_id=character_id,
             quest_name=quest.name,
         )
-        
+
         # The 'quest_data' is what was prepared for Firestore.
         # Construct the response from this data to ensure consistency.
         return SetQuestResponse(quest=Quest(**quest_data))
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -2300,7 +2326,7 @@ async def set_quest(
         "  - If omitted entirely, allows anonymous access without verification\n\n"
         "**Response:**\n"
         "- Returns the Quest object if an active quest exists\n"
-        "- Returns {\"quest\": null} if no active quest exists\n\n"
+        '- Returns {"quest": null} if no active quest exists\n\n'
         "**Error Responses:**\n"
         "- `400`: X-User-Id header provided but empty/whitespace-only\n"
         "- `403`: X-User-Id provided but does not match character owner\n"
@@ -2312,25 +2338,27 @@ async def set_quest(
 async def get_quest(
     character_id: str,
     db: FirestoreClient,
-    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
 ) -> GetQuestResponse:
     """
     Retrieve the active quest for a character.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Fetches the character document from Firestore
     3. Optionally verifies X-User-Id matches owner_user_id
     4. Returns the active quest or null
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
-        
+
     Returns:
         GetQuestResponse with the quest or null
-        
+
     Raises:
         HTTPException:
             - 400: Empty X-User-Id header
@@ -2351,20 +2379,20 @@ async def get_quest(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Log retrieval attempt
     logger.info(
         "get_quest_attempt",
         character_id=character_id,
         user_id=x_user_id if x_user_id else "anonymous",
     )
-    
+
     try:
         # Fetch character document from Firestore
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
-        
+
         if not char_snapshot.exists:
             logger.warning(
                 "get_quest_character_not_found",
@@ -2374,7 +2402,7 @@ async def get_quest(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Character with ID '{character_id}' not found",
             )
-        
+
         # Verify ownership if X-User-Id is provided
         char_data = char_snapshot.to_dict()
         if x_user_id is not None:
@@ -2389,9 +2417,9 @@ async def get_quest(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="X-User-Id header cannot be empty",
                 )
-            
+
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if stripped_user_id != owner_user_id:
                 logger.warning(
                     "get_quest_user_mismatch",
@@ -2403,20 +2431,20 @@ async def get_quest(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-        
+
         # Use the centralized deserialization logic from character_from_firestore
         # to construct the full character document, which handles nested timestamps.
         character = character_from_firestore(char_data, character_id=character_id)
         active_quest = character.active_quest
-        
+
         logger.info(
             "get_quest_success",
             character_id=character_id,
             has_quest=active_quest is not None,
         )
-        
+
         return GetQuestResponse(quest=active_quest)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -2474,22 +2502,22 @@ async def delete_quest(
 ):
     """
     Delete the active quest for a character and archive it.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates X-User-Id matches character owner
     3. Uses Firestore transaction to atomically clear quest and archive it
     4. Enforces 50-entry limit on archived quests (FIFO)
     5. Idempotent - succeeds even if no quest exists
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
-        
+
     Returns:
         No content (204 status)
-        
+
     Raises:
         HTTPException:
             - 400: Invalid X-User-Id
@@ -2510,7 +2538,7 @@ async def delete_quest(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate X-User-Id
     if not x_user_id or not x_user_id.strip():
         logger.warning("delete_quest_missing_user_id", character_id=character_id)
@@ -2518,41 +2546,41 @@ async def delete_quest(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Log attempt
     logger.info(
         "delete_quest_attempt",
         character_id=character_id,
         user_id=user_id,
     )
-    
+
     try:
         # Create transaction
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
-        
+
         @firestore.transactional
         def delete_quest_in_transaction(transaction):
             """Atomically clear quest and archive it."""
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
-            
+
             if not char_snapshot.exists:
                 return "not_found", False
-            
+
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if owner_user_id != user_id:
                 return "access_denied", False
-            
+
             # 3. Get existing active quest
             active_quest_data = char_data.get("active_quest")
-            
+
             # If no active quest, this is a no-op but still succeeds (idempotent)
             if active_quest_data is None:
                 logger.info(
@@ -2560,35 +2588,38 @@ async def delete_quest(
                     character_id=character_id,
                 )
                 return "success", False
-            
+
             # 4. Create archived quest entry with cleared_at timestamp
             cleared_at = datetime.now(timezone.utc)
             archived_entry = {
                 "quest": active_quest_data,
                 "cleared_at": cleared_at,
             }
-            
+
             # 5. Get existing archived quests and append new entry
             archived_quests = char_data.get("archived_quests", [])
             archived_quests.append(archived_entry)
-            
+
             # 6. Trim to maintain ≤50 entries (remove oldest first)
             if len(archived_quests) > 50:
                 # Keep the last 50 entries (most recent)
                 archived_quests = archived_quests[-50:]
-            
+
             # 7. Update character: clear active quest, update archived quests, update timestamp
-            transaction.update(char_ref, {
-                "active_quest": None,
-                "archived_quests": archived_quests,
-                "updated_at": firestore.SERVER_TIMESTAMP
-            })
-            
+            transaction.update(
+                char_ref,
+                {
+                    "active_quest": None,
+                    "archived_quests": archived_quests,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+
             return "success", True
-        
+
         # Execute transaction
         result, had_quest = delete_quest_in_transaction(transaction)
-        
+
         # Handle transaction results
         if result == "not_found":
             logger.warning(
@@ -2609,16 +2640,16 @@ async def delete_quest(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: user ID does not match character owner",
             )
-        
+
         logger.info(
             "delete_quest_success",
             character_id=character_id,
             had_active_quest=had_quest,
         )
-        
+
         # Return 204 No Content
         return None
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -2646,12 +2677,13 @@ async def delete_quest(
 class UpdateCombatRequest(BaseModel):
     """
     Request model for updating combat state.
-    
+
     The combat_state field accepts a full CombatState object or null to clear combat.
     Server-side validation ensures ≤5 enemies and valid status enum values.
     """
+
     model_config = {"extra": "forbid"}
-    
+
     combat_state: Optional[CombatState] = Field(
         description="Full combat state to set, or null to clear combat"
     )
@@ -2660,11 +2692,12 @@ class UpdateCombatRequest(BaseModel):
 class UpdateCombatResponse(BaseModel):
     """
     Response model for combat state updates.
-    
+
     Returns the active/inactive status and the resulting combat state.
     """
+
     model_config = {"extra": "forbid"}
-    
+
     active: bool = Field(
         description="Whether combat is currently active (any enemy not Dead)"
     )
@@ -2702,7 +2735,7 @@ class UpdateCombatResponse(BaseModel):
         "3. Update character.updated_at timestamp\n"
         "4. Log when combat transitions from active to inactive\n\n"
         "**Response:**\n"
-        "- Returns {\"active\": bool, \"state\": CombatState | null}\n"
+        '- Returns {"active": bool, "state": CombatState | null}\n'
         "- HTTP 200 for successful updates (both set and clear operations)\n\n"
         "**Error Responses:**\n"
         "- `400`: Missing or invalid X-User-Id header\n"
@@ -2712,8 +2745,8 @@ class UpdateCombatResponse(BaseModel):
         "- `500`: Internal server error (e.g., Firestore transient errors)\n\n"
         "**Edge Cases:**\n"
         "- Submitting >5 enemies returns 422 with detailed error\n"
-        "- Submitting null clears combat and returns {\"active\": false, \"state\": null}\n"
-        "- All enemies Dead returns {\"active\": false, \"state\": <combat_state>}\n"
+        '- Submitting null clears combat and returns {"active": false, "state": null}\n'
+        '- All enemies Dead returns {"active": false, "state": <combat_state>}\n'
         "- Race conditions: last writer wins without corrupting other fields\n"
         "- Unknown status strings cause explicit validation errors"
     ),
@@ -2726,7 +2759,7 @@ async def update_combat(
 ) -> UpdateCombatResponse:
     """
     Update or clear combat state for a character with atomic transaction.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates X-User-Id matches character owner
@@ -2735,16 +2768,16 @@ async def update_combat(
     5. Uses Firestore transaction to atomically update combat_state and updated_at
     6. Logs when combat transitions from active to inactive
     7. Returns stable schema: {"active": bool, "state": CombatState | null}
-    
+
     Args:
         character_id: UUID-formatted character identifier
         request: Combat state update request (combat_state or null)
         db: Firestore client (dependency injection)
         x_user_id: User ID from X-User-Id header
-        
+
     Returns:
         UpdateCombatResponse with active flag and current combat state
-        
+
     Raises:
         HTTPException:
             - 400: Invalid X-User-Id
@@ -2765,7 +2798,7 @@ async def update_combat(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Validate X-User-Id
     if not x_user_id or not x_user_id.strip():
         logger.warning("update_combat_missing_user_id", character_id=character_id)
@@ -2773,17 +2806,17 @@ async def update_combat(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="X-User-Id header is required and cannot be empty",
         )
-    
+
     user_id = x_user_id.strip()
-    
+
     # Compute is_active flag for the new combat state
     new_combat_state = request.combat_state
     is_active = False
-    
+
     if new_combat_state is not None:
         # Use the is_active property from CombatState model
         is_active = new_combat_state.is_active
-    
+
     # Log attempt
     logger.info(
         "update_combat_attempt",
@@ -2792,33 +2825,33 @@ async def update_combat(
         clearing_combat=new_combat_state is None,
         new_active_state=is_active,
     )
-    
+
     try:
         # Create transaction
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
-        
+
         @firestore.transactional
         def update_combat_in_transaction(transaction):
             """Atomically update combat state and log transitions."""
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
-            
+
             if not char_snapshot.exists:
                 return None, None, "not_found"
-            
+
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if owner_user_id != user_id:
                 return None, None, "access_denied"
-            
+
             # 3. Get existing combat state to detect transitions
             existing_combat_data = char_data.get("combat_state")
             was_active = False
-            
+
             if existing_combat_data is not None:
                 try:
                     # Reuse the logic from the CombatState model to determine if it was active
@@ -2833,31 +2866,33 @@ async def update_combat(
                         exc_info=True,
                     )
                     enemies = existing_combat_data.get("enemies", [])
-                    was_active = any(
-                        enemy.get("status") != "Dead" 
-                        for enemy in enemies
-                    )
-            
+                    was_active = any(enemy.get("status") != "Dead" for enemy in enemies)
+
             # 4. Detect transition from active to inactive for logging
             transition_to_inactive = was_active and not is_active
-            
+
             # 5. Serialize new combat state for Firestore (or None to clear)
             combat_state_data = None
             if new_combat_state is not None:
                 # Use mode='python' to get datetime objects (not JSON strings)
-                combat_state_data = new_combat_state.model_dump(mode='python')
-            
+                combat_state_data = new_combat_state.model_dump(mode="python")
+
             # 6. Update character with new combat state and updated_at timestamp
-            transaction.update(char_ref, {
-                "combat_state": combat_state_data,
-                "updated_at": firestore.SERVER_TIMESTAMP
-            })
-            
+            transaction.update(
+                char_ref,
+                {
+                    "combat_state": combat_state_data,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+            )
+
             return combat_state_data, transition_to_inactive, "success"
-        
+
         # Execute transaction
-        combat_state_data, transition_to_inactive, result = update_combat_in_transaction(transaction)
-        
+        combat_state_data, transition_to_inactive, result = (
+            update_combat_in_transaction(transaction)
+        )
+
         # Handle transaction results
         if result == "not_found":
             logger.warning(
@@ -2878,7 +2913,7 @@ async def update_combat(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: user ID does not match character owner",
             )
-        
+
         # Log transition from active to inactive if it occurred
         if transition_to_inactive:
             logger.info(
@@ -2886,20 +2921,20 @@ async def update_combat(
                 character_id=character_id,
                 reason="all_enemies_dead_or_cleared",
             )
-        
+
         logger.info(
             "update_combat_success",
             character_id=character_id,
             active=is_active,
             cleared=new_combat_state is None,
         )
-        
+
         # Construct response using the validated request data
         return UpdateCombatResponse(
             active=is_active,
             state=request.combat_state,
         )
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -2922,12 +2957,13 @@ async def update_combat(
 class GetCombatResponse(BaseModel):
     """
     Response model for combat state retrieval.
-    
+
     Returns the active/inactive status and the current combat state.
     This is the standard envelope for LLM-driven Directors to poll combat state.
     """
+
     model_config = {"extra": "forbid"}
-    
+
     active: bool = Field(
         description="Whether combat is currently active (any enemy not Dead)"
     )
@@ -2950,7 +2986,7 @@ class GetCombatResponse(BaseModel):
         "  - If header is provided but empty/whitespace-only, returns 400 error\n"
         "  - If omitted entirely, allows anonymous access without verification\n\n"
         "**Response:**\n"
-        "- Always returns HTTP 200 with JSON object: {\"active\": bool, \"state\": CombatState | null}\n"
+        '- Always returns HTTP 200 with JSON object: {"active": bool, "state": CombatState | null}\n'
         "- `active=true, state=<CombatState>` when any enemy has status != Dead\n"
         "- `active=false, state=null` when combat_state is absent, empty, or all enemies are Dead\n"
         "- Never returns 204 No Content - always provides the active/state envelope\n\n"
@@ -2973,36 +3009,38 @@ class GetCombatResponse(BaseModel):
         "- Stored documents with >5 enemies (legacy data) trigger defensive filtering\n"
         "- Race conditions where combat cleared between read start/finish return inactive\n"
         "- Malformed stored data is handled gracefully with fallback to inactive\n"
-        "- Characters with no combat history return {\"active\": false, \"state\": null}"
+        '- Characters with no combat history return {"active": false, "state": null}'
     ),
 )
 async def get_combat(
     character_id: str,
     db: FirestoreClient,
-    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
 ) -> GetCombatResponse:
     """
     Retrieve the current combat state for a character.
-    
+
     This endpoint provides an idempotent read operation that always returns a
     predictable JSON envelope describing combat status. LLM-driven Directors can
     use this to poll combat state without special handling for 204 responses.
-    
+
     This endpoint:
     1. Validates character_id as UUID format
     2. Fetches the character document from Firestore
     3. Optionally verifies X-User-Id matches owner_user_id
     4. Detects combat inactivity based on combat_state field
     5. Returns {\"active\": bool, \"state\": CombatState | null} envelope
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
-        
+
     Returns:
         GetCombatResponse with active flag and combat state
-        
+
     Raises:
         HTTPException:
             - 400: Empty X-User-Id header
@@ -3023,20 +3061,20 @@ async def get_combat(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
         )
-    
+
     # Log retrieval attempt
     logger.info(
         "get_combat_attempt",
         character_id=character_id,
         user_id=x_user_id if x_user_id else "anonymous",
     )
-    
+
     try:
         # Fetch character document from Firestore
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
-        
+
         if not char_snapshot.exists:
             logger.warning(
                 "get_combat_character_not_found",
@@ -3046,7 +3084,7 @@ async def get_combat(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Character with ID '{character_id}' not found",
             )
-        
+
         # Verify ownership if X-User-Id is provided
         char_data = char_snapshot.to_dict()
         if x_user_id is not None:
@@ -3061,9 +3099,9 @@ async def get_combat(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="X-User-Id header cannot be empty",
                 )
-            
+
             owner_user_id = char_data.get("owner_user_id")
-            
+
             if stripped_user_id != owner_user_id:
                 logger.warning(
                     "get_combat_user_mismatch",
@@ -3075,10 +3113,10 @@ async def get_combat(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Access denied: user ID does not match character owner",
                 )
-        
+
         # Get combat_state from character document
         combat_state_data = char_data.get("combat_state")
-        
+
         # Detect inactivity - combat_state is None or missing
         if combat_state_data is None:
             logger.info(
@@ -3086,31 +3124,30 @@ async def get_combat(
                 character_id=character_id,
             )
             return GetCombatResponse(active=False, state=None)
-        
+
         # Parse combat state and determine if active
         try:
             # Directly parse the combat_state data into the Pydantic model
             # This is more efficient than deserializing the entire character document
             combat_state = CombatState(**combat_state_data)
-            
+
             # Use the is_active property from the CombatState model
             # Combat is active when any enemy has status != Dead
             is_active = combat_state.is_active
-            
+
             logger.info(
                 "get_combat_success",
                 character_id=character_id,
                 active=is_active,
                 num_enemies=len(combat_state.enemies),
             )
-            
+
             # When inactive (all enemies dead), return null state per acceptance criteria
             # When active, return the full combat state
             return GetCombatResponse(
-                active=is_active,
-                state=combat_state if is_active else None
+                active=is_active, state=combat_state if is_active else None
             )
-            
+
         except (ValueError, TypeError, KeyError) as e:
             # Defensive: if combat_state is malformed or has invalid data, treat as inactive
             # This handles cases where stored data doesn't match the expected schema
@@ -3123,7 +3160,7 @@ async def get_combat(
                 exc_info=True,
             )
             return GetCombatResponse(active=False, state=None)
-        
+
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
