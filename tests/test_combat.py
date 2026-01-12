@@ -722,8 +722,8 @@ class TestGetCombat:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["active"] is False
-        assert data["state"] is not None
-        assert data["state"]["combat_id"] == "combat_002"
+        # When inactive (all enemies dead), state should be null per acceptance criteria
+        assert data["state"] is None
     
     def test_get_combat_empty_enemies(
         self,
@@ -760,8 +760,8 @@ class TestGetCombat:
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["active"] is False
-        assert data["state"] is not None
-        assert len(data["state"]["enemies"]) == 0
+        # When inactive (empty enemies list), state should be null per acceptance criteria
+        assert data["state"] is None
     
     def test_get_combat_character_not_found(
         self,

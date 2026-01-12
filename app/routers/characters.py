@@ -3124,20 +3124,12 @@ async def get_combat(
         
         # Parse combat state and determine if active
         try:
-            # Use character_from_firestore to ensure consistent deserialization
-            character = character_from_firestore(char_data, character_id=character_id)
-            combat_state = character.combat_state
+            # Directly parse the combat_state data into the Pydantic model
+            # This is more efficient than deserializing the entire character document
+            combat_state = CombatState(**combat_state_data)
             
-            if combat_state is None:
-                # Defensive: deserialization returned None even though raw data had combat_state
-                # This can happen if character_from_firestore fails to parse combat_state
-                logger.info(
-                    "get_combat_deserialized_to_none",
-                    character_id=character_id,
-                )
-                return GetCombatResponse(active=False, state=None)
-            
-            # Use the is_active property from CombatState model
+            # Use the is_active property from the CombatState model
+            # Combat is active when any enemy has status != Dead
             is_active = combat_state.is_active
             
             logger.info(
@@ -3147,11 +3139,17 @@ async def get_combat(
                 num_enemies=len(combat_state.enemies),
             )
             
-            return GetCombatResponse(active=is_active, state=combat_state)
+            # When inactive (all enemies dead), return null state per acceptance criteria
+            # When active, return the full combat state
+            return GetCombatResponse(
+                active=is_active,
+                state=combat_state if is_active else None
+            )
             
         except (ValueError, TypeError, KeyError) as e:
             # Defensive: if combat_state is malformed or has invalid data, treat as inactive
             # This handles cases where stored data doesn't match the expected schema
+            # Note: ValidationError from Pydantic (>5 enemies) will be caught here as ValueError
             logger.warning(
                 "get_combat_malformed_state",
                 character_id=character_id,
