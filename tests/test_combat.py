@@ -541,3 +541,71 @@ class TestUpdateCombat:
         data = response.json()
         # API uses structured error format with 'errors' field
         assert "errors" in data or "detail" in data
+    
+    def test_update_combat_with_malformed_existing_state(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_combat_state,
+    ):
+        """Test that malformed existing combat state doesn't break the update."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Character with malformed combat_state (missing required fields)
+        sample_data = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",
+                "level": 1,
+                "experience": 0,
+                "health": {"current": 100, "max": 100},
+                "stats": {},
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "origin:nexus", "display_name": "The Nexus"},
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "world_state": None,
+            "active_quest": None,
+            "archived_quests": [],
+            # Malformed combat_state - missing required fields like started_at
+            "combat_state": {
+                "combat_id": "old_combat",
+                "enemies": [{"enemy_id": "e1", "name": "Old Enemy", "status": "Healthy"}]
+            },
+            "additional_metadata": {},
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_data
+        
+        # Mock transaction flow
+        def transaction_get(transaction=None):
+            return mock_snapshot
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get = transaction_get
+        
+        # Make request with valid new combat state
+        response = test_client_with_mock_db.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": valid_combat_state},
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Should succeed despite malformed existing state (uses fallback logic)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is True
+        assert data["state"]["combat_id"] == "combat_001"

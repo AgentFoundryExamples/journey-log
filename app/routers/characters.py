@@ -2855,12 +2855,23 @@ async def update_combat(
             was_active = False
             
             if existing_combat_data is not None:
-                # Check if previous combat was active by examining enemy statuses
-                enemies = existing_combat_data.get("enemies", [])
-                was_active = any(
-                    enemy.get("status") != "Dead" 
-                    for enemy in enemies
-                )
+                try:
+                    # Reuse the logic from the CombatState model to determine if it was active
+                    existing_combat_state = CombatState(**existing_combat_data)
+                    was_active = existing_combat_state.is_active
+                except Exception:
+                    # Fallback for potentially malformed data in DB, though unlikely.
+                    # This preserves the original behavior in an edge case.
+                    logger.warning(
+                        "update_combat_malformed_existing_state",
+                        character_id=character_id,
+                        exc_info=True,
+                    )
+                    enemies = existing_combat_data.get("enemies", [])
+                    was_active = any(
+                        enemy.get("status") != "Dead" 
+                        for enemy in enemies
+                    )
             
             # 4. Detect transition from active to inactive for logging
             transition_to_inactive = was_active and not is_active
@@ -2918,16 +2929,10 @@ async def update_combat(
             cleared=new_combat_state is None,
         )
         
-        # Construct response
-        # If combat_state_data is None, return null state
-        # Otherwise, reconstruct CombatState from the data
-        response_state = None
-        if combat_state_data is not None:
-            response_state = CombatState(**combat_state_data)
-        
+        # Construct response using the validated request data
         return UpdateCombatResponse(
             active=is_active,
-            state=response_state,
+            state=request.combat_state,
         )
         
     except HTTPException:
