@@ -24,7 +24,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, status
 from google.cloud import firestore  # type: ignore[import-untyped]
-from pydantic import BaseModel, Field, model_validator, model_serializer
+from pydantic import BaseModel, Field, model_validator
 
 from app.config import (
     get_settings,

@@ -27,7 +27,6 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     EnemyState,
-    Health,
     NarrativeTurn,
     PlayerState,
     PointOfInterestSubcollection,
@@ -141,7 +140,7 @@ class TestCharacterDocumentSerialization:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={"strength": 10},
             location="test_location"
         )
@@ -181,8 +180,6 @@ class TestCharacterDocumentSerialization:
         assert player_state['identity']['name'] == 'Test'
         assert player_state['identity']['class'] == 'Warrior'  # Using alias
         assert player_state['status'] == 'Healthy'
-        assert player_state['health']['current'] == 100
-        assert player_state['health']['max'] == 100
     
     def test_character_to_firestore_excludes_none(self):
         """Test that None values are excluded by default."""
@@ -244,7 +241,6 @@ class TestCharacterDocumentSerialization:
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
-                'health': {'current': 100, 'max': 100},
                 'stats': {'strength': 10},
                 'location': 'test_location'
             },
@@ -274,7 +270,6 @@ class TestCharacterDocumentSerialization:
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
-                'health': {'current': 100, 'max': 100},
                 'stats': {},
                 'location': 'test'
             },
@@ -304,7 +299,6 @@ class TestCharacterDocumentSerialization:
         assert restored.owner_user_id == original.owner_user_id
         assert restored.schema_version == original.schema_version
         assert restored.player_state.identity.name == original.player_state.identity.name
-        assert restored.player_state.health.current == original.player_state.health.current
     
     def test_character_from_firestore_with_timestamps(self):
         """Test deserialization with Firestore Timestamp objects."""
@@ -323,7 +317,6 @@ class TestCharacterDocumentSerialization:
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
-                'health': {'current': 100, 'max': 100},
                 'stats': {},
                 'location': 'test'
             },
@@ -558,7 +551,7 @@ class TestEdgeCases:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test",
             equipment=[],
@@ -582,7 +575,6 @@ class TestEdgeCases:
             'player_state': {
                 'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
                 'status': 'Healthy',
-                'health': {'current': 100, 'max': 100},
                 'stats': {},
                 'location': 'test'
             },
