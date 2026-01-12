@@ -10,14 +10,14 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 - **Total files**: 20
 - **Intra-repo dependencies**: 31
-- **External stdlib dependencies**: 25
+- **External stdlib dependencies**: 24
 - **External third-party dependencies**: 31
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 25 unique modules
+Total: 24 unique modules
 
 - `contextvars.ContextVar`
 - `copy`
@@ -39,7 +39,7 @@ Total: 25 unique modules
 - `typing.List`
 - `typing.Literal`
 - `typing.Optional`
-- ... and 5 more (see JSON for full list)
+- ... and 4 more (see JSON for full list)
 
 ### Third-Party Packages
 

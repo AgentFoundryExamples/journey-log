@@ -260,8 +260,7 @@
           "datetime.datetime",
           "datetime.timedelta",
           "datetime.timezone",
-          "unittest.mock.Mock",
-          "unittest.mock.call"
+          "unittest.mock.Mock"
         ],
         "third-party": [
           "fastapi.status",
@@ -487,7 +486,6 @@
       "typing.Optional",
       "typing.Union",
       "unittest.mock.Mock",
-      "unittest.mock.call",
       "unittest.mock.patch",
       "uuid"
     ],
@@ -524,7 +522,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 25,
+    "stdlib_count": 24,
     "third-party_count": 31
   }
 }
