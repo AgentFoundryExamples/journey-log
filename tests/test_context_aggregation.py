@@ -18,8 +18,9 @@ Tests cover context aggregation, derived fields, query parameters,
 and edge cases.
 """
 
+import copy
 from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -170,10 +171,11 @@ class TestGetCharacterContext:
             }
             mock_turn_docs.append(mock_doc)
 
-        mock_query = Mock()
-        # Return in DESC order (newest first), will be reversed by endpoint
-        mock_query.stream.return_value = list(reversed(mock_turn_docs))
-        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        mock_limit = Mock()
+        mock_limit.stream.return_value = list(reversed(mock_turn_docs))
+        mock_order_by = Mock()
+        mock_order_by.limit.return_value = mock_limit
+        mock_turns_collection.order_by.return_value = mock_order_by
 
         # Make request
         response = test_client_with_mock_db.get(
@@ -208,6 +210,20 @@ class TestGetCharacterContext:
         assert data["world"]["include_pois"] is True
         assert len(data["world"]["pois_sample"]) > 0
 
+        # Verify Firestore read count: 2 reads (1 character doc + 1 narrative query)
+        # 1. Character document read
+        assert mock_char_ref.get.call_count == 1
+        # 2. Narrative turns query
+        assert mock_turns_collection.order_by.called
+        assert mock_order_by.limit.called
+
+        # Verify correct query parameters for narrative turns
+        from google.cloud import firestore
+        mock_turns_collection.order_by.assert_called_once_with(
+            "timestamp", direction=firestore.Query.DESCENDING
+        )
+        mock_order_by.limit.assert_called_once_with(20)  # default recent_n
+
     def test_get_context_no_active_quest(
         self,
         test_client_with_mock_db,
@@ -217,7 +233,7 @@ class TestGetCharacterContext:
         """Test context when character has no active quest."""
 
         # Remove active quest
-        char_data = sample_character_data.copy()
+        char_data = copy.deepcopy(sample_character_data)
         char_data["active_quest"] = None
 
         # Mock character document
@@ -256,7 +272,7 @@ class TestGetCharacterContext:
         """Test context when character is not in combat."""
 
         # Remove combat state
-        char_data = sample_character_data.copy()
+        char_data = copy.deepcopy(sample_character_data)
         char_data["combat_state"] = None
 
         # Mock character document
@@ -295,7 +311,7 @@ class TestGetCharacterContext:
         """Test context when all enemies are dead (combat inactive)."""
 
         # Set all enemies to Dead
-        char_data = sample_character_data.copy()
+        char_data = copy.deepcopy(sample_character_data)
         char_data["combat_state"]["enemies"][0]["status"] = "Dead"
 
         # Mock character document
@@ -345,9 +361,11 @@ class TestGetCharacterContext:
         # Mock narrative turns
         mock_turns_collection = Mock()
         mock_char_ref.collection.return_value = mock_turns_collection
-        mock_query = Mock()
-        mock_query.stream.return_value = []
-        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        mock_limit = Mock()
+        mock_limit.stream.return_value = []
+        mock_order_by = Mock()
+        mock_order_by.limit.return_value = mock_limit
+        mock_turns_collection.order_by.return_value = mock_order_by
 
         # Make request with recent_n=5
         response = test_client_with_mock_db.get(
@@ -359,6 +377,9 @@ class TestGetCharacterContext:
         data = response.json()
         assert data["narrative"]["requested_n"] == 5
         assert data["narrative"]["max_n"] == 100
+
+        # Verify correct limit parameter passed to Firestore query
+        mock_order_by.limit.assert_called_once_with(5)
 
     def test_get_context_with_include_pois_false(
         self,
@@ -439,7 +460,7 @@ class TestGetCharacterContext:
         """Test context when character has no POIs."""
 
         # Remove POIs
-        char_data = sample_character_data.copy()
+        char_data = copy.deepcopy(sample_character_data)
         char_data["world_pois"] = []
 
         # Mock character document
@@ -686,3 +707,49 @@ class TestGetCharacterContext:
         assert turns[0]["player_action"] == "Action 0"  # Oldest
         assert turns[1]["player_action"] == "Action 1"
         assert turns[2]["player_action"] == "Action 2"  # Newest
+
+    def test_get_context_firestore_read_count(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that context aggregation uses exactly 2 Firestore reads as documented."""
+
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        mock_limit = Mock()
+        mock_limit.stream.return_value = []
+        mock_order_by = Mock()
+        mock_order_by.limit.return_value = mock_limit
+        mock_turns_collection.order_by.return_value = mock_order_by
+
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+
+        # Verify exactly 2 Firestore reads as documented in README:
+        # Read 1: Character document (includes quest, combat, POIs)
+        assert mock_char_ref.get.call_count == 1, "Expected 1 character document read"
+        
+        # Read 2: Narrative turns subcollection query
+        assert mock_turns_collection.order_by.call_count == 1, "Expected 1 narrative query"
+        assert mock_limit.stream.call_count == 1, "Expected 1 stream operation"
+
+        # Total: 2 Firestore read operations
+        # This validates the performance claim in README.md
