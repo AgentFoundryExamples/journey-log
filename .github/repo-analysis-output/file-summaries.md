@@ -92,8 +92,8 @@ Total files: 18
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 47.34 KB  
-**LOC:** 1009  
+**Size:** 77.72 KB  
+**LOC:** 1676  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -128,8 +128,8 @@ Total files: 18
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 93.55 KB  
-**LOC:** 2005  
+**Size:** 124.48 KB  
+**LOC:** 2654  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py

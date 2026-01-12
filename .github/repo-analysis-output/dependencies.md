@@ -10,14 +10,14 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 - **Total files**: 18
 - **Intra-repo dependencies**: 27
-- **External stdlib dependencies**: 22
-- **External third-party dependencies**: 30
+- **External stdlib dependencies**: 23
+- **External third-party dependencies**: 31
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 22 unique modules
+Total: 23 unique modules
 
 - `contextvars.ContextVar`
 - `datetime.datetime`
@@ -28,6 +28,7 @@ Total: 22 unique modules
 - `json`
 - `logging`
 - `os`
+- `random`
 - `sys`
 - `threading`
 - `time`
@@ -38,12 +39,11 @@ Total: 22 unique modules
 - `typing.Literal`
 - `typing.Optional`
 - `typing.Union`
-- `unittest.mock.Mock`
-- ... and 2 more (see JSON for full list)
+- ... and 3 more (see JSON for full list)
 
 ### Third-Party Packages
 
-Total: 30 unique packages
+Total: 31 unique packages
 
 - `fastapi.APIRouter`
 - `fastapi.Depends`
@@ -65,7 +65,7 @@ Total: 30 unique packages
 - `pydantic.ValidationError`
 - `pydantic.ValidationInfo`
 - `pydantic.field_validator`
-- ... and 10 more (see JSON for full list)
+- ... and 11 more (see JSON for full list)
 
 ## Most Depended Upon Files (Intra-Repo)
 

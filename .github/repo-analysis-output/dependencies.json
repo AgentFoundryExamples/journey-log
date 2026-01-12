@@ -153,6 +153,7 @@
         "stdlib": [
           "datetime.datetime",
           "datetime.timezone",
+          "random",
           "typing.Optional",
           "uuid"
         ],
@@ -164,6 +165,7 @@
           "google.cloud.firestore",
           "pydantic.BaseModel",
           "pydantic.Field",
+          "pydantic.model_serializer",
           "pydantic.model_validator"
         ]
       }
@@ -219,6 +221,7 @@
       "external_dependencies": {
         "stdlib": [
           "datetime.datetime",
+          "datetime.timedelta",
           "datetime.timezone",
           "unittest.mock.Mock"
         ],
@@ -416,6 +419,7 @@
       "json",
       "logging",
       "os",
+      "random",
       "sys",
       "threading",
       "time",
@@ -451,6 +455,7 @@
       "pydantic.ValidationError",
       "pydantic.ValidationInfo",
       "pydantic.field_validator",
+      "pydantic.model_serializer",
       "pydantic.model_validator",
       "pydantic_settings.BaseSettings",
       "pydantic_settings.SettingsConfigDict",
@@ -462,7 +467,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 22,
-    "third-party_count": 30
+    "stdlib_count": 23,
+    "third-party_count": 31
   }
 }
