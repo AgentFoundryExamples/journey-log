@@ -44,6 +44,7 @@ from app.models import (
     character_from_firestore,
     datetime_from_firestore,
     datetime_to_firestore,
+    narrative_turn_from_firestore,
 )
 
 logger = get_logger(__name__)
@@ -1214,7 +1215,6 @@ async def get_narrative_turns(
         turn_docs.reverse()
         
         # Convert to NarrativeTurn models
-        from app.models import narrative_turn_from_firestore
         turns = []
         for doc in turn_docs:
             turn_data = doc.to_dict()
