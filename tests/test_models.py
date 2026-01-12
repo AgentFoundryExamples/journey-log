@@ -779,7 +779,6 @@ class TestCharacterDocument:
     
     def test_character_document_world_pois_cap_validation(self):
         """Test that world_pois cap (200) is enforced."""
-        from datetime import datetime, timezone
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,

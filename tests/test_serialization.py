@@ -43,16 +43,13 @@ from app.models import (
     CharacterDocument,
     CharacterIdentity,
     CombatState,
-    CompletionState,
     Enemy,
     Health,
     InventoryItem,
     NarrativeTurn,
     PlayerState,
-    PointOfInterest,
     PointOfInterestSubcollection,
     Quest,
-    QuestArchiveEntry,
     QuestRewards,
     Status,
     Weapon,
@@ -63,8 +60,6 @@ from app.models import (
     narrative_turn_to_firestore,
     poi_from_firestore,
     poi_to_firestore,
-    poi_subcollection_from_firestore,
-    poi_subcollection_to_firestore,
 )
 
 
