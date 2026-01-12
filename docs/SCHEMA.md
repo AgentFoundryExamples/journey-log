@@ -1577,9 +1577,11 @@ curl -H "X-User-Id: user123" "http://localhost:8080/characters?limit=5&offset=5"
 - Query internally uses descending order for efficiency, then reverses results
 
 **Time Filtering:**
-- Use `since` parameter to retrieve only turns after a specific timestamp
+- Use `since` parameter to retrieve only turns **after** a specific timestamp (strict inequality: `timestamp > since`)
+- The filter applies before selecting the N most recent turns, ensuring you get the most recent turns from the filtered set
 - Useful for incremental updates or pagination by time
 - Empty list returned with 200 status if no turns match the filter
+- Note: If you need to include turns at the exact timestamp, consider using a timestamp slightly before the desired cutoff
 
 **Error Responses:**
 - `400 Bad Request`: Invalid query parameters (n out of range, invalid since timestamp) or empty X-User-Id

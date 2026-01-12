@@ -1048,7 +1048,7 @@ async def append_narrative_turn(
         "  - If omitted entirely, allows anonymous access without verification\n\n"
         "**Optional Query Parameters:**\n"
         "- `n`: Number of turns to retrieve (default: 10, min: 1, max: 100)\n"
-        "- `since`: ISO 8601 timestamp to filter turns after this time (optional)\n\n"
+        "- `since`: ISO 8601 timestamp to filter turns strictly after this time (exclusive, timestamp > since)\n\n"
         "**Response:**\n"
         "- Returns list of NarrativeTurn objects ordered oldest-to-newest\n"
         "- Includes metadata with requested_n, returned_count, and total_available\n"
@@ -1079,7 +1079,7 @@ async def get_narrative_turns(
     2. Validates n parameter (default 10, max 100)
     3. Validates optional since timestamp format
     4. Optionally verifies X-User-Id matches owner_user_id
-    5. Queries Firestore for narrative turns with filtering
+    5. Queries Firestore for narrative turns with filtering (timestamp > since)
     6. Returns turns in oldest-to-newest order with metadata
     
     Args:
@@ -1087,7 +1087,7 @@ async def get_narrative_turns(
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         n: Number of turns to retrieve (default 10, max 100)
-        since: Optional ISO 8601 timestamp to filter turns after this time
+        since: Optional ISO 8601 timestamp to filter turns strictly after this time (exclusive)
         
     Returns:
         GetNarrativeResponse with turns list and metadata
@@ -1199,19 +1199,23 @@ async def get_narrative_turns(
         
         # 3. Build query for narrative turns
         turns_collection = char_ref.collection("narrative_turns")
+        # Query Strategy: Order by timestamp DESCENDING to efficiently get the N most recent turns
+        # The DESCENDING order ensures we get the latest turns first, then we reverse to chronological
         query = turns_collection.order_by("timestamp", direction=firestore.Query.DESCENDING)
         
-        # Apply since filter if provided
+        # Apply since filter if provided (strict inequality: turns AFTER the timestamp)
+        # Note: The filter is applied BEFORE ordering, so it correctly limits the result set
+        # before selecting the N most recent turns from the filtered set
         if since_dt:
-            query = query.where("timestamp", ">=", since_dt)
+            query = query.where("timestamp", ">", since_dt)
         
-        # Apply limit
+        # Apply limit to get at most N turns
         query = query.limit(n)
         
-        # Execute query
+        # Execute query - returns up to N turns in DESCENDING order (newest first)
         turn_docs = list(query.stream())
         
-        # Reverse to get oldest-to-newest order (chronological reading order)
+        # Reverse to get oldest-to-newest order (chronological reading order for LLM context)
         turn_docs.reverse()
         
         # Convert to NarrativeTurn models
@@ -1222,9 +1226,11 @@ async def get_narrative_turns(
             turns.append(turn)
         
         # 4. Get total count (expensive, but needed for metadata)
-        # Count all turns matching the since filter if provided
+        # Note: This is a separate query that counts all matching documents
+        # Performance consideration: For characters with many turns, consider caching
+        # Count all turns matching the since filter if provided (strict inequality)
         if since_dt:
-            count_query = turns_collection.where("timestamp", ">=", since_dt).count()
+            count_query = turns_collection.where("timestamp", ">", since_dt).count()
         else:
             count_query = turns_collection.count()
         
