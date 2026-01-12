@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 17
+Total files: 18
 
 ## app/__init__.py
 **Language:** Python  
@@ -20,8 +20,8 @@ Total files: 17
 **Role:** configuration  
 **Role Justification:** configuration file name 'config'  
 **Summary:** Python configuration file (role: configuration)  
-**Size:** 4.28 KB  
-**LOC:** 80  
+**Size:** 5.36 KB  
+**LOC:** 107  
 **TODOs/FIXMEs:** 0  
 
 ## app/dependencies.py
@@ -38,8 +38,8 @@ Total files: 17
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for firestore  
-**Size:** 3.76 KB  
-**LOC:** 62  
+**Size:** 10.07 KB  
+**LOC:** 195  
 **TODOs/FIXMEs:** 0  
 
 ## app/logging.py
@@ -74,8 +74,8 @@ Total files: 17
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 35.94 KB  
-**LOC:** 799  
+**Size:** 36.18 KB  
+**LOC:** 806  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -148,6 +148,15 @@ Total files: 17
 **Summary:** Python test file (role: test)  
 **Size:** 39.54 KB  
 **LOC:** 905  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_narrative_turns.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 20.22 KB  
+**LOC:** 383  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_serialization.py

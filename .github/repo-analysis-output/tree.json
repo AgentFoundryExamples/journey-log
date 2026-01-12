@@ -172,6 +172,10 @@
         },
         {
           "type": "file",
+          "name": "test_narrative_turns.py"
+        },
+        {
+          "type": "file",
           "name": "test_serialization.py"
         }
       ]

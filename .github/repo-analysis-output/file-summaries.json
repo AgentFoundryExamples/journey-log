@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 17,
+  "total_files": 18,
   "files": [
     {
       "schema_version": "2.0",
@@ -25,8 +25,8 @@
       "summary": "Python configuration file (role: configuration)",
       "summary_text": "Python configuration file (role: configuration)",
       "metrics": {
-        "size_bytes": 4387,
-        "loc": 80,
+        "size_bytes": 5492,
+        "loc": 107,
         "todo_count": 0
       }
     },
@@ -53,8 +53,8 @@
       "summary": "Python module for firestore",
       "summary_text": "Python module for firestore",
       "metrics": {
-        "size_bytes": 3848,
-        "loc": 62,
+        "size_bytes": 10310,
+        "loc": 195,
         "todo_count": 0
       }
     },
@@ -109,8 +109,8 @@
       "summary": "Python data models (role: model)",
       "summary_text": "Python data models (role: model)",
       "metrics": {
-        "size_bytes": 36799,
-        "loc": 799,
+        "size_bytes": 37046,
+        "loc": 806,
         "todo_count": 0
       }
     },
@@ -223,6 +223,20 @@
       "metrics": {
         "size_bytes": 40493,
         "loc": 905,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_narrative_turns.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 20704,
+        "loc": 383,
         "todo_count": 0
       }
     },

@@ -8,16 +8,16 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 ## Statistics
 
-- **Total files**: 17
-- **Intra-repo dependencies**: 24
-- **External stdlib dependencies**: 20
+- **Total files**: 18
+- **Intra-repo dependencies**: 27
+- **External stdlib dependencies**: 23
 - **External third-party dependencies**: 30
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 20 unique modules
+Total: 23 unique modules
 
 - `contextvars.ContextVar`
 - `datetime.datetime`
@@ -34,11 +34,12 @@ Total: 20 unique modules
 - `typing.Annotated`
 - `typing.Any`
 - `typing.Callable`
+- `typing.List`
 - `typing.Literal`
 - `typing.Optional`
 - `typing.Union`
-- `unittest.mock.Mock`
-- `uuid`
+- `unittest.mock.MagicMock`
+- ... and 3 more (see JSON for full list)
 
 ### Third-Party Packages
 
@@ -68,11 +69,11 @@ Total: 30 unique packages
 
 ## Most Depended Upon Files (Intra-Repo)
 
-- `app/config.py` (6 dependents)
-- `app/models.py` (5 dependents)
+- `app/config.py` (7 dependents)
+- `app/models.py` (6 dependents)
 - `app/logging.py` (4 dependents)
 - `app/dependencies.py` (3 dependents)
-- `app/firestore.py` (1 dependents)
+- `app/firestore.py` (2 dependents)
 - `app/routers/firestore_test.py` (1 dependents)
 - `app/routers/characters.py` (1 dependents)
 - `app/middleware.py` (1 dependents)
@@ -84,10 +85,10 @@ Total: 30 unique packages
 - `app/main.py` (5 dependencies)
 - `app/routers/characters.py` (4 dependencies)
 - `app/routers/firestore_test.py` (3 dependencies)
+- `tests/test_narrative_turns.py` (3 dependencies)
 - `app/middleware.py` (2 dependencies)
 - `tests/test_characters.py` (2 dependencies)
 - `app/__init__.py` (1 dependencies)
 - `app/dependencies.py` (1 dependencies)
 - `app/firestore.py` (1 dependencies)
 - `app/logging.py` (1 dependencies)
-- `example_openai_usage.py` (1 dependencies)
