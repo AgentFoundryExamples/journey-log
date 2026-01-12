@@ -500,8 +500,6 @@ class CombatState(BaseModel):
         
         Returns False if all enemies are Dead or if no enemies exist.
         """
-        if not self.enemies:
-            return False
         return any(enemy.status != Status.DEAD for enemy in self.enemies)
 
 

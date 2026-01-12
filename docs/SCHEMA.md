@@ -483,9 +483,11 @@ All identity fields (name, race, class) are validated to:
 - `turn` (integer, required): Current combat turn (≥1)
 - `enemies` (array, required): List of EnemyState objects (max 5)
 - `player_conditions` (object, optional): Player status effects and conditions
-- **Computed Field:** `is_active` (boolean): Server-computed based on enemy statuses
+- **Computed Property:** `is_active` (boolean): Server-computed property (NOT persisted to Firestore)
+  - Computed at runtime based on enemy statuses
   - Returns `false` if all enemies are Dead or enemies list is empty
   - Returns `true` if at least one enemy is not Dead
+  - This field is derived from the `enemies` array and should not be sent by clients or stored in Firestore
 
 **Validation Rules:**
 - Maximum 5 enemies per combat (enforced at model validation layer)

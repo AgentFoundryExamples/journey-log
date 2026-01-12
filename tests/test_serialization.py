@@ -1013,9 +1013,9 @@ class TestRoundTripEdgeCases:
         assert all(isinstance(enemy, EnemyState) for enemy in restored.combat_state.enemies)
         
         # Verify each enemy's traits array (replacing old status_effects)
-        assert len(restored.combat_state.enemies[0].traits) == 2
-        assert len(restored.combat_state.enemies[1].traits) == 1
-        assert len(restored.combat_state.enemies[2].traits) == 2
+        assert restored.combat_state.enemies[0].traits == ["poisoned", "weakened"]
+        assert restored.combat_state.enemies[1].traits == ["ranged"]
+        assert restored.combat_state.enemies[2].traits == ["enraged", "leader"]
     
     def test_narrative_turn_ordering_metadata(self):
         """Test that turn_number metadata is preserved for ordering."""
