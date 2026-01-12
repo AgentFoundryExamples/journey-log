@@ -44,6 +44,7 @@ from app.models import (
     character_from_firestore,
     datetime_from_firestore,
     datetime_to_firestore,
+    narrative_turn_from_firestore,
 )
 
 logger = get_logger(__name__)
@@ -737,6 +738,21 @@ class AppendNarrativeResponse(BaseModel):
     total_turns: int = Field(description="Total number of narrative turns for this character")
 
 
+class NarrativeMetadata(BaseModel):
+    """Metadata for narrative retrieval response."""
+    model_config = {"extra": "forbid"}
+    
+    requested_n: int = Field(description="Number of turns requested (n parameter)")
+    returned_count: int = Field(description="Number of turns actually returned")
+    total_available: int = Field(description="Total number of turns available for this character")
+
+
+class GetNarrativeResponse(BaseModel):
+    """Response model for GET narrative endpoint."""
+    turns: list[NarrativeTurn] = Field(description="List of narrative turns ordered oldest-to-newest")
+    metadata: NarrativeMetadata = Field(description="Metadata about the query results")
+
+
 @router.post(
     "/{character_id}/narrative",
     response_model=AppendNarrativeResponse,
@@ -1014,4 +1030,246 @@ async def append_narrative_turn(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to append narrative turn: {str(e)}",
+        )
+
+
+@router.get(
+    "/{character_id}/narrative",
+    response_model=GetNarrativeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get narrative turns for a character",
+    description=(
+        "Retrieve the last N narrative turns for a character ordered oldest-to-newest.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
+        "**Optional Query Parameters:**\n"
+        "- `n`: Number of turns to retrieve (default: 10, min: 1, max: 100)\n"
+        "- `since`: ISO 8601 timestamp to filter turns strictly after this time (exclusive, timestamp > since)\n\n"
+        "**Response:**\n"
+        "- Returns list of NarrativeTurn objects ordered oldest-to-newest\n"
+        "- Includes metadata with requested_n, returned_count, and total_available\n"
+        "- Empty list returned if character has no narrative turns\n\n"
+        "**Ordering:**\n"
+        "- Results are always returned in chronological order (oldest first)\n"
+        "- This ensures LLM context is built in the correct sequence\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Invalid query parameters (n out of range, invalid since timestamp) or empty X-User-Id\n"
+        "- `403`: X-User-Id provided but does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def get_narrative_turns(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    n: int = 10,
+    since: Optional[str] = None,
+) -> GetNarrativeResponse:
+    """
+    Retrieve last N narrative turns for a character with optional time filtering.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates n parameter (default 10, max 100)
+    3. Validates optional since timestamp format
+    4. Optionally verifies X-User-Id matches owner_user_id
+    5. Queries Firestore for narrative turns with filtering (timestamp > since)
+    6. Returns turns in oldest-to-newest order with metadata
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        n: Number of turns to retrieve (default 10, max 100)
+        since: Optional ISO 8601 timestamp to filter turns strictly after this time (exclusive)
+        
+    Returns:
+        GetNarrativeResponse with turns list and metadata
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid parameters (n out of range, invalid since timestamp)
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_narrative_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate n parameter
+    if n < 1 or n > settings.narrative_turns_max_query_size:
+        logger.warning(
+            "get_narrative_invalid_n",
+            character_id=character_id,
+            n=n,
+            max_allowed=settings.narrative_turns_max_query_size,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Parameter 'n' must be between 1 and {settings.narrative_turns_max_query_size} (got {n})",
+        )
+    
+    # Parse and validate since timestamp if provided
+    since_dt: Optional[datetime] = None
+    if since:
+        try:
+            since_dt = datetime_to_firestore(since)
+        except ValueError as e:
+            logger.warning(
+                "get_narrative_invalid_since",
+                character_id=character_id,
+                since=since,
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid timestamp format for 'since' parameter: {str(e)}",
+            )
+    
+    # Log retrieval attempt
+    logger.info(
+        "get_narrative_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+        n=n,
+        has_since_filter=since_dt is not None,
+    )
+    
+    try:
+        # 1. Verify character exists
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+        
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_narrative_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        
+        # 2. Verify ownership if X-User-Id is provided
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_narrative_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+            
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_narrative_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+        
+        # 3. Build query for narrative turns
+        turns_collection = char_ref.collection("narrative_turns")
+        # Query Strategy: Order by timestamp DESCENDING to efficiently get the N most recent turns
+        # The DESCENDING order ensures we get the latest turns first, then we reverse to chronological
+        query = turns_collection.order_by("timestamp", direction=firestore.Query.DESCENDING)
+        
+        # Apply since filter if provided (strict inequality: turns AFTER the timestamp)
+        # Note: The filter is applied BEFORE ordering, so it correctly limits the result set
+        # before selecting the N most recent turns from the filtered set
+        if since_dt:
+            query = query.where("timestamp", ">", since_dt)
+        
+        # Apply limit to get at most N turns
+        query = query.limit(n)
+        
+        # Execute query - returns up to N turns in DESCENDING order (newest first)
+        turn_docs = list(query.stream())
+        
+        # Reverse to get oldest-to-newest order (chronological reading order for LLM context)
+        turn_docs.reverse()
+        
+        # Convert to NarrativeTurn models
+        turns = []
+        for doc in turn_docs:
+            turn_data = doc.to_dict()
+            turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
+            turns.append(turn)
+        
+        # 4. Get total count (expensive, but needed for metadata)
+        # Note: This is a separate query that counts all matching documents
+        # Performance consideration: For characters with many turns, consider caching
+        # Count all turns matching the since filter if provided (strict inequality)
+        if since_dt:
+            count_query = turns_collection.where("timestamp", ">", since_dt).count()
+        else:
+            count_query = turns_collection.count()
+        
+        count_result = count_query.get()
+        total_available = count_result[0][0].value
+        
+        # 5. Prepare metadata
+        metadata = NarrativeMetadata(
+            requested_n=n,
+            returned_count=len(turns),
+            total_available=total_available,
+        )
+        
+        logger.info(
+            "get_narrative_success",
+            character_id=character_id,
+            requested_n=n,
+            returned_count=len(turns),
+            total_available=total_available,
+        )
+        
+        return GetNarrativeResponse(
+            turns=turns,
+            metadata=metadata,
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_narrative_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve narrative turns due to an internal error",
         )

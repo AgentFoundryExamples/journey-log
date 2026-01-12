@@ -12,6 +12,12 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
 - **Health Check Endpoint**: `/health` - Returns service status and basic identifiers
 - **Info Endpoint**: `/info` - Returns build and configuration metadata
 - **Firestore Connectivity Test**: `/firestore-test` - Verifies Firestore read/write access (operational endpoint)
+- **Character Management API**: RESTful endpoints for creating and managing characters
+  - `POST /characters` - Create new characters with validation and uniqueness constraints
+  - `GET /characters` - List all characters for a user (save-slot UI support)
+  - `GET /characters/{id}` - Get full character details by ID
+  - `POST /characters/{id}/narrative` - Append narrative turns to character history
+  - `GET /characters/{id}/narrative` - Retrieve narrative turns with filtering (last N, since timestamp)
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
 - **Structured Logging**: JSON-formatted logs compatible with Cloud Logging

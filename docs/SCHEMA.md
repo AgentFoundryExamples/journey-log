@@ -1516,6 +1516,115 @@ curl -H "X-User-Id: user123" "http://localhost:8080/characters?limit=5&offset=5"
 
 ---
 
+#### Get Narrative Turns
+
+**Endpoint:** `GET /characters/{character_id}/narrative`
+
+**Description:** Retrieve the last N narrative turns for a character ordered oldest-to-newest with optional time filtering. This endpoint provides recent narrative context for LLMs or UI display.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Optional Headers:**
+- `X-User-Id` (string): User identifier for access control
+  - If provided but empty/whitespace-only, returns 400 error
+  - If omitted entirely, allows anonymous access without verification
+  - If provided, must match the character's owner_user_id
+
+**Optional Query Parameters:**
+- `n` (integer): Number of turns to retrieve (default: 10, min: 1, max: 100)
+- `since` (string): ISO 8601 timestamp to filter turns after this time (optional)
+
+**Response Format:**
+```json
+{
+  "turns": [
+    {
+      "turn_id": "turn-001",
+      "turn_number": 1,
+      "player_action": "I explore the ancient ruins",
+      "gm_response": "You discover a hidden chamber",
+      "timestamp": "2026-01-11T12:00:00Z",
+      "game_state_snapshot": null,
+      "metadata": null
+    }
+  ],
+  "metadata": {
+    "requested_n": 10,
+    "returned_count": 1,
+    "total_available": 5
+  }
+}
+```
+
+**Response Fields:**
+- `turns` (array): List of NarrativeTurn objects ordered oldest-to-newest (chronological reading order)
+  - `turn_id` (string): Unique turn identifier (UUIDv4)
+  - `turn_number` (integer, nullable): Sequential turn counter
+  - `player_action` (string): Player's action or input (max 8000 characters)
+  - `gm_response` (string): Game master's/AI's response (max 32000 characters)
+  - `timestamp` (string): ISO 8601 timestamp when the turn occurred
+  - `game_state_snapshot` (object, nullable): Snapshot of game state at this turn
+  - `metadata` (object, nullable): Additional turn metadata (LLM metrics, etc.)
+- `metadata` (object): Query result metadata
+  - `requested_n` (integer): Number of turns requested (n parameter value)
+  - `returned_count` (integer): Number of turns actually returned (may be less than requested)
+  - `total_available` (integer): Total number of turns available for this character (matching filters)
+
+**Ordering:**
+- Results are always returned in chronological order (oldest first)
+- This ensures LLM context is built in the correct sequence
+- Query internally uses descending order for efficiency, then reverses results
+
+**Time Filtering:**
+- Use `since` parameter to retrieve only turns **after** a specific timestamp (strict inequality: `timestamp > since`)
+- The filter applies before selecting the N most recent turns, ensuring you get the most recent turns from the filtered set
+- Useful for incremental updates or pagination by time
+- Empty list returned with 200 status if no turns match the filter
+- Note: If you need to include turns at the exact timestamp, consider using a timestamp slightly before the desired cutoff
+
+**Error Responses:**
+- `400 Bad Request`: Invalid query parameters (n out of range, invalid since timestamp) or empty X-User-Id
+- `403 Forbidden`: X-User-Id provided but does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Get last 10 turns (default)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narrative
+
+# Get last 5 turns
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=5"
+
+# Get last 20 turns with access control
+curl -H "X-User-Id: user123" \
+  "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=20"
+
+# Get turns since a specific timestamp
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narrative?since=2026-01-11T12:00:00Z"
+
+# Combine n and since parameters
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=50&since=2026-01-10T00:00:00Z"
+```
+
+**Edge Cases:**
+- `n` greater than available turns returns all available turns without error
+- `since` timestamp newer than all stored turns returns empty list with 200 status
+- Character with no narrative turns returns empty array with 200 status
+- Requests near max limit (100) remain efficient via indexed timestamp queries
+- Missing `X-User-Id` allows anonymous access (useful for public character viewing)
+- Empty/whitespace-only `X-User-Id` returns 400 error (client error)
+
+**Performance Notes:**
+- Queries use Firestore's built-in timestamp index for efficiency
+- Count aggregation is efficient but incurs one document read cost
+- Max limit (100) balances context needs with query performance
+- Consider caching results client-side for frequently accessed narratives
+
+---
+
 ## References
 
 - [Firestore Data Model](https://cloud.google.com/firestore/docs/data-model)

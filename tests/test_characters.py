@@ -1911,3 +1911,676 @@ class TestAppendNarrativeTurn:
         response_data = response.json()
         assert "error" in response_data
         assert "Failed to append narrative turn" in response_data["message"]
+
+
+class TestGetNarrativeTurns:
+    """Tests for GET /characters/{character_id}/narrative endpoint."""
+    
+    @pytest.fixture
+    def sample_character_data(self):
+        """Sample character data for testing."""
+        return {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "A brave hero seeks adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "level": 5,
+                "experience": 1000,
+                "health": {"current": 80, "max": 100},
+                "stats": {"strength": 18, "dexterity": 14},
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    
+    def test_get_narrative_success_default_limit(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test successful narrative retrieval with default limit (10)."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock narrative turns subcollection
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Create mock turn documents
+        mock_turns = []
+        for i in range(5):  # Return 5 turns (less than requested 10)
+            mock_turn = Mock()
+            mock_turn.id = f"turn-{i:03d}"
+            mock_turn.to_dict.return_value = {
+                "turn_id": f"turn-{i:03d}",
+                "player_action": f"Action {i}",
+                "gm_response": f"Response {i}",
+                "timestamp": datetime(2026, 1, 11, 12, i, 0, tzinfo=timezone.utc),
+            }
+            mock_turns.append(mock_turn)
+        
+        # Mock query execution
+        # Note: We create mock_turns in oldest-first order (i=0,1,2,3,4)
+        # Then reverse them to simulate Firestore's DESCENDING order (newest first)
+        # The actual endpoint code will reverse them again to get oldest-first
+        mock_query = Mock()
+        mock_query.stream.return_value = reversed(mock_turns)
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        
+        # Mock count aggregation
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 5
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turns_collection.count.return_value = mock_count_query
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request (no n parameter, should default to 10)
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "turns" in data
+        assert "metadata" in data
+        
+        # Check metadata
+        metadata = data["metadata"]
+        assert metadata["requested_n"] == 10
+        assert metadata["returned_count"] == 5
+        assert metadata["total_available"] == 5
+        
+        # Check turns are in chronological order
+        turns = data["turns"]
+        assert len(turns) == 5
+        assert turns[0]["player_action"] == "Action 0"
+        assert turns[4]["player_action"] == "Action 4"
+    
+    def test_get_narrative_with_custom_n(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test narrative retrieval with custom n parameter."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock narrative turns subcollection
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Create 3 mock turn documents
+        mock_turns = []
+        for i in range(3):
+            mock_turn = Mock()
+            mock_turn.id = f"turn-{i:03d}"
+            mock_turn.to_dict.return_value = {
+                "turn_id": f"turn-{i:03d}",
+                "player_action": f"Action {i}",
+                "gm_response": f"Response {i}",
+                "timestamp": datetime(2026, 1, 11, 12, i, 0, tzinfo=timezone.utc),
+            }
+            mock_turns.append(mock_turn)
+        
+        # Mock query execution - simulating Firestore DESCENDING order
+        mock_query = Mock()
+        mock_query.stream.return_value = reversed(mock_turns)
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        
+        # Mock count
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 10  # Total available
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turns_collection.count.return_value = mock_count_query
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with n=3
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=3",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        metadata = data["metadata"]
+        assert metadata["requested_n"] == 3
+        assert metadata["returned_count"] == 3
+        assert metadata["total_available"] == 10
+    
+    def test_get_narrative_empty_history(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test narrative retrieval for character with no turns."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Mock query returning empty list
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        
+        # Mock count returning 0
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 0
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turns_collection.count.return_value = mock_count_query
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        assert data["turns"] == []
+        metadata = data["metadata"]
+        assert metadata["requested_n"] == 10
+        assert metadata["returned_count"] == 0
+        assert metadata["total_available"] == 0
+    
+    def test_get_narrative_n_boundary_min(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test narrative retrieval with n=1."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Create 1 mock turn
+        mock_turn = Mock()
+        mock_turn.id = "turn-001"
+        mock_turn.to_dict.return_value = {
+            "turn_id": "turn-001",
+            "player_action": "Action",
+            "gm_response": "Response",
+            "timestamp": datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        }
+        
+        mock_query = Mock()
+        mock_query.stream.return_value = [mock_turn]
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        
+        # Mock count
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 5
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turns_collection.count.return_value = mock_count_query
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with n=1
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=1",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        assert len(data["turns"]) == 1
+        metadata = data["metadata"]
+        assert metadata["requested_n"] == 1
+        assert metadata["returned_count"] == 1
+    
+    def test_get_narrative_n_boundary_max(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test narrative retrieval with n=100 (max)."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Mock query (empty for simplicity)
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        
+        # Mock count
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 0
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turns_collection.count.return_value = mock_count_query
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with n=100
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=100",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["metadata"]["requested_n"] == 100
+    
+    def test_get_narrative_n_exceeds_max(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 400 error when n exceeds maximum."""
+        
+        # Make request with n=101 (over limit)
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=101",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "must be between" in response_data["message"].lower()
+    
+    def test_get_narrative_n_below_min(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 400 error when n is below minimum."""
+        
+        # Make request with n=0
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?n=0",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "must be between" in response_data["message"].lower()
+    
+    def test_get_narrative_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 404 when character does not exist."""
+        
+        # Mock character not found
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        response_data = response.json()
+        assert "error" in response_data
+        assert "not found" in response_data["message"].lower()
+    
+    def test_get_narrative_invalid_uuid(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 422 for malformed UUID."""
+        
+        # Make request with invalid UUID
+        response = test_client_with_mock_db.get(
+            "/characters/not-a-valid-uuid/narrative",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        response_data = response.json()
+        assert "error" in response_data
+        assert "uuid" in response_data["message"].lower()
+    
+    def test_get_narrative_with_user_id_match(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test successful retrieval with matching X-User-Id."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+        
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 0
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turns_collection.count.return_value = mock_count_query
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with matching user ID
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+    
+    def test_get_narrative_user_id_mismatch(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test 403 when X-User-Id does not match owner."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with mismatched user ID
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            headers={"X-User-Id": "different_user"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        response_data = response.json()
+        assert "error" in response_data
+        assert "access denied" in response_data["message"].lower()
+    
+    def test_get_narrative_empty_user_id(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test 400 when X-User-Id is empty."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with empty user ID
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            headers={"X-User-Id": "   "},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "empty" in response_data["message"].lower()
+    
+    def test_get_narrative_with_since_filter(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test narrative retrieval with since timestamp filter."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Mock query with where clause
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_where_query = Mock()
+        mock_where_query.limit.return_value = mock_query
+        mock_order_query = Mock()
+        mock_order_query.where.return_value = mock_where_query
+        mock_turns_collection.order_by.return_value = mock_order_query
+        
+        # Mock count with where clause
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 0
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_where_count = Mock()
+        mock_where_count.count.return_value = mock_count_query
+        mock_turns_collection.where.return_value = mock_where_count
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with since parameter
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?since=2026-01-11T12:00:00Z",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+    
+    def test_get_narrative_invalid_since_format(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test 400 for invalid since timestamp format."""
+        
+        # Mock character document (to get past initial checks)
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with invalid since format
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?since=not-a-timestamp",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        response_data = response.json()
+        assert "error" in response_data
+        assert "timestamp" in response_data["message"].lower()
+    
+    def test_get_narrative_since_newer_than_all_turns(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that since timestamp newer than all turns returns empty list with 200."""
+        
+        # Mock character document
+        mock_char_ref = Mock()
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Mock empty narrative turns (all turns are before since)
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        
+        # Mock query with where returning empty
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_where_query = Mock()
+        mock_where_query.limit.return_value = mock_query
+        mock_order_query = Mock()
+        mock_order_query.where.return_value = mock_where_query
+        mock_turns_collection.order_by.return_value = mock_order_query
+        
+        # Mock count returning 0
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 0
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_where_count = Mock()
+        mock_where_count.count.return_value = mock_count_query
+        mock_turns_collection.where.return_value = mock_where_count
+        
+        # Setup mock chain
+        mock_collection = Mock()
+        mock_firestore_client.collection.return_value = mock_collection
+        mock_collection.document.return_value = mock_char_ref
+        
+        # Make request with future since timestamp
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative?since=2030-01-01T00:00:00Z",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["turns"] == []
+        assert data["metadata"]["returned_count"] == 0
+        assert data["metadata"]["total_available"] == 0
+    
+    def test_get_narrative_firestore_error(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 500 for Firestore errors."""
+        
+        # Mock Firestore error
+        mock_firestore_client.collection.side_effect = Exception("Firestore connection error")
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        response_data = response.json()
+        assert "error" in response_data
+        assert "internal error" in response_data["message"].lower()
