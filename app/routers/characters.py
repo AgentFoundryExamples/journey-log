@@ -37,11 +37,13 @@ from app.models import (
     CharacterIdentity,
     Health,
     Location,
+    NarrativeTurn,
     PlayerState,
     Status,
     character_to_firestore,
     character_from_firestore,
     datetime_from_firestore,
+    datetime_to_firestore,
 )
 
 logger = get_logger(__name__)
@@ -681,4 +683,335 @@ async def get_character(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve character due to an internal error",
+        )
+
+
+class AppendNarrativeRequest(BaseModel):
+    """
+    Request model for appending a narrative turn to a character.
+    
+    Required fields:
+    - user_action: Player's action or input (1-8000 characters)
+    - ai_response: Game master's/AI's response (1-32000 characters)
+    
+    Optional fields:
+    - timestamp: When the turn occurred (ISO 8601 string). Defaults to server UTC now if omitted.
+    
+    Validation:
+    - user_action: max 8000 characters
+    - ai_response: max 32000 characters
+    - Combined length: max 40000 characters
+    """
+    model_config = {"extra": "forbid"}
+    
+    user_action: str = Field(
+        min_length=1,
+        max_length=8000,
+        description="Player's action or input (max 8000 characters)"
+    )
+    ai_response: str = Field(
+        min_length=1,
+        max_length=32000,
+        description="Game master's/AI's response (max 32000 characters)"
+    )
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="Optional ISO 8601 timestamp. Defaults to server UTC now if omitted."
+    )
+    
+    @model_validator(mode='after')
+    def validate_combined_length(self) -> 'AppendNarrativeRequest':
+        """Validate that combined length does not exceed 40000 characters."""
+        combined_length = len(self.user_action) + len(self.ai_response)
+        if combined_length > 40000:
+            raise ValueError(
+                f"Combined length of user_action and ai_response ({combined_length}) "
+                f"exceeds maximum of 40000 characters"
+            )
+        return self
+
+
+class AppendNarrativeResponse(BaseModel):
+    """Response model for narrative turn append."""
+    turn: NarrativeTurn = Field(description="The stored narrative turn")
+    total_turns: int = Field(description="Total number of narrative turns for this character")
+
+
+@router.post(
+    "/{character_id}/narrative",
+    response_model=AppendNarrativeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Append a narrative turn to a character",
+    description=(
+        "Append a validated narrative turn with concurrency safety.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Request Body:**\n"
+        "- `user_action`: Player's action (1-8000 characters)\n"
+        "- `ai_response`: AI/GM response (1-32000 characters)\n"
+        "- `timestamp`: Optional ISO 8601 timestamp (defaults to server UTC now)\n\n"
+        "**Validation:**\n"
+        "- user_action: max 8000 characters\n"
+        "- ai_response: max 32000 characters\n"
+        "- Combined length: max 40000 characters\n"
+        "- Timestamp format: ISO 8601 (if provided)\n\n"
+        "**Atomicity:**\n"
+        "Uses Firestore transaction to atomically:\n"
+        "1. Add document to characters/{character_id}/narrative_turns subcollection\n"
+        "2. Update parent character.updated_at timestamp\n\n"
+        "**Response:**\n"
+        "- Returns the stored NarrativeTurn (with server-generated timestamp if not provided)\n"
+        "- Includes total_turns count for confirmation\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `413`: Request entity too large (combined payload > 40000 characters)\n"
+        "- `422`: Validation error (invalid field values, oversized fields, invalid timestamp format)\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def append_narrative_turn(
+    character_id: str,
+    request: AppendNarrativeRequest,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+) -> AppendNarrativeResponse:
+    """
+    Append a narrative turn to a character's history with atomic transaction.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Validates payload sizes (user_action, ai_response, combined)
+    4. Validates timestamp format (if provided)
+    5. Uses Firestore transaction to atomically:
+       - Add narrative turn to subcollection with server timestamp if absent
+       - Update character.updated_at
+    6. Returns stored turn with count metadata
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        request: Narrative turn append request data
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+        
+    Returns:
+        AppendNarrativeResponse with stored turn and total count
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id
+            - 403: Access denied (user not owner)
+            - 404: Character not found
+            - 413: Payload too large
+            - 422: Validation error
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "append_narrative_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("append_narrative_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+    
+    user_id = x_user_id.strip()
+    
+    # Log oversized attempts for metrics (Pydantic validation already enforces limits)
+    combined_length = len(request.user_action) + len(request.ai_response)
+    if len(request.user_action) > 7000 or len(request.ai_response) > 30000:
+        logger.info(
+            "append_narrative_large_payload",
+            character_id=character_id,
+            user_id=user_id,
+            user_action_length=len(request.user_action),
+            ai_response_length=len(request.ai_response),
+            combined_length=combined_length,
+        )
+    
+    # Parse and validate timestamp if provided
+    turn_timestamp: Optional[datetime] = None
+    if request.timestamp:
+        try:
+            turn_timestamp = datetime_to_firestore(request.timestamp)
+        except ValueError as e:
+            logger.warning(
+                "append_narrative_invalid_timestamp",
+                character_id=character_id,
+                timestamp=request.timestamp,
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid timestamp format: {str(e)}",
+            )
+    
+    # Log append attempt
+    logger.info(
+        "append_narrative_attempt",
+        character_id=character_id,
+        user_id=user_id,
+        user_action_length=len(request.user_action),
+        ai_response_length=len(request.ai_response),
+        has_timestamp=turn_timestamp is not None,
+    )
+    
+    try:
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        
+        @firestore.transactional
+        def append_in_transaction(transaction):
+            """Atomically append turn and update character."""
+            # Generate turn ID inside transaction to avoid race condition on retry
+            turn_id = str(uuid.uuid4()).lower()
+            
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+            
+            if not char_snapshot.exists:
+                logger.warning(
+                    "append_narrative_character_not_found",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Character with ID '{character_id}' not found",
+                )
+            
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if owner_user_id != user_id:
+                logger.warning(
+                    "append_narrative_access_denied",
+                    character_id=character_id,
+                    requested_user_id=user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+            
+            # 3. Create narrative turn document
+            # Use server timestamp if not provided by client
+            turn_data = {
+                "turn_id": turn_id,
+                "player_action": request.user_action,
+                "gm_response": request.ai_response,
+                "timestamp": turn_timestamp if turn_timestamp else firestore.SERVER_TIMESTAMP,
+            }
+            
+            # 4. Write turn to subcollection
+            turn_ref = char_ref.collection("narrative_turns").document(turn_id)
+            transaction.set(turn_ref, turn_data)
+            
+            # 5. Update character.updated_at
+            transaction.update(char_ref, {
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            
+            # 6. Count turns atomically within transaction using aggregation
+            # Note: Firestore aggregation count is efficient and atomic within transaction
+            turns_collection = char_ref.collection("narrative_turns")
+            count_query = turns_collection.count()
+            count_result = count_query.get(transaction=transaction)
+            # The result structure is [[AggregationResult]] where AggregationResult has a value attribute
+            total_turns = count_result[0][0].value
+            
+            return turn_ref, turn_data, turn_id, total_turns
+        
+        # Execute transaction
+        turn_ref, turn_data, turn_id, total_turns = append_in_transaction(transaction)
+        
+        # Read back the written turn to get server timestamps
+        turn_snapshot = turn_ref.get()
+        if not turn_snapshot.exists:
+            logger.error(
+                "append_narrative_turn_not_found_after_creation",
+                character_id=character_id,
+                turn_id=turn_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Narrative turn was created but could not be retrieved",
+            )
+        
+        # Convert to NarrativeTurn model
+        turn_dict = turn_snapshot.to_dict()
+        
+        # Convert Firestore timestamp to datetime
+        # Timestamp should always be present since we write it in the transaction,
+        # but handle defensively
+        if "timestamp" in turn_dict:
+            turn_dict["timestamp"] = datetime_from_firestore(turn_dict["timestamp"])
+        else:
+            # This should never happen, but provide defensive fallback
+            logger.error(
+                "append_narrative_missing_timestamp_after_creation",
+                character_id=character_id,
+                turn_id=turn_id,
+            )
+            turn_dict["timestamp"] = datetime.now(timezone.utc)
+        
+        # Create NarrativeTurn object (using aliases for conversion)
+        # Use direct access for required fields that were written in the transaction
+        stored_turn = NarrativeTurn(
+            turn_id=turn_dict.get("turn_id", turn_id),
+            user_action=turn_dict["player_action"],
+            ai_response=turn_dict["gm_response"],
+            timestamp=turn_dict["timestamp"],
+            turn_number=turn_dict.get("turn_number"),
+            game_state_snapshot=turn_dict.get("game_state_snapshot"),
+            metadata=turn_dict.get("metadata"),
+        )
+        
+        logger.info(
+            "append_narrative_success",
+            character_id=character_id,
+            turn_id=turn_id,
+            total_turns=total_turns,
+        )
+        
+        return AppendNarrativeResponse(
+            turn=stored_turn,
+            total_turns=total_turns,
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "append_narrative_error",
+            character_id=character_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to append narrative turn: {str(e)}",
         )
