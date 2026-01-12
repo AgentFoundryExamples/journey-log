@@ -48,17 +48,6 @@ class Status(str, Enum):
 CombatStatus = Status
 
 
-class CompletionState(str, Enum):
-    """
-    Quest completion state enum.
-    
-    Referenced in: docs/SCHEMA.md - Quest Management
-    """
-    NOT_STARTED = "NotStarted"
-    IN_PROGRESS = "InProgress"
-    COMPLETED = "Completed"
-
-
 class Health(BaseModel):
     """
     Represents current and maximum health points with validation.

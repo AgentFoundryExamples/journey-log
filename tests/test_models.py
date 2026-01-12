@@ -26,7 +26,6 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     CombatStatus,
-    CompletionState,
     Enemy,
     Health,
     InventoryItem,
@@ -61,12 +60,6 @@ class TestEnums:
     def test_combat_status_is_alias(self):
         """Test that CombatStatus is an alias for Status."""
         assert CombatStatus is Status
-    
-    def test_completion_state_enum_values(self):
-        """Test CompletionState enum has correct values."""
-        assert CompletionState.NOT_STARTED.value == "NotStarted"
-        assert CompletionState.IN_PROGRESS.value == "InProgress"
-        assert CompletionState.COMPLETED.value == "Completed"
     
     def test_invalid_status_raises_error(self):
         """Test that invalid status values raise ValidationError."""
