@@ -240,7 +240,6 @@
         "stdlib": [
           "datetime.datetime",
           "datetime.timezone",
-          "unittest.mock.MagicMock",
           "unittest.mock.Mock"
         ],
         "third-party": [
@@ -456,7 +455,6 @@
       "typing.Literal",
       "typing.Optional",
       "typing.Union",
-      "unittest.mock.MagicMock",
       "unittest.mock.Mock",
       "unittest.mock.patch",
       "uuid"
@@ -494,7 +492,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 24,
+    "stdlib_count": 23,
     "third-party_count": 31
   }
 }
