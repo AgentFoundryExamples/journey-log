@@ -609,3 +609,430 @@ class TestUpdateCombat:
         data = response.json()
         assert data["active"] is True
         assert data["state"]["combat_id"] == "combat_001"
+
+
+class TestGetCombat:
+    """Tests for GET /characters/{character_id}/combat endpoint."""
+    
+    def test_get_combat_active_state(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+        valid_combat_state,
+    ):
+        """Test retrieving active combat state."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Add active combat state to character
+        sample_character_data["combat_state"] = {
+            "combat_id": valid_combat_state["combat_id"],
+            "started_at": datetime.now(timezone.utc),
+            "turn": valid_combat_state["turn"],
+            "enemies": valid_combat_state["enemies"],
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is True
+        assert data["state"] is not None
+        assert data["state"]["combat_id"] == "combat_001"
+        assert len(data["state"]["enemies"]) == 3
+    
+    def test_get_combat_no_state(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test retrieving combat when no combat state exists."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Ensure no combat state
+        sample_character_data["combat_state"] = None
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is False
+        assert data["state"] is None
+    
+    def test_get_combat_all_enemies_dead(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+        all_dead_combat_state,
+    ):
+        """Test retrieving combat when all enemies are dead."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Add combat state with all dead enemies
+        sample_character_data["combat_state"] = {
+            "combat_id": all_dead_combat_state["combat_id"],
+            "started_at": datetime.now(timezone.utc),
+            "turn": all_dead_combat_state["turn"],
+            "enemies": all_dead_combat_state["enemies"],
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is False
+        assert data["state"] is not None
+        assert data["state"]["combat_id"] == "combat_002"
+    
+    def test_get_combat_empty_enemies(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test retrieving combat when enemies list is empty."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Add combat state with empty enemies
+        sample_character_data["combat_state"] = {
+            "combat_id": "combat_empty",
+            "started_at": datetime.now(timezone.utc),
+            "turn": 1,
+            "enemies": [],
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is False
+        assert data["state"] is not None
+        assert len(data["state"]["enemies"]) == 0
+    
+    def test_get_combat_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 404 when character doesn't exist."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Mock Firestore document snapshot - doesn't exist
+        mock_snapshot = Mock()
+        mock_snapshot.exists = False
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        error_msg = data.get("detail") or data.get("message") or ""
+        assert "not found" in error_msg.lower()
+    
+    def test_get_combat_access_denied(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test 403 when user doesn't own the character."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request with wrong user ID
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "different_user"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        data = response.json()
+        error_msg = data.get("detail") or data.get("message") or ""
+        assert "access denied" in error_msg.lower()
+    
+    def test_get_combat_anonymous_access(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+        valid_combat_state,
+    ):
+        """Test anonymous access without X-User-Id header."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Add active combat state
+        sample_character_data["combat_state"] = {
+            "combat_id": valid_combat_state["combat_id"],
+            "started_at": datetime.now(timezone.utc),
+            "turn": valid_combat_state["turn"],
+            "enemies": valid_combat_state["enemies"],
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request without X-User-Id header
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+        )
+        
+        # Verify response - should succeed for anonymous access
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is True
+        assert data["state"] is not None
+    
+    def test_get_combat_empty_user_id_header(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test 400 when X-User-Id header is provided but empty."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_character_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request with empty X-User-Id header
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "   "}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        data = response.json()
+        error_msg = data.get("detail") or data.get("message") or ""
+        assert "cannot be empty" in error_msg.lower()
+    
+    def test_get_combat_invalid_uuid(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 422 when character_id is not a valid UUID."""
+        # Make request with invalid UUID
+        response = test_client_with_mock_db.get(
+            "/characters/not-a-uuid/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Verify response
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        data = response.json()
+        error_msg = data.get("detail") or data.get("message") or ""
+        assert "uuid" in error_msg.lower()
+    
+    def test_get_combat_malformed_stored_data(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test graceful handling of malformed combat state in database."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Character with malformed combat_state
+        sample_data = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",
+                "level": 1,
+                "experience": 0,
+                "health": {"current": 100, "max": 100},
+                "stats": {},
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "origin:nexus", "display_name": "The Nexus"},
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "world_state": None,
+            "active_quest": None,
+            "archived_quests": [],
+            # Malformed combat_state - missing required fields
+            "combat_state": {
+                "combat_id": "malformed",
+                # Missing started_at and enemies
+            },
+            "additional_metadata": {},
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Should return inactive with null state (defensive fallback)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is False
+        assert data["state"] is None
+    
+    def test_get_combat_legacy_data_with_many_enemies(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test defensive handling of legacy data with >5 enemies."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Character with >5 enemies (legacy data)
+        sample_data = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",
+                "level": 1,
+                "experience": 0,
+                "health": {"current": 100, "max": 100},
+                "stats": {},
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "origin:nexus", "display_name": "The Nexus"},
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "world_state": None,
+            "active_quest": None,
+            "archived_quests": [],
+            # Legacy combat_state with >5 enemies
+            "combat_state": {
+                "combat_id": "legacy_combat",
+                "started_at": datetime.now(timezone.utc),
+                "turn": 3,
+                "enemies": [
+                    {
+                        "enemy_id": f"enemy_{i}",
+                        "name": f"Enemy {i}",
+                        "status": "Healthy",
+                        "weapon": "Sword",
+                        "traits": []
+                    }
+                    for i in range(1, 8)  # 7 enemies (exceeds limit)
+                ]
+            },
+            "additional_metadata": {},
+        }
+        
+        # Mock Firestore document snapshot
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = sample_data
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_ref.get.return_value = mock_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}/combat",
+            headers={"X-User-Id": "user123"}
+        )
+        
+        # Should return inactive with null state (defensive fallback for invalid data)
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["active"] is False
+        assert data["state"] is None
