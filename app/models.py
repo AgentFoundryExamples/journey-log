@@ -26,7 +26,7 @@ The models support:
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from google.cloud import firestore  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -399,22 +399,12 @@ class Quest(BaseModel):
     rewards: QuestRewards = Field(
         description="Quest rewards"
     )
-    completion_state: str = Field(
+    completion_state: Literal['not_started', 'in_progress', 'completed'] = Field(
         description="Quest completion status: 'not_started', 'in_progress', or 'completed'"
     )
     updated_at: datetime = Field(
         description="When the quest was last updated"
     )
-    
-    @model_validator(mode='after')
-    def validate_completion_state(self) -> 'Quest':
-        """Validate that completion_state is one of the allowed values."""
-        allowed_states = ['not_started', 'in_progress', 'completed']
-        if self.completion_state not in allowed_states:
-            raise ValueError(
-                f"completion_state must be one of {allowed_states}, got '{self.completion_state}'"
-            )
-        return self
 
 
 class QuestArchiveEntry(BaseModel):
@@ -577,24 +567,20 @@ class CharacterDocument(BaseModel):
     )
     
     @model_validator(mode='after')
-    def normalize_adventure_prompt(self) -> 'CharacterDocument':
-        """Normalize whitespace in adventure_prompt."""
+    def validate_document(self) -> 'CharacterDocument':
+        """Perform post-validation on the character document."""
+        # Normalize whitespace in adventure_prompt
         self.adventure_prompt = ' '.join(self.adventure_prompt.split())
         if not self.adventure_prompt:
             raise ValueError("adventure_prompt cannot be empty or only whitespace")
-        return self
-    
-    @model_validator(mode='after')
-    def validate_caps(self) -> 'CharacterDocument':
-        """Validate array size caps to prevent Firestore document bloat."""
-        # Validate POI cap (200 entries max)
+        
+        # Validate array size caps to prevent Firestore document bloat
         if len(self.world_pois) > 200:
             raise ValueError(
                 f"world_pois cannot exceed 200 entries (got {len(self.world_pois)}). "
                 "Consider moving older POIs to a subcollection or archiving them."
             )
         
-        # Validate archived quests cap (50 entries max)
         if len(self.archived_quests) > 50:
             raise ValueError(
                 f"archived_quests cannot exceed 50 entries (got {len(self.archived_quests)}). "

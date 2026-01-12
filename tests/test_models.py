@@ -425,7 +425,10 @@ class TestQuestModels:
                 completion_state="invalid_state",
                 updated_at=datetime.now(timezone.utc)
             )
-        assert "completion_state must be one of" in str(exc_info.value)
+        # Check for Literal validation error message
+        error_str = str(exc_info.value)
+        assert "completion_state" in error_str
+        assert ("not_started" in error_str or "in_progress" in error_str or "completed" in error_str)
     
     def test_quest_archive_entry(self):
         """Test creating a QuestArchiveEntry."""
