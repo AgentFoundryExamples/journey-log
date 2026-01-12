@@ -120,6 +120,23 @@ class Settings(BaseSettings):
         description="Maximum length of ai_response field in narrative turns (characters)",
     )
 
+    # Context Aggregation Configuration
+    context_default_recent_n: int = Field(
+        default=20,
+        ge=1,
+        le=100,
+        description="Default number of recent narrative turns to include in context aggregation (1-100)",
+    )
+    context_max_recent_n: int = Field(
+        default=100,
+        ge=1,
+        le=1000,
+        description=(
+            "Maximum number of recent narrative turns that can be requested in context aggregation (1-1000). "
+            "This limit ensures context payloads remain manageable for LLM/Director consumption."
+        ),
+    )
+
     @field_validator("gcp_project_id")
     @classmethod
     def validate_gcp_project_id(cls, v: str, info: ValidationInfo) -> str:

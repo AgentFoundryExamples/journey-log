@@ -36,13 +36,17 @@ from app.logging import get_logger
 from app.models import (
     CharacterDocument,
     CharacterIdentity,
+    CharacterContextResponse,
     CombatState,
+    ContextCombatState,
     Location,
+    NarrativeContextMetadata,
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
     Quest,
     Status,
+    WorldContextState,
     character_to_firestore,
     character_from_firestore,
     datetime_from_firestore,
@@ -3177,3 +3181,320 @@ async def get_combat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve combat state due to an internal error",
         )
+
+
+# ==============================================================================
+# Context Aggregation Endpoint
+# ==============================================================================
+
+
+@router.get(
+    "/{character_id}/context",
+    response_model=CharacterContextResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get aggregated character context for Director/LLM integration",
+    description=(
+        "Retrieve a comprehensive context payload for AI-driven narrative generation.\n\n"
+        "This endpoint aggregates:\n"
+        "- Player state (identity, status, level, equipment, location)\n"
+        "- Active quest with derived has_active_quest flag\n"
+        "- Combat state with derived active flag\n"
+        "- Recent narrative turns (configurable window, ordered oldest-to-newest)\n"
+        "- Optional world POIs sample (can be suppressed via include_pois flag)\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier for access control\n"
+        "  - If provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n"
+        "  - If provided, must match the character's owner_user_id\n\n"
+        "**Optional Query Parameters:**\n"
+        "- `recent_n` (integer): Number of recent narrative turns to include (default: 20, min: 1, max: configured limit)\n"
+        "- `include_pois` (boolean): Whether to include POI sample in world state (default: true)\n\n"
+        "**Response Structure:**\n"
+        "```json\n"
+        "{\n"
+        '  "character_id": "uuid",\n'
+        '  "player_state": { ... },\n'
+        '  "quest": { ... } or null,\n'
+        '  "combat": {\n'
+        '    "active": true/false,\n'
+        '    "state": { ... } or null\n'
+        "  },\n"
+        '  "narrative": {\n'
+        '    "recent_turns": [ ... ],\n'
+        '    "requested_n": 20,\n'
+        '    "returned_n": 15,\n'
+        '    "max_n": 100\n'
+        "  },\n"
+        '  "world": {\n'
+        '    "pois_sample": [ ... ],\n'
+        '    "include_pois": true\n'
+        "  },\n"
+        '  "has_active_quest": true/false\n'
+        "}\n"
+        "```\n\n"
+        "**Derived Fields:**\n"
+        "- `has_active_quest`: Computed as `quest is not None`\n"
+        "- `combat.active`: Computed as `any enemy status != Dead`\n"
+        "- `narrative.returned_n`: Actual number of turns returned (may be less than requested_n)\n"
+        "- `narrative.max_n`: Server-configured maximum (informs clients of limits)\n\n"
+        "**Performance Notes:**\n"
+        "- Character document: Single Firestore read (embedded state)\n"
+        "- Narrative turns: Subcollection query (indexed by timestamp)\n"
+        "- POI sample: In-memory sampling from embedded world_pois array\n"
+        "- Total latency typically <100ms for moderate datasets\n\n"
+        "**Error Responses:**\n"
+        "- `400 Bad Request`: Invalid query parameters (recent_n out of range) or empty X-User-Id\n"
+        "- `403 Forbidden`: X-User-Id provided but does not match character owner\n"
+        "- `404 Not Found`: Character not found\n"
+        "- `422 Unprocessable Entity`: Invalid UUID format for character_id\n"
+        "- `500 Internal Server Error`: Firestore transient errors\n\n"
+        "**Edge Cases:**\n"
+        "- Empty narrative history: Returns empty recent_turns array with returned_n=0\n"
+        "- No active quest: Returns quest=null, has_active_quest=false\n"
+        "- Inactive combat: Returns combat.active=false, combat.state=null\n"
+        "- include_pois=false: Returns world.pois_sample=[], world.include_pois=false\n"
+        "- recent_n exceeds available turns: Returns all available turns without error\n"
+    ),
+)
+async def get_character_context(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
+    recent_n: int = settings.context_default_recent_n,
+    include_pois: bool = True,
+) -> CharacterContextResponse:
+    """
+    Retrieve aggregated character context for Director/LLM integration.
+    
+    This endpoint provides a single comprehensive payload containing all relevant
+    character state for AI-driven narrative generation. It aggregates:
+    - Player state (identity, status, equipment, location)
+    - Active quest with derived has_active_quest flag
+    - Combat state with derived active flag
+    - Recent narrative turns with metadata (ordered oldest-to-newest)
+    - Optional world POIs sample
+    
+    The response structure is designed to be consumed directly by LLM Directors
+    without additional transformation.
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        recent_n: Number of recent narrative turns to include (default: 20, max: configured)
+        include_pois: Whether to include POI sample in response (default: true)
+    
+    Returns:
+        CharacterContextResponse with aggregated context
+    
+    Raises:
+        HTTPException:
+            - 400: Invalid parameters (recent_n out of range) or empty X-User-Id
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_context_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+
+    # Validate recent_n parameter
+    if recent_n < 1 or recent_n > settings.context_max_recent_n:
+        logger.warning(
+            "get_context_invalid_recent_n",
+            character_id=character_id,
+            recent_n=recent_n,
+            max_allowed=settings.context_max_recent_n,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Parameter 'recent_n' must be between 1 and {settings.context_max_recent_n} (got {recent_n})",
+        )
+
+    # Log retrieval attempt
+    logger.info(
+        "get_context_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+        recent_n=recent_n,
+        include_pois=include_pois,
+    )
+
+    try:
+        # 1. Fetch character document
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_context_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+
+        # 2. Verify ownership if X-User-Id is provided
+        char_data = char_snapshot.to_dict()
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_context_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+
+            owner_user_id = char_data.get("owner_user_id")
+
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_context_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+
+        # 3. Deserialize character document
+        character = character_from_firestore(char_data, character_id=character_id)
+
+        # 4. Fetch recent narrative turns
+        turns_collection = char_ref.collection("narrative_turns")
+        query = turns_collection.order_by(
+            "timestamp", direction=firestore.Query.DESCENDING
+        ).limit(recent_n)
+
+        turn_docs = list(query.stream())
+        # Reverse to get oldest-to-newest order (chronological)
+        turn_docs.reverse()
+
+        recent_turns = []
+        for doc in turn_docs:
+            turn_data = doc.to_dict()
+            turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
+            recent_turns.append(turn)
+
+        # 5. Prepare combat state with derived active flag
+        combat_state_data = char_data.get("combat_state")
+        combat_active = False
+        combat_state_obj = None
+
+        if combat_state_data is not None:
+            try:
+                combat_state_obj = CombatState(**combat_state_data)
+                combat_active = combat_state_obj.is_active
+            except (ValueError, TypeError, KeyError) as e:
+                # Defensive: malformed combat state, treat as inactive
+                logger.warning(
+                    "get_context_malformed_combat_state",
+                    character_id=character_id,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                )
+                combat_state_obj = None
+                combat_active = False
+
+        # When combat is inactive, set state to None per acceptance criteria
+        combat_context = ContextCombatState(
+            active=combat_active,
+            state=combat_state_obj if combat_active else None,
+        )
+
+        # 6. Prepare world POI sample
+        pois_sample_list = []
+        if include_pois:
+            world_pois_data = char_data.get("world_pois", [])
+            # Sample up to 3 POIs randomly (default Director sample size)
+            sample_size = min(3, len(world_pois_data))
+            if sample_size > 0:
+                sampled_data = random.sample(world_pois_data, sample_size)
+                for poi_data in sampled_data:
+                    created_at = poi_data.get("created_at")
+                    if created_at is not None:
+                        created_at = datetime_from_firestore(created_at)
+
+                    poi = PointOfInterest(
+                        id=poi_data["id"],
+                        name=poi_data["name"],
+                        description=poi_data["description"],
+                        created_at=created_at,
+                        tags=poi_data.get("tags"),
+                    )
+                    pois_sample_list.append(poi)
+
+        world_context = WorldContextState(
+            pois_sample=pois_sample_list,
+            include_pois=include_pois,
+        )
+
+        # 7. Prepare narrative metadata
+        narrative_metadata = NarrativeContextMetadata(
+            recent_turns=recent_turns,
+            requested_n=recent_n,
+            returned_n=len(recent_turns),
+            max_n=settings.context_max_recent_n,
+        )
+
+        # 8. Build context response
+        context_response = CharacterContextResponse(
+            character_id=character.character_id,
+            player_state=character.player_state,
+            quest=character.active_quest,
+            combat=combat_context,
+            narrative=narrative_metadata,
+            world=world_context,
+            has_active_quest=character.active_quest is not None,
+        )
+
+        logger.info(
+            "get_context_success",
+            character_id=character_id,
+            returned_turns=len(recent_turns),
+            has_quest=character.active_quest is not None,
+            combat_active=combat_active,
+            pois_included=len(pois_sample_list),
+        )
+
+        return context_response
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_context_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve character context due to an internal error",
+        )
+

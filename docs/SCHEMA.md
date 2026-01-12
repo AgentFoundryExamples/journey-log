@@ -2619,6 +2619,268 @@ http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/c
 
 ---
 
+### Context Aggregation Endpoint
+
+The context aggregation endpoint provides a single comprehensive payload containing all relevant character state for AI-driven narrative generation. This is the **primary integration surface for Directors** and LLM-driven systems.
+
+#### Get Character Context
+
+**Endpoint:** `GET /characters/{character_id}/context`
+
+**Description:** Retrieve a comprehensive context payload aggregating player state, quest, combat, narrative history, and world POIs. This endpoint is optimized for Director/LLM consumption, providing all necessary context in a single request with derived convenience fields.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Optional Headers:**
+- `X-User-Id` (string): User identifier for access control
+  - If provided but empty/whitespace-only, returns 400 error
+  - If omitted entirely, allows anonymous access without verification
+  - If provided, must match the character's owner_user_id
+
+**Optional Query Parameters:**
+- `recent_n` (integer): Number of recent narrative turns to include (default: 20, min: 1, max: configured via `CONTEXT_MAX_RECENT_N`)
+- `include_pois` (boolean): Whether to include POI sample in world state (default: true)
+
+**Response Format:**
+```json
+{
+  "character_id": "550e8400-e29b-41d4-a716-446655440000",
+  "player_state": {
+    "identity": {
+      "name": "Aragorn",
+      "race": "Human",
+      "class": "Ranger"
+    },
+    "status": "Healthy",
+    "level": 10,
+    "experience": 5000,
+    "stats": {
+      "strength": 18,
+      "dexterity": 14,
+      "constitution": 16
+    },
+    "equipment": [
+      {
+        "name": "Anduril",
+        "damage": "2d6",
+        "special_effects": "Glows blue near enemies"
+      }
+    ],
+    "inventory": [
+      {
+        "name": "Healing Potion",
+        "quantity": 3,
+        "effect": "Restores 50 HP"
+      }
+    ],
+    "location": {
+      "id": "town:rivendell",
+      "display_name": "Rivendell"
+    },
+    "additional_fields": {}
+  },
+  "quest": {
+    "name": "Destroy the Ring",
+    "description": "Take the One Ring to Mount Doom and destroy it in the fires where it was forged.",
+    "requirements": [
+      "Reach Rivendell",
+      "Form the Fellowship",
+      "Reach Mordor",
+      "Enter Mount Doom"
+    ],
+    "rewards": {
+      "items": ["Peace of Middle-earth"],
+      "currency": {},
+      "experience": 10000
+    },
+    "completion_state": "in_progress",
+    "updated_at": "2026-01-11T15:00:00Z"
+  },
+  "combat": {
+    "active": true,
+    "state": {
+      "combat_id": "combat_123",
+      "started_at": "2026-01-11T14:30:00Z",
+      "turn": 3,
+      "enemies": [
+        {
+          "enemy_id": "orc_001",
+          "name": "Orc Warrior",
+          "status": "Wounded",
+          "weapon": "Battle Axe",
+          "traits": ["aggressive"]
+        }
+      ],
+      "player_conditions": {
+        "status_effects": [],
+        "temporary_buffs": ["shield_of_valor"]
+      }
+    }
+  },
+  "narrative": {
+    "recent_turns": [
+      {
+        "turn_id": "turn_001",
+        "turn_number": 1,
+        "player_action": "I explore the ancient ruins",
+        "gm_response": "You discover a hidden chamber filled with old artifacts.",
+        "timestamp": "2026-01-11T12:00:00Z",
+        "game_state_snapshot": null,
+        "metadata": null
+      }
+    ],
+    "requested_n": 20,
+    "returned_n": 1,
+    "max_n": 100
+  },
+  "world": {
+    "pois_sample": [
+      {
+        "id": "poi_123",
+        "name": "Ancient Dragon's Lair",
+        "description": "A vast cavern system deep beneath the mountains.",
+        "created_at": "2026-01-11T14:30:00Z",
+        "tags": ["dungeon", "dragon", "high-danger"]
+      }
+    ],
+    "include_pois": true
+  },
+  "has_active_quest": true
+}
+```
+
+**Response Fields:**
+- `character_id` (string): UUID character identifier
+- `player_state` (object): Complete player state including identity, status, level, equipment, inventory, location
+- `quest` (object or null): Active quest details or null if no active quest
+- `combat` (object): Combat state with derived active flag
+  - `active` (boolean): Whether combat is currently active (any enemy status != "Dead")
+  - `state` (object or null): Full combat details or null if inactive
+- `narrative` (object): Recent narrative turns with metadata
+  - `recent_turns` (array): List of turns ordered oldest-to-newest (chronological)
+  - `requested_n` (integer): Number of turns requested via query parameter
+  - `returned_n` (integer): Actual number of turns returned (may be less if fewer exist)
+  - `max_n` (integer): Server-configured maximum (from `CONTEXT_MAX_RECENT_N` setting)
+- `world` (object): World state including optional POI sample
+  - `pois_sample` (array): Random sample of discovered POIs (default: 3 POIs, empty if include_pois=false)
+  - `include_pois` (boolean): Whether POIs were included (reflects request parameter)
+- `has_active_quest` (boolean): Derived field - true if quest is not null
+
+**Derived Fields:**
+The response includes several derived fields computed server-side for Director convenience:
+- `has_active_quest`: Boolean derived from `quest is not None`
+- `combat.active`: Boolean derived from enemy statuses (true if any enemy status != "Dead")
+- `narrative.returned_n`: Actual count of turns returned (may be less than requested_n)
+- `narrative.max_n`: Server configuration limit exposed to inform clients
+
+**Default Values:**
+- `recent_n`: Default 20 turns (configurable via `CONTEXT_DEFAULT_RECENT_N` environment variable)
+- Maximum `recent_n`: 100 turns (configurable via `CONTEXT_MAX_RECENT_N` environment variable)
+- POI sample size: 3 POIs (fixed for context aggregation, use dedicated POI endpoints for more control)
+
+**Performance Notes:**
+- **Character document**: Single Firestore read (all embedded state loaded at once)
+- **Narrative turns**: Subcollection query (indexed by timestamp, efficient for recent queries)
+- **POI sample**: In-memory random sampling from embedded world_pois array (no additional Firestore reads)
+- **Total latency**: Typically <100ms for moderate datasets, scales with narrative history size
+- **Optimization tip**: Use `include_pois=false` to reduce payload size if POIs aren't needed
+
+**Validation Rules:**
+- `recent_n` must be between 1 and configured maximum (default max: 100)
+- Requests with `recent_n < 1` or `recent_n > max` return 400 Bad Request
+- `include_pois` accepts true/false, default true
+
+**Error Responses:**
+- `400 Bad Request`: Invalid query parameters (recent_n out of range) or empty X-User-Id
+- `403 Forbidden`: X-User-Id provided but does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Get context with default settings (20 recent turns, POIs included)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context
+
+# Get context with custom narrative window
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?recent_n=50"
+
+# Get context without POIs (smaller payload)
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=false"
+
+# Get context with access control
+curl -H "X-User-Id: user123" \
+  "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?recent_n=30"
+
+# HTTPie example with all parameters
+http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context \
+  recent_n==40 \
+  include_pois==true \
+  X-User-Id:user123
+```
+
+**Edge Cases:**
+- **Empty narrative history**: Returns `narrative.recent_turns=[]`, `narrative.returned_n=0`
+- **No active quest**: Returns `quest=null`, `has_active_quest=false`
+- **Inactive combat**: Returns `combat.active=false`, `combat.state=null`
+- **include_pois=false**: Returns `world.pois_sample=[]`, `world.include_pois=false`
+- **recent_n exceeds available turns**: Returns all available turns without error, `returned_n < requested_n`
+- **Malformed combat state**: Treated as inactive (defensive handling), logs warning
+- **Missing X-User-Id**: Allows anonymous access (useful for public character viewing)
+- **Empty/whitespace-only X-User-Id**: Returns 400 error (client error)
+
+**Configuration:**
+Context endpoint behavior is configurable via environment variables:
+- `CONTEXT_DEFAULT_RECENT_N`: Default number of turns to include (default: 20, range: 1-100)
+- `CONTEXT_MAX_RECENT_N`: Maximum turns that can be requested (default: 100, range: 1-1000)
+
+These settings can be adjusted in `.env` file:
+```bash
+# Context aggregation settings
+CONTEXT_DEFAULT_RECENT_N=20
+CONTEXT_MAX_RECENT_N=100
+```
+
+**Use Cases for Directors:**
+1. **Full Context Prompt**: Use this endpoint to build comprehensive LLM prompts with all character state
+2. **Narrative Continuation**: Include recent_turns to provide conversation history for coherent responses
+3. **Quest-Aware Responses**: Use has_active_quest and quest details to generate quest-relevant content
+4. **Combat Integration**: Check combat.active to generate combat-appropriate narration
+5. **World Building**: Use pois_sample to reference previously discovered locations in responses
+6. **Efficient Updates**: Single request provides all necessary context, reducing API round-trips
+
+**Director Integration Example:**
+```python
+# Fetch character context
+response = requests.get(
+    f"https://api.example.com/characters/{character_id}/context",
+    params={"recent_n": 30, "include_pois": True},
+    headers={"X-User-Id": user_id}
+)
+
+context = response.json()
+
+# Build LLM prompt with aggregated context
+prompt = f"""
+You are the Game Master for {context['player_state']['identity']['name']}, 
+a {context['player_state']['identity']['race']} {context['player_state']['identity']['class']}.
+
+Current Status: {context['player_state']['status']}
+Location: {context['player_state']['location']['display_name']}
+
+Active Quest: {context['quest']['name'] if context['has_active_quest'] else 'None'}
+Combat Active: {context['combat']['active']}
+
+Recent Narrative (last {context['narrative']['returned_n']} turns):
+{format_narrative_turns(context['narrative']['recent_turns'])}
+
+Respond to the player's next action in character.
+"""
+```
+
+---
+
 ## References
 
 - [Firestore Data Model](https://cloud.google.com/firestore/docs/data-model)
