@@ -74,8 +74,8 @@ Total files: 18
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 38.71 KB  
-**LOC:** 850  
+**Size:** 39.13 KB  
+**LOC:** 856  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -92,8 +92,8 @@ Total files: 18
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 77.72 KB  
-**LOC:** 1676  
+**Size:** 98.79 KB  
+**LOC:** 2136  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -128,8 +128,8 @@ Total files: 18
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 124.48 KB  
-**LOC:** 2654  
+**Size:** 145.39 KB  
+**LOC:** 3097  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py
