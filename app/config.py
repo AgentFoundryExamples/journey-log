@@ -102,7 +102,12 @@ class Settings(BaseSettings):
         default=100,
         ge=1,
         le=1000,
-        description="Maximum number of narrative turns that can be retrieved in a single query (1-1000)"
+        description=(
+            "Maximum number of narrative turns that can be retrieved in a single query (1-1000). "
+            "Higher limits may impact query performance and memory usage. "
+            "The 1000 limit is set to balance query flexibility with performance considerations, "
+            "as Firestore queries are most efficient with smaller result sets."
+        )
     )
     narrative_turns_max_user_action_length: int = Field(
         default=8000,

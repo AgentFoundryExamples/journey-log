@@ -264,8 +264,19 @@ def count_narrative_turns(character_id: str) -> int:
     """
     Count the total number of narrative turns for a character.
     
-    Note: This is an expensive operation for large collections.
-    Consider caching the count or maintaining a counter field on the character document.
+    WARNING: This is an expensive operation for large collections as it requires
+    streaming all documents to count them. Firestore does not provide a native
+    count operation, so this function iterates through all turns.
+    
+    Performance considerations:
+    - For large collections (>1000 turns), this can be slow and costly
+    - Consider maintaining a counter field on the character document instead
+    - Future enhancement: Use Firestore's aggregation queries when available
+    
+    Recommended alternatives:
+    - Track turn count in character document's additional_metadata
+    - Increment counter on write, decrement on delete
+    - Use turn_number field if sequential numbering is maintained
     
     Args:
         character_id: The UUID of the character
