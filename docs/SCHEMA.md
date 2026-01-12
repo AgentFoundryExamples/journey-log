@@ -2879,6 +2879,17 @@ Respond to the player's next action in character.
 """
 ```
 
+**Testing:**
+The context aggregation endpoint has comprehensive integration test coverage in `tests/test_context_aggregation.py`. The test suite validates:
+- Complete data aggregation (player state, quest, combat, narrative, POIs)
+- Derived fields (has_active_quest, combat.active)
+- Query parameters (recent_n variations, include_pois flag)
+- Edge cases (missing character, invalid parameters, empty narrative/POIs)
+- Access control (user verification, 403/404 responses)
+- Performance characteristics (validates exactly 2 Firestore reads as documented)
+
+See the [Testing section in README.md](../README.md#testing) for detailed test documentation and instructions.
+
 ---
 
 ## References
