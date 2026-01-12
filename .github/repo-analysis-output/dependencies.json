@@ -165,7 +165,6 @@
           "google.cloud.firestore",
           "pydantic.BaseModel",
           "pydantic.Field",
-          "pydantic.model_serializer",
           "pydantic.model_validator"
         ]
       }
@@ -480,7 +479,6 @@
       "pydantic.ValidationError",
       "pydantic.ValidationInfo",
       "pydantic.field_validator",
-      "pydantic.model_serializer",
       "pydantic.model_validator",
       "pydantic_settings.BaseSettings",
       "pydantic_settings.SettingsConfigDict",
@@ -493,6 +491,6 @@
       "uvicorn"
     ],
     "stdlib_count": 23,
-    "third-party_count": 31
+    "third-party_count": 30
   }
 }

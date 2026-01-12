@@ -11,7 +11,7 @@ Includes classification of external dependencies as stdlib vs third-party.
 - **Total files**: 19
 - **Intra-repo dependencies**: 29
 - **External stdlib dependencies**: 23
-- **External third-party dependencies**: 31
+- **External third-party dependencies**: 30
 
 ## External Dependencies
 
@@ -43,7 +43,7 @@ Total: 23 unique modules
 
 ### Third-Party Packages
 
-Total: 31 unique packages
+Total: 30 unique packages
 
 - `fastapi.APIRouter`
 - `fastapi.Depends`
@@ -65,7 +65,7 @@ Total: 31 unique packages
 - `pydantic.ValidationError`
 - `pydantic.ValidationInfo`
 - `pydantic.field_validator`
-- ... and 11 more (see JSON for full list)
+- ... and 10 more (see JSON for full list)
 
 ## Most Depended Upon Files (Intra-Repo)
 

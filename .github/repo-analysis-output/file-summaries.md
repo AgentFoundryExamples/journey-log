@@ -11,8 +11,8 @@ Total files: 19
 **Role:** module-init  
 **Role Justification:** module initialization file '__init__'  
 **Summary:** Python module initialization (role: module-init)  
-**Size:** 1.31 KB  
-**LOC:** 41  
+**Size:** 1.28 KB  
+**LOC:** 39  
 **TODOs/FIXMEs:** 0  
 
 ## app/config.py
@@ -20,7 +20,7 @@ Total files: 19
 **Role:** configuration  
 **Role Justification:** configuration file name 'config'  
 **Summary:** Python configuration file (role: configuration)  
-**Size:** 5.36 KB  
+**Size:** 5.37 KB  
 **LOC:** 107  
 **TODOs/FIXMEs:** 0  
 
@@ -38,7 +38,7 @@ Total files: 19
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for firestore  
-**Size:** 10.07 KB  
+**Size:** 9.94 KB  
 **LOC:** 195  
 **TODOs/FIXMEs:** 0  
 
@@ -56,7 +56,7 @@ Total files: 19
 **Role:** entry-point  
 **Role Justification:** common entry point name 'main'  
 **Summary:** Python main entry point (role: entry-point)  
-**Size:** 7.55 KB  
+**Size:** 7.52 KB  
 **LOC:** 181  
 **TODOs/FIXMEs:** 0  
 
@@ -74,8 +74,8 @@ Total files: 19
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 40.24 KB  
-**LOC:** 876  
+**Size:** 39.17 KB  
+**LOC:** 838  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -92,8 +92,8 @@ Total files: 19
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 118.90 KB  
-**LOC:** 2534  
+**Size:** 115.46 KB  
+**LOC:** 2525  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -128,8 +128,8 @@ Total files: 19
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 145.43 KB  
-**LOC:** 3098  
+**Size:** 138.71 KB  
+**LOC:** 3179  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_combat.py
@@ -137,8 +137,8 @@ Total files: 19
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 36.26 KB  
-**LOC:** 781  
+**Size:** 35.53 KB  
+**LOC:** 804  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py
@@ -146,8 +146,8 @@ Total files: 19
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 23.04 KB  
-**LOC:** 490  
+**Size:** 23.17 KB  
+**LOC:** 501  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_models.py
@@ -155,8 +155,8 @@ Total files: 19
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 52.32 KB  
-**LOC:** 1213  
+**Size:** 50.44 KB  
+**LOC:** 1191  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_narrative_turns.py
@@ -164,8 +164,8 @@ Total files: 19
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 20.21 KB  
-**LOC:** 383  
+**Size:** 19.77 KB  
+**LOC:** 390  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_serialization.py
@@ -173,6 +173,6 @@ Total files: 19
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 41.56 KB  
-**LOC:** 753  
+**Size:** 40.75 KB  
+**LOC:** 795  
 **TODOs/FIXMEs:** 0  
