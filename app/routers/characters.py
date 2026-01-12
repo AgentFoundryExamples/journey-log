@@ -31,7 +31,6 @@ from app.config import (
     DEFAULT_LOCATION_DISPLAY_NAME,
 )
 from app.dependencies import FirestoreClient
-from app.firestore import count_narrative_turns
 from app.logging import get_logger
 from app.models import (
     CharacterDocument,
@@ -834,21 +833,8 @@ async def append_narrative_turn(
     
     user_id = x_user_id.strip()
     
-    # Validate combined length (additional check beyond Pydantic validation)
+    # Log oversized attempts for metrics (Pydantic validation already enforces limits)
     combined_length = len(request.user_action) + len(request.ai_response)
-    if combined_length > 40000:
-        logger.warning(
-            "append_narrative_payload_too_large",
-            character_id=character_id,
-            user_id=user_id,
-            combined_length=combined_length,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Combined payload size ({combined_length} characters) exceeds maximum of 40000 characters",
-        )
-    
-    # Log oversized attempts for metrics
     if len(request.user_action) > 7000 or len(request.ai_response) > 30000:
         logger.info(
             "append_narrative_large_payload",
@@ -891,12 +877,12 @@ async def append_narrative_turn(
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
         
-        # Generate turn ID
-        turn_id = str(uuid.uuid4()).lower()
-        
         @firestore.transactional
         def append_in_transaction(transaction):
             """Atomically append turn and update character."""
+            # Generate turn ID inside transaction to avoid race condition on retry
+            turn_id = str(uuid.uuid4()).lower()
+            
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
@@ -945,10 +931,18 @@ async def append_narrative_turn(
                 "updated_at": firestore.SERVER_TIMESTAMP
             })
             
-            return turn_ref, turn_data
+            # 6. Count turns atomically within transaction using aggregation
+            # Note: Firestore aggregation count is efficient and atomic within transaction
+            turns_collection = char_ref.collection("narrative_turns")
+            count_query = turns_collection.count()
+            count_result = count_query.get(transaction=transaction)
+            # The result structure is [[AggregationResult]] where AggregationResult has a value attribute
+            total_turns = count_result[0][0].value
+            
+            return turn_ref, turn_data, turn_id, total_turns
         
         # Execute transaction
-        turn_ref, turn_data = append_in_transaction(transaction)
+        turn_ref, turn_data, turn_id, total_turns = append_in_transaction(transaction)
         
         # Read back the written turn to get server timestamps
         turn_snapshot = turn_ref.get()
@@ -991,9 +985,6 @@ async def append_narrative_turn(
             game_state_snapshot=turn_dict.get("game_state_snapshot"),
             metadata=turn_dict.get("metadata"),
         )
-        
-        # Count total turns
-        total_turns = count_narrative_turns(character_id)
         
         logger.info(
             "append_narrative_success",

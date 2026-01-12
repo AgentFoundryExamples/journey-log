@@ -19,7 +19,7 @@ and default value application.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
@@ -1411,6 +1411,13 @@ class TestAppendNarrativeTurn:
         mock_char_ref.collection.return_value = mock_turn_collection
         mock_turn_collection.document.return_value = mock_turn_ref
         
+        # Mock count aggregation query for atomic count
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 5
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turn_collection.count.return_value = mock_count_query
+        
         # Mock turn document retrieval after creation
         mock_turn_snapshot = Mock()
         mock_turn_snapshot.exists = True
@@ -1427,14 +1434,12 @@ class TestAppendNarrativeTurn:
         mock_firestore_client.collection.return_value = mock_collection
         mock_collection.document.return_value = mock_char_ref
         
-        # Mock count_narrative_turns
-        with patch('app.routers.characters.count_narrative_turns', return_value=5):
-            # Make request
-            response = test_client_with_mock_db.post(
-                "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
-                json=valid_append_request,
-                headers={"X-User-Id": "user123"},
-            )
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=valid_append_request,
+            headers={"X-User-Id": "user123"},
+        )
         
         # Assertions
         assert response.status_code == status.HTTP_201_CREATED
@@ -1474,6 +1479,13 @@ class TestAppendNarrativeTurn:
         mock_char_ref.collection.return_value = mock_turn_collection
         mock_turn_collection.document.return_value = mock_turn_ref
         
+        # Mock count aggregation query
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 1
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turn_collection.count.return_value = mock_count_query
+        
         custom_timestamp = "2026-01-11T12:00:00Z"
         mock_turn_snapshot = Mock()
         mock_turn_snapshot.exists = True
@@ -1495,12 +1507,11 @@ class TestAppendNarrativeTurn:
             "timestamp": custom_timestamp,
         }
         
-        with patch('app.routers.characters.count_narrative_turns', return_value=1):
-            response = test_client_with_mock_db.post(
-                "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
-                json=request_with_timestamp,
-                headers={"X-User-Id": "user123"},
-            )
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_with_timestamp,
+            headers={"X-User-Id": "user123"},
+        )
         
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
@@ -1838,6 +1849,13 @@ class TestAppendNarrativeTurn:
         mock_char_ref.collection.return_value = mock_turn_collection
         mock_turn_collection.document.return_value = mock_turn_ref
         
+        # Mock count aggregation query
+        mock_count_query = Mock()
+        mock_agg_result = Mock()
+        mock_agg_result.value = 1
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        mock_turn_collection.count.return_value = mock_count_query
+        
         # Create request at limits
         user_action_at_limit = "A" * 8000
         ai_response_at_limit = "B" * 32000
@@ -1861,12 +1879,11 @@ class TestAppendNarrativeTurn:
             "ai_response": ai_response_at_limit,
         }
         
-        with patch('app.routers.characters.count_narrative_turns', return_value=1):
-            response = test_client_with_mock_db.post(
-                "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
-                json=request_data,
-                headers={"X-User-Id": "user123"},
-            )
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/narrative",
+            json=request_data,
+            headers={"X-User-Id": "user123"},
+        )
         
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
