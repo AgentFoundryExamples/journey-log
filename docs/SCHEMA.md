@@ -2421,9 +2421,9 @@ The server automatically computes `active` based on enemy statuses:
 **Validation Rules:**
 - Maximum 5 enemies per combat (enforced at model validation layer)
 - All enemy statuses must be valid enum values: "Healthy", "Wounded", or "Dead"
-- Payloads with >5 enemies are rejected with 422 error before Firestore writes
+- Payloads with >5 enemies are rejected with 422 Unprocessable Entity error before Firestore writes
 - Empty enemies array is valid and sets active=false
-- Unknown enemy statuses cause deterministic validation errors
+- Unknown enemy statuses cause 422 Unprocessable Entity validation errors with detailed field-level error messages
 
 **Atomicity:**
 Uses Firestore transaction to atomically:
@@ -2611,7 +2611,7 @@ http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/c
 
 **Edge Cases:**
 - Character with no combat history returns `{"active": false, "state": null}` (not an error, 200 status)
-- Stored documents with >5 enemies (legacy data) trigger defensive filtering and return inactive
+- Stored documents with >5 enemies (legacy data from before validation was added) are handled defensively: the endpoint returns `{"active": false, "state": null}` to avoid exposing invalid data. The server logs a warning about the legacy data violation. Directors should use PUT to fix the combat state with ≤5 enemies.
 - Race conditions where combat cleared between read start/finish return inactive safely
 - Malformed stored data is handled gracefully with fallback to inactive response
 - Missing `X-User-Id` allows anonymous access (useful for public character viewing)
