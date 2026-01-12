@@ -234,7 +234,18 @@ curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest
 curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
   -H "Content-Type: application/json" \
   -H "X-User-Id: user123" \
-  -d '{...}'
+  -d '{
+    "name": "Find the Lost Crown",
+    "description": "Locate and retrieve the ancient crown from the forbidden forest",
+    "requirements": ["Obtain forest map", "Defeat guardian"],
+    "rewards": {
+      "items": ["Ancient Crown"],
+      "currency": {"gold": 500},
+      "experience": 2000
+    },
+    "completion_state": "not_started",
+    "updated_at": "2026-01-12T10:00:00Z"
+  }'
 # Error: 409 Conflict - Must DELETE existing quest first
 
 # Complete and archive quest

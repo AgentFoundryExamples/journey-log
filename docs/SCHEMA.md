@@ -1659,10 +1659,13 @@ The API endpoints documented below operate on the **embedded `world_pois` array*
 ```
 
 **Request Fields:**
-- `name` (string, required): POI name (1-200 characters)
-- `description` (string, required): POI description (1-2000 characters)
-- `timestamp` (string, optional): ISO 8601 timestamp when POI was discovered. Defaults to server UTC now if omitted.
-- `tags` (array of strings, optional): List of tags for categorizing the POI (max 20 tags, each max 50 characters)
+- `name` (string, required): POI name (minimum 1 character, maximum 200 characters)
+- `description` (string, required): POI description (minimum 1 character, maximum 2000 characters)
+- `timestamp` (string, optional): ISO 8601 timestamp when POI was discovered. Defaults to server UTC now if omitted. Note: The response will return this as `created_at`.
+- `tags` (array of strings, optional): List of tags for categorizing the POI
+  - Maximum 20 tags in the array
+  - Each tag maximum 50 characters
+  - Tags cannot be empty or only whitespace
 
 **Response Format:**
 ```json
