@@ -970,10 +970,11 @@ async def append_narrative_turn(
             turn_dict["timestamp"] = datetime_from_firestore(turn_dict["timestamp"])
         
         # Create NarrativeTurn object (using aliases for conversion)
+        # Use direct access for required fields that were written in the transaction
         stored_turn = NarrativeTurn(
             turn_id=turn_dict.get("turn_id", turn_id),
-            user_action=turn_dict.get("player_action"),
-            ai_response=turn_dict.get("gm_response"),
+            user_action=turn_dict["player_action"],
+            ai_response=turn_dict["gm_response"],
             timestamp=turn_dict["timestamp"],
             turn_number=turn_dict.get("turn_number"),
             game_state_snapshot=turn_dict.get("game_state_snapshot"),
