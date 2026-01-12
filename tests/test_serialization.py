@@ -588,10 +588,10 @@ class TestCharacterDocumentRoundTrip:
         enemy1 = restored.combat_state.enemies[0]
         assert enemy1.enemy_id == "orc_001"
         assert enemy1.name == "Orc Warrior"
-        assert enemy1.health.current == 25
-        assert enemy1.health.max == 50
-        assert len(enemy1.status_effects) == 2
-        assert "poisoned" in enemy1.status_effects
+        assert enemy1.status == Status.WOUNDED
+        assert enemy1.weapon == "Rusty Axe"
+        assert len(enemy1.traits) == 2
+        assert "poisoned" in enemy1.traits
         
         # Verify combat timestamp
         assert restored.combat_state.started_at == character_in_combat_multiple_enemies.combat_state.started_at
@@ -1011,12 +1011,12 @@ class TestRoundTripEdgeCases:
         
         # Verify multiple enemies
         assert len(restored.combat_state.enemies) == 3
-        assert all(isinstance(enemy, Enemy) for enemy in restored.combat_state.enemies)
+        assert all(isinstance(enemy, EnemyState) for enemy in restored.combat_state.enemies)
         
-        # Verify each enemy's status effects array
-        assert len(restored.combat_state.enemies[0].status_effects) == 2
-        assert len(restored.combat_state.enemies[1].status_effects) == 0
-        assert len(restored.combat_state.enemies[2].status_effects) == 1
+        # Verify each enemy's traits array (replacing old status_effects)
+        assert len(restored.combat_state.enemies[0].traits) == 2
+        assert len(restored.combat_state.enemies[1].traits) == 1
+        assert len(restored.combat_state.enemies[2].traits) == 2
     
     def test_narrative_turn_ordering_metadata(self):
         """Test that turn_number metadata is preserved for ordering."""
