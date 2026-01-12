@@ -2611,7 +2611,7 @@ http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/c
 
 **Edge Cases:**
 - Character with no combat history returns `{"active": false, "state": null}` (not an error, 200 status)
-- Stored documents with >5 enemies (legacy data from before validation was added) are handled defensively: the endpoint returns `{"active": false, "state": null}` to avoid exposing invalid data. The server logs a warning about the legacy data violation. Directors should use PUT to fix the combat state with ≤5 enemies.
+- **Legacy data with >5 enemies**: Pre-existing stored documents that bypassed validation (created before the ≤5 enemy limit was enforced) are handled defensively on GET. The endpoint returns `{"active": false, "state": null}` to avoid exposing invalid data. The server logs a warning about the data violation. Note: This only applies to reads of pre-existing data; new PUT requests with >5 enemies are rejected with 422 validation errors before writes (see Validation Rules above). Directors should use PUT to remediate such legacy data by setting a valid combat state with ≤5 enemies.
 - Race conditions where combat cleared between read start/finish return inactive safely
 - Malformed stored data is handled gracefully with fallback to inactive response
 - Missing `X-User-Id` allows anonymous access (useful for public character viewing)

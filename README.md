@@ -293,7 +293,7 @@ curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-44665544000
   }'
 # Response: {"active": true, "state": {...}}
 
-# Update combat (mark one enemy as dead)
+# Update combat (mark one enemy as dead, orc wounded)
 curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
   -H "Content-Type: application/json" \
   -H "X-User-Id: user123" \
@@ -315,12 +315,13 @@ curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-44665544000
           "name": "Goblin Scout",
           "status": "Dead",
           "weapon": "Short Bow",
-          "traits": []
+          "traits": ["ranged", "cowardly"]
         }
       ]
     }
   }'
 # Response: {"active": true, "state": {...}} (still active because orc is alive)
+# Note: Traits can be modified arbitrarily by Directors; keeping traits on dead enemies is valid
 
 # End combat (all enemies dead)
 curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
