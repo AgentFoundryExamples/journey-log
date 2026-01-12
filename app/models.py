@@ -295,10 +295,36 @@ class NarrativeTurn(BaseModel):
 
 class PointOfInterest(BaseModel):
     """
-    A point of interest (POI) in the game world.
+    A point of interest (POI) embedded in character documents.
     
-    POIs represent locations, dungeons, towns, or other places the character
-    has discovered or visited.
+    This simplified POI model is stored directly in the character document
+    as part of the world_pois array. For unbounded POI data, use the
+    subcollection variant (see docs/SCHEMA.md).
+    
+    EXACT SHAPE REQUIREMENT: This model must match the exact structure
+    specified in the issue requirements for embedded POIs.
+    """
+    model_config = ConfigDict(extra="forbid")
+    
+    id: str = Field(description="Unique POI identifier")
+    name: str = Field(description="POI name")
+    description: str = Field(description="POI description")
+    created_at: Optional[datetime] = Field(
+        default=None,
+        description="When the POI was created/discovered"
+    )
+    tags: Optional[list[str]] = Field(
+        default=None,
+        description="Tags for categorizing the POI"
+    )
+
+
+class PointOfInterestSubcollection(BaseModel):
+    """
+    A point of interest (POI) stored in subcollections for unbounded data.
+    
+    This is the full-featured POI model used in the character's POI subcollection.
+    It includes all optional fields and metadata.
     
     Referenced in: docs/SCHEMA.md - Points of Interest Subcollection
     """
@@ -328,70 +354,91 @@ class PointOfInterest(BaseModel):
     )
 
 
-class QuestRequirement(BaseModel):
+class QuestRewards(BaseModel):
     """
-    A requirement for completing a quest.
+    Rewards for completing a quest.
     
-    Requirements can be simple string descriptions or complex structured data.
+    EXACT SHAPE REQUIREMENT: This model must match the exact structure
+    specified in the issue requirements.
     
-    Referenced in: docs/SCHEMA.md - Quest Structure
-    """
-    model_config = ConfigDict(extra="forbid")
-    
-    type: str = Field(description="Requirement type (e.g., 'kill', 'collect', 'visit')")
-    details: Union[str, dict[str, Any]] = Field(
-        description="Requirement details as string or structured dict"
-    )
-
-
-class QuestReward(BaseModel):
-    """
-    A reward for completing a quest.
-    
-    Rewards can be simple string descriptions or complex structured data.
-    
-    Referenced in: docs/SCHEMA.md - Quest Structure
+    Validates that all numeric values are non-negative.
     """
     model_config = ConfigDict(extra="forbid")
     
-    type: str = Field(description="Reward type (e.g., 'experience', 'gold', 'item')")
-    details: Union[str, dict[str, Any]] = Field(
-        description="Reward details as string or structured dict"
+    items: list[str] = Field(
+        default_factory=list,
+        description="List of item names awarded"
     )
+    currency: dict[str, int] = Field(
+        default_factory=dict,
+        description="Currency rewards as name:amount pairs"
+    )
+    experience: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description="Experience points awarded (non-negative)"
+    )
+    
+    @model_validator(mode='after')
+    def validate_non_negative(self) -> 'QuestRewards':
+        """Validate that currency values are non-negative and keys are non-empty."""
+        for key, value in self.currency.items():
+            if not key or not key.strip():
+                raise ValueError("currency keys cannot be empty or only whitespace")
+            if value < 0:
+                raise ValueError(f"currency value for '{key}' cannot be negative")
+        return self
 
 
 class Quest(BaseModel):
     """
-    A quest with objectives, requirements, and rewards.
+    A quest with requirements and rewards.
     
-    Quests represent missions or tasks the character can undertake.
+    EXACT SHAPE REQUIREMENT: This model must match the exact structure
+    specified in the issue requirements for embedded quests.
     
     Referenced in: docs/SCHEMA.md - Character Document Fields (active_quest)
     """
     model_config = ConfigDict(extra="forbid")
     
-    quest_id: str = Field(description="Unique quest identifier")
-    title: str = Field(description="Quest title")
+    name: str = Field(description="Quest name")
     description: str = Field(description="Quest description")
-    completion_state: CompletionState = Field(
-        description="Quest completion status"
-    )
-    objectives: list[dict[str, Any]] = Field(
+    requirements: list[str] = Field(
         default_factory=list,
-        description="List of quest objectives"
+        description="List of quest requirement descriptions"
     )
-    requirements: list[QuestRequirement] = Field(
-        default_factory=list,
-        description="Quest requirements"
-    )
-    rewards: list[QuestReward] = Field(
-        default_factory=list,
+    rewards: QuestRewards = Field(
         description="Quest rewards"
     )
-    started_at: Optional[Union[datetime, str]] = Field(
-        default=None,
-        description="When the quest was started"
+    completion_state: str = Field(
+        description="Quest completion status: 'not_started', 'in_progress', or 'completed'"
     )
+    updated_at: datetime = Field(
+        description="When the quest was last updated"
+    )
+    
+    @model_validator(mode='after')
+    def validate_completion_state(self) -> 'Quest':
+        """Validate that completion_state is one of the allowed values."""
+        allowed_states = ['not_started', 'in_progress', 'completed']
+        if self.completion_state not in allowed_states:
+            raise ValueError(
+                f"completion_state must be one of {allowed_states}, got '{self.completion_state}'"
+            )
+        return self
+
+
+class QuestArchiveEntry(BaseModel):
+    """
+    An archived/completed quest entry.
+    
+    Stores a completed quest along with when it was cleared.
+    Used in Character.archived_quests array (max 50 entries).
+    """
+    model_config = ConfigDict(extra="forbid")
+    
+    quest: Quest = Field(description="The archived quest")
+    cleared_at: datetime = Field(description="When the quest was completed/cleared")
 
 
 class Enemy(BaseModel):
@@ -517,9 +564,17 @@ class CharacterDocument(BaseModel):
         default=None,
         description="Optional world state metadata or game-specific data"
     )
+    world_pois: list[PointOfInterest] = Field(
+        default_factory=list,
+        description="Embedded POIs discovered by this character (max 200 entries)"
+    )
     active_quest: Optional[Quest] = Field(
         default=None,
         description="Current active quest (None if no active quest)"
+    )
+    archived_quests: list[QuestArchiveEntry] = Field(
+        default_factory=list,
+        description="Archived/completed quests (max 50 entries, oldest removed when exceeded)"
     )
     combat_state: Optional[CombatState] = Field(
         default=None,
@@ -538,6 +593,25 @@ class CharacterDocument(BaseModel):
         self.adventure_prompt = ' '.join(self.adventure_prompt.split())
         if not self.adventure_prompt:
             raise ValueError("adventure_prompt cannot be empty or only whitespace")
+        return self
+    
+    @model_validator(mode='after')
+    def validate_caps(self) -> 'CharacterDocument':
+        """Validate array size caps to prevent Firestore document bloat."""
+        # Validate POI cap (200 entries max)
+        if len(self.world_pois) > 200:
+            raise ValueError(
+                f"world_pois cannot exceed 200 entries (got {len(self.world_pois)}). "
+                "Consider moving older POIs to a subcollection or archiving them."
+            )
+        
+        # Validate archived quests cap (50 entries max)
+        if len(self.archived_quests) > 50:
+            raise ValueError(
+                f"archived_quests cannot exceed 50 entries (got {len(self.archived_quests)}). "
+                "Oldest entries should be trimmed before adding new ones."
+            )
+        
         return self
 
 
@@ -990,36 +1064,36 @@ def narrative_turn_from_firestore(
 
 
 # ==============================================================================
-# PointOfInterest Serialization
+# PointOfInterest Subcollection Serialization
 # ==============================================================================
 
 
-def poi_to_firestore(
-    poi: PointOfInterest,
+def poi_subcollection_to_firestore(
+    poi: PointOfInterestSubcollection,
     *,
     use_server_timestamp: bool = False
 ) -> dict[str, Any]:
     """
-    Serialize a PointOfInterest to a Firestore-friendly dictionary.
+    Serialize a PointOfInterestSubcollection to a Firestore-friendly dictionary.
     
     This helper prepares a POI for storage in a Firestore subcollection.
     It handles datetime conversion for discovery and visit timestamps.
     
     Args:
-        poi: PointOfInterest instance to serialize
+        poi: PointOfInterestSubcollection instance to serialize
         use_server_timestamp: If True, use SERVER_TIMESTAMP for timestamp fields
             
     Returns:
         Dictionary ready for Firestore subcollection storage
         
     Examples:
-        >>> from app.models import PointOfInterest
-        >>> poi = PointOfInterest(
+        >>> from app.models import PointOfInterestSubcollection
+        >>> poi = PointOfInterestSubcollection(
         ...     poi_id="poi_123",
         ...     name="Hidden Temple",
         ...     description="An ancient temple"
         ... )
-        >>> data = poi_to_firestore(poi)
+        >>> data = poi_subcollection_to_firestore(poi)
         >>> 'poi_id' in data
         True
         >>> 'name' in data
@@ -1034,23 +1108,23 @@ def poi_to_firestore(
     return data
 
 
-def poi_from_firestore(
+def poi_subcollection_from_firestore(
     data: dict[str, Any],
     *,
     poi_id: Optional[str] = None
-) -> PointOfInterest:
+) -> PointOfInterestSubcollection:
     """
-    Deserialize a PointOfInterest from a Firestore dictionary.
+    Deserialize a PointOfInterestSubcollection from a Firestore dictionary.
     
     This helper converts a Firestore subcollection document back to a
-    PointOfInterest Pydantic model.
+    PointOfInterestSubcollection Pydantic model.
     
     Args:
         data: Dictionary from Firestore subcollection document
         poi_id: Optional poi_id to use if not in data
             
     Returns:
-        PointOfInterest instance
+        PointOfInterestSubcollection instance
         
     Examples:
         >>> data = {
@@ -1058,7 +1132,7 @@ def poi_from_firestore(
         ...     'name': 'Hidden Temple',
         ...     'description': 'An ancient temple'
         ... }
-        >>> poi = poi_from_firestore(data)
+        >>> poi = poi_subcollection_from_firestore(data)
         >>> poi.poi_id
         'poi_123'
     """
@@ -1074,4 +1148,9 @@ def poi_from_firestore(
         if field in data:
             data[field] = datetime_from_firestore(data[field])
     
-    return PointOfInterest(**data)
+    return PointOfInterestSubcollection(**data)
+
+
+# Backward compatibility aliases
+poi_to_firestore = poi_subcollection_to_firestore
+poi_from_firestore = poi_subcollection_from_firestore
