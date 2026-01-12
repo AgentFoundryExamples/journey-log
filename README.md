@@ -29,12 +29,29 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
 - **Combat Management**: Track combat encounters with automatic active/inactive detection
   - `PUT /characters/{id}/combat` - Set or clear combat state (max 5 enemies per combat)
   - `GET /characters/{id}/combat` - Retrieve combat state with stable active/inactive envelope
-- **Context Aggregation for Directors**: Primary LLM/Director integration endpoint
-  - `GET /characters/{id}/context` - Get aggregated character context (player state, quest, combat, narrative, POIs) for AI-driven narrative generation
-  - Supports configurable narrative window (recent_n parameter, default 20, max 100)
-  - Optional POI inclusion via include_pois flag
-  - Returns derived fields: has_active_quest, combat.active, narrative metadata
-  - **Performance**: Minimal Firestore reads (1 character doc read + 1 narrative subcollection query), typically <100ms for moderate datasets
+
+## Primary Director Integration Endpoint
+
+**Context Aggregation for Directors**: The `/characters/{id}/context` endpoint is the **primary integration surface** for AI Directors and LLM-driven narrative systems.
+
+- **`GET /characters/{id}/context`** - Comprehensive aggregated context payload in a single request
+  - **Aggregates**: Player state, quest, combat, narrative history, and world POIs
+  - **Derived fields**: `has_active_quest`, `combat.active`, narrative metadata for client convenience
+  - **Configurable narrative window**: Use `recent_n` parameter (default: 20, max: 100) to control history depth
+  - **Optional POI inclusion**: Set `include_pois=false` to exclude POIs for smaller payloads
+  - **Performance**: Exactly 2 Firestore reads (1 character document + 1 narrative subcollection query), typically <100ms
+  - **Response structure**: Stable JSON schema with all context fields always present, optimized for LLM consumption
+
+### Why Use the Context Endpoint?
+
+Directors should prefer this endpoint over individual endpoints because:
+1. **Single request**: Get all necessary context without multiple API calls
+2. **Optimized performance**: Minimal Firestore reads with efficient query patterns
+3. **Derived fields**: Server-computed convenience fields (combat.active, has_active_quest)
+4. **Stable schema**: Always returns same structure, simplifying client code
+5. **Narrative ordering**: Recent turns returned oldest-to-newest for proper LLM context building
+
+See [Context Endpoint Examples](#context-endpoint-examples) below for usage patterns.
 - **Status-Based Health Tracking**: Character health is tracked through status enum ("Healthy", "Wounded", "Dead")
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
@@ -371,6 +388,84 @@ curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-44665544000
 # Response: {"active": false, "state": null}
 ```
 
+### Context Endpoint Examples
+
+The context aggregation endpoint is the **primary integration point for AI Directors**. Use this endpoint to retrieve all relevant character state in a single optimized request.
+
+```bash
+# Get full context with default settings (20 recent narrative turns, POIs included)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context \
+  -H "X-User-Id: user123"
+
+# Response structure:
+{
+  "character_id": "550e8400-e29b-41d4-a716-446655440000",
+  "player_state": {
+    "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+    "status": "Healthy",
+    "level": 5,
+    "location": {"id": "town:start", "display_name": "Starting Town"},
+    ...
+  },
+  "quest": {
+    "name": "Slay the Dragon",
+    "description": "...",
+    "completion_state": "in_progress",
+    ...
+  },
+  "combat": {
+    "active": true,
+    "state": {
+      "combat_id": "combat_001",
+      "enemies": [...],
+      ...
+    }
+  },
+  "narrative": {
+    "recent_turns": [
+      {"player_action": "I explore...", "ai_response": "You discover...", ...},
+      ...
+    ],
+    "requested_n": 20,
+    "returned_n": 15,  // May be less if fewer turns exist
+    "max_n": 100
+  },
+  "world": {
+    "pois_sample": [
+      {"id": "poi1", "name": "Ancient Temple", "description": "...", ...},
+      ...
+    ],
+    "include_pois": true
+  },
+  "has_active_quest": true  // Derived convenience field
+}
+
+# Get more narrative history for complex scenarios
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?recent_n=50" \
+  -H "X-User-Id: user123"
+
+# Get smaller payload without POIs for performance
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=false" \
+  -H "X-User-Id: user123"
+
+# Anonymous access (if allowed by your access control policy)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context
+```
+
+**Key Features for Directors:**
+- **Single request**: All context in one API call (2 Firestore reads total)
+- **Derived fields**: `has_active_quest` and `combat.active` computed server-side
+- **Stable response**: All fields always present, even when null/empty
+- **Chronological narrative**: Recent turns ordered oldest-to-newest for LLM context
+- **Flexible configuration**: Adjust narrative window and POI inclusion per request
+- **Error handling**: Returns 404 for missing character, 403 for unauthorized access
+
+**Performance Characteristics:**
+- **Latency**: Typically <100ms for moderate datasets (20 turns, 200 POIs)
+- **Firestore reads**: Exactly 2 (1 character document + 1 narrative query)
+- **Payload size**: ~5-50KB depending on narrative length and POI inclusion
+- **Caching friendly**: Use ETags or timestamps for conditional requests
+
 ### Status-Based Health Tracking
 
 Character health is tracked using a status enum field with three possible values: "Healthy", "Wounded", and "Dead". This provides a simplified health model that focuses on game state transitions rather than numerical health tracking.
@@ -568,6 +663,105 @@ Production response:
 All errors are logged with stack traces for debugging, while responses protect sensitive information in production.
 
 ## Development
+
+### Testing
+
+The project includes comprehensive integration tests for all endpoints, with special focus on the context aggregation endpoint.
+
+#### Running Tests
+
+```bash
+# Run all tests
+make test
+# OR
+pytest
+
+# Run tests with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_context_aggregation.py -v
+
+# Run specific test function
+pytest tests/test_context_aggregation.py::TestGetCharacterContext::test_get_context_success_with_all_data -v
+
+# Run tests with coverage report
+pytest --cov=app --cov-report=html
+```
+
+#### Test Organization
+
+- **`tests/test_characters.py`** - Character CRUD operations, validation, uniqueness constraints
+- **`tests/test_context_aggregation.py`** - Context endpoint integration tests (primary Director integration)
+- **`tests/test_combat.py`** - Combat state management and active/inactive detection
+- **`tests/test_narrative_turns.py`** - Narrative turn creation and retrieval
+- **`tests/test_models.py`** - Pydantic model validation and serialization
+- **`tests/test_serialization.py`** - Firestore serialization/deserialization
+- **`tests/test_firestore_serialization.py`** - Firestore-specific type conversions
+
+#### Context Endpoint Test Coverage
+
+The context aggregation endpoint (`GET /characters/{id}/context`) has extensive test coverage including:
+
+**Success Cases:**
+- ✅ Full context aggregation with all data (player, quest, combat, narrative, POIs)
+- ✅ Quest present vs absent (has_active_quest derived field)
+- ✅ Combat active vs inactive (combat.active toggles based on enemy status)
+- ✅ Multiple recent_n values (default, custom, max limit)
+- ✅ include_pois flag (true/false)
+- ✅ Empty narrative history (returns empty array, not error)
+- ✅ Empty POIs (returns empty array, not error)
+
+**Edge Cases:**
+- ✅ Character not found (404 response)
+- ✅ Invalid character UUID format (422 response)
+- ✅ User verification and access control (403 for mismatch)
+- ✅ Empty/whitespace X-User-Id header (400 response)
+- ✅ Invalid recent_n values (zero, negative, exceeding max → 422)
+- ✅ Narrative ordering (oldest-to-newest for LLM context)
+- ✅ Firestore read efficiency (validates exactly 2 reads as documented)
+
+**Key Test Scenarios:**
+```bash
+# Test recent_n clamping behavior (when requested > available)
+pytest tests/test_context_aggregation.py::TestGetCharacterContext::test_get_context_success_with_all_data -v
+# Verifies: requested_n=20, returned_n=3 when only 3 turns exist
+
+# Test combat.active transitions
+pytest tests/test_context_aggregation.py::TestGetCharacterContext::test_get_context_combat_all_enemies_dead -v
+# Verifies: combat.active=false when all enemies status="Dead"
+
+# Test performance characteristics
+pytest tests/test_context_aggregation.py::TestGetCharacterContext::test_get_context_firestore_read_count -v
+# Verifies: Exactly 2 Firestore reads (1 character doc + 1 narrative query)
+```
+
+#### Test Configuration
+
+Tests use mocked Firestore clients (no emulator required). To run tests against a real Firestore emulator:
+
+```bash
+# Start Firestore emulator
+firebase emulators:start --only firestore --project=demo-project
+
+# In another terminal, set emulator environment variable and run tests
+export FIRESTORE_EMULATOR_HOST=localhost:8080
+export GCP_PROJECT_ID=demo-project
+pytest tests/test_context_aggregation.py -v
+```
+
+#### Environment Variables for Testing
+
+No additional environment variables are required for basic testing (mocked Firestore). For integration tests against real Firestore:
+
+- `FIRESTORE_EMULATOR_HOST` - Set to `localhost:8080` when using Firebase emulator
+- `GCP_PROJECT_ID` - Set to your project ID or `demo-project` for emulator
+- `SERVICE_ENVIRONMENT` - Set to `dev` for local testing (default)
+
+See `.env.example` for all available configuration options including:
+- `CONTEXT_DEFAULT_RECENT_N` - Default narrative window (default: 20)
+- `CONTEXT_MAX_RECENT_N` - Maximum narrative window (default: 100)
+- `CONTEXT_DEFAULT_POI_SAMPLE_SIZE` - Default POI sample size (default: 3)
 
 ### Code Quality
 

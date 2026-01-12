@@ -20,7 +20,7 @@ and edge cases.
 
 import copy
 from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
