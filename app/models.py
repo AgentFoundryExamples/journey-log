@@ -940,8 +940,16 @@ def character_from_firestore(
     # Handle nested timestamps in active_quest
     if data.get('active_quest'):
         quest_data = data['active_quest']
-        if 'started_at' in quest_data:
-            quest_data['started_at'] = datetime_from_firestore(quest_data['started_at'])
+        if 'updated_at' in quest_data:
+            quest_data['updated_at'] = datetime_from_firestore(quest_data['updated_at'])
+    
+    # Handle nested timestamps in archived_quests
+    if data.get('archived_quests'):
+        for entry in data['archived_quests']:
+            if 'cleared_at' in entry:
+                entry['cleared_at'] = datetime_from_firestore(entry['cleared_at'])
+            if 'quest' in entry and 'updated_at' in entry['quest']:
+                entry['quest']['updated_at'] = datetime_from_firestore(entry['quest']['updated_at'])
     
     # Construct the CharacterDocument from the dict
     return CharacterDocument(**data)

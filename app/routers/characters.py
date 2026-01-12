@@ -41,6 +41,8 @@ from app.models import (
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
+    Quest,
+    QuestArchiveEntry,
     Status,
     character_to_firestore,
     character_from_firestore,
@@ -2092,4 +2094,587 @@ async def get_pois(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve POIs due to an internal error",
+        )
+
+
+# ==============================================================================
+# Quest Management Endpoints
+# ==============================================================================
+
+
+class SetQuestResponse(BaseModel):
+    """Response model for setting active quest."""
+    quest: Quest = Field(description="The stored active quest")
+
+
+class GetQuestResponse(BaseModel):
+    """Response model for getting active quest."""
+    quest: Optional[Quest] = Field(description="The active quest or null if none exists")
+
+
+@router.put(
+    "/{character_id}/quest",
+    response_model=SetQuestResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Set active quest for a character",
+    description=(
+        "Set or update the active quest for a character.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Request Body:**\n"
+        "- Quest object with name, description, requirements, rewards, completion_state, updated_at\n\n"
+        "**Validation:**\n"
+        "- name: required string\n"
+        "- description: required string\n"
+        "- requirements: list of strings (default: [])\n"
+        "- rewards: QuestRewards object with items, currency, experience\n"
+        "- completion_state: 'not_started', 'in_progress', or 'completed'\n"
+        "- updated_at: ISO 8601 timestamp\n\n"
+        "**Single Quest Constraint:**\n"
+        "Only one active quest is allowed per character. If an active quest already exists,\n"
+        "this endpoint returns 409 Conflict with guidance to DELETE the existing quest first.\n\n"
+        "**Atomicity:**\n"
+        "Uses Firestore transaction to atomically:\n"
+        "1. Verify character exists and user owns it\n"
+        "2. Check that no active quest exists\n"
+        "3. Set active_quest field\n"
+        "4. Update character.updated_at timestamp\n\n"
+        "**Response:**\n"
+        "- Returns the stored Quest object\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `409`: Active quest already exists (DELETE required before replacing)\n"
+        "- `422`: Validation error (invalid field values, invalid completion_state)\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def set_quest(
+    character_id: str,
+    quest: Quest,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+) -> SetQuestResponse:
+    """
+    Set the active quest for a character.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Validates Quest payload (name, description, completion_state, etc.)
+    4. Uses Firestore transaction to atomically check for existing quest and set new quest
+    5. Returns stored quest
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        quest: Quest object to set as active
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+        
+    Returns:
+        SetQuestResponse with the stored quest
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id
+            - 403: Access denied (user not owner)
+            - 404: Character not found
+            - 409: Active quest already exists
+            - 422: Validation error
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "set_quest_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("set_quest_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+    
+    user_id = x_user_id.strip()
+    
+    # Log attempt
+    logger.info(
+        "set_quest_attempt",
+        character_id=character_id,
+        user_id=user_id,
+        quest_name=quest.name,
+        completion_state=quest.completion_state,
+    )
+    
+    try:
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        
+        @firestore.transactional
+        def set_quest_in_transaction(transaction):
+            """Atomically verify no quest exists and set new quest."""
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+            
+            if not char_snapshot.exists:
+                return None, "not_found"
+            
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if owner_user_id != user_id:
+                return None, "access_denied"
+            
+            # 3. Check for existing active quest
+            existing_quest = char_data.get("active_quest")
+            if existing_quest is not None:
+                return None, "quest_exists"
+            
+            # 4. Serialize quest for Firestore
+            quest_data = quest.model_dump(mode='json')
+            # Ensure updated_at is a datetime object
+            if isinstance(quest_data.get('updated_at'), str):
+                quest_data['updated_at'] = datetime_to_firestore(quest_data['updated_at'])
+            
+            # 5. Update character with new quest and updated_at timestamp
+            transaction.update(char_ref, {
+                "active_quest": quest_data,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            
+            return quest_data, "success"
+        
+        # Execute transaction
+        quest_data, result = set_quest_in_transaction(transaction)
+        
+        # Handle transaction results
+        if result == "not_found":
+            logger.warning(
+                "set_quest_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "set_quest_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+        elif result == "quest_exists":
+            logger.warning(
+                "set_quest_already_exists",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An active quest already exists for this character. "
+                       "Please DELETE the existing quest before setting a new one.",
+            )
+        
+        logger.info(
+            "set_quest_success",
+            character_id=character_id,
+            quest_name=quest.name,
+        )
+        
+        return SetQuestResponse(quest=quest)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "set_quest_error",
+            character_id=character_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to set quest: {str(e)}",
+        )
+
+
+@router.get(
+    "/{character_id}/quest",
+    response_model=GetQuestResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get active quest for a character",
+    description=(
+        "Retrieve the active quest for a character.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
+        "**Response:**\n"
+        "- Returns the Quest object if an active quest exists\n"
+        "- Returns {\"quest\": null} if no active quest exists\n\n"
+        "**Error Responses:**\n"
+        "- `400`: X-User-Id header provided but empty/whitespace-only\n"
+        "- `403`: X-User-Id provided but does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def get_quest(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+) -> GetQuestResponse:
+    """
+    Retrieve the active quest for a character.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Fetches the character document from Firestore
+    3. Optionally verifies X-User-Id matches owner_user_id
+    4. Returns the active quest or null
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        
+    Returns:
+        GetQuestResponse with the quest or null
+        
+    Raises:
+        HTTPException:
+            - 400: Empty X-User-Id header
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_quest_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Log retrieval attempt
+    logger.info(
+        "get_quest_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+    )
+    
+    try:
+        # Fetch character document from Firestore
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+        
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_quest_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        
+        # Verify ownership if X-User-Id is provided
+        char_data = char_snapshot.to_dict()
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_quest_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+            
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_quest_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+        
+        # Extract active quest
+        active_quest_data = char_data.get("active_quest")
+        active_quest = None
+        
+        if active_quest_data is not None:
+            # Convert timestamps
+            if 'updated_at' in active_quest_data:
+                active_quest_data['updated_at'] = datetime_from_firestore(active_quest_data['updated_at'])
+            
+            # Construct Quest object
+            active_quest = Quest(**active_quest_data)
+        
+        logger.info(
+            "get_quest_success",
+            character_id=character_id,
+            has_quest=active_quest is not None,
+        )
+        
+        return GetQuestResponse(quest=active_quest)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_quest_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve quest due to an internal error",
+        )
+
+
+@router.delete(
+    "/{character_id}/quest",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete active quest for a character",
+    description=(
+        "Clear the active quest for a character and archive it.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Behavior:**\n"
+        "- Removes active_quest field from character\n"
+        "- Appends quest to archived_quests with cleared_at timestamp\n"
+        "- Enforces 50-entry limit on archived_quests (oldest entries removed first)\n"
+        "- Idempotent: succeeds even if no active quest exists (returns 204)\n\n"
+        "**Atomicity:**\n"
+        "Uses Firestore transaction to atomically:\n"
+        "1. Verify character exists and user owns it\n"
+        "2. Remove active quest (if exists)\n"
+        "3. Archive quest to archived_quests with cleared_at timestamp\n"
+        "4. Trim archived_quests to maintain ≤50 entries (oldest first)\n"
+        "5. Update character.updated_at timestamp\n\n"
+        "**Response:**\n"
+        "- Returns 204 No Content on success\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def delete_quest(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+):
+    """
+    Delete the active quest for a character and archive it.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Uses Firestore transaction to atomically clear quest and archive it
+    4. Enforces 50-entry limit on archived quests (FIFO)
+    5. Idempotent - succeeds even if no quest exists
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+        
+    Returns:
+        No content (204 status)
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id
+            - 403: Access denied (user not owner)
+            - 404: Character not found
+            - 422: Validation error
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "delete_quest_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("delete_quest_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+    
+    user_id = x_user_id.strip()
+    
+    # Log attempt
+    logger.info(
+        "delete_quest_attempt",
+        character_id=character_id,
+        user_id=user_id,
+    )
+    
+    try:
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        
+        @firestore.transactional
+        def delete_quest_in_transaction(transaction):
+            """Atomically clear quest and archive it."""
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+            
+            if not char_snapshot.exists:
+                return "not_found", False
+            
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if owner_user_id != user_id:
+                return "access_denied", False
+            
+            # 3. Get existing active quest
+            active_quest_data = char_data.get("active_quest")
+            
+            # If no active quest, this is a no-op but still succeeds (idempotent)
+            if active_quest_data is None:
+                logger.info(
+                    "delete_quest_no_active_quest",
+                    character_id=character_id,
+                )
+                return "success", False
+            
+            # 4. Create archived quest entry with cleared_at timestamp
+            cleared_at = datetime.now(timezone.utc)
+            archived_entry = {
+                "quest": active_quest_data,
+                "cleared_at": cleared_at,
+            }
+            
+            # 5. Get existing archived quests and append new entry
+            archived_quests = char_data.get("archived_quests", [])
+            archived_quests.append(archived_entry)
+            
+            # 6. Trim to maintain ≤50 entries (remove oldest first)
+            if len(archived_quests) > 50:
+                # Keep the last 50 entries (most recent)
+                archived_quests = archived_quests[-50:]
+            
+            # 7. Update character: clear active quest, update archived quests, update timestamp
+            transaction.update(char_ref, {
+                "active_quest": None,
+                "archived_quests": archived_quests,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            
+            return "success", True
+        
+        # Execute transaction
+        result, had_quest = delete_quest_in_transaction(transaction)
+        
+        # Handle transaction results
+        if result == "not_found":
+            logger.warning(
+                "delete_quest_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "delete_quest_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+        
+        logger.info(
+            "delete_quest_success",
+            character_id=character_id,
+            had_active_quest=had_quest,
+        )
+        
+        # Return 204 No Content
+        return None
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "delete_quest_error",
+            character_id=character_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete quest: {str(e)}",
         )
