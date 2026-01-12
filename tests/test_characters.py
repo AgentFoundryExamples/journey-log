@@ -2785,7 +2785,11 @@ class TestCreatePOI:
         mock_transaction._id = None
         
         # Mock character with 200 POIs (at capacity)
-        existing_pois = [{"id": f"poi_{i}", "name": f"POI {i}", "description": "test"} for i in range(200)]
+        # Create a minimal list to save memory - only need to check length
+        existing_pois = [{"id": f"poi_{i}", "name": f"POI {i}", "description": "test"} for i in range(20)]
+        # Extend to 200 by duplicating (saves memory compared to list comprehension)
+        existing_pois = existing_pois * 10
+        
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True

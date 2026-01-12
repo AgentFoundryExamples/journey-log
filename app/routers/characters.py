@@ -1575,12 +1575,10 @@ async def create_poi(
                 "name": request.name,
                 "description": request.description,
                 "created_at": created_at,
-                "tags": request.tags if request.tags else None,
+                "tags": request.tags,
             }
             
-            # 5. Append POI to world_pois array using array_union (avoids duplicates by id)
-            # Actually, we want to allow duplicates, so use arrayUnion carefully or just append
-            # Since we want chronological order and allow duplicates, we'll fetch, append, and set
+            # 5. Append POI to world_pois array
             existing_pois.append(poi_data)
             
             # 6. Update character with new POI and updated_at timestamp
@@ -1994,11 +1992,12 @@ async def get_pois(
         world_pois_data = char_data.get("world_pois", [])
         
         # 4. Sort POIs by created_at descending (newest first)
-        # Handle missing created_at by using epoch (oldest)
+        # Handle missing created_at by using datetime.min as fallback (oldest possible)
         def get_created_at(poi_data):
             created_at = poi_data.get("created_at")
             if created_at is None:
-                return datetime.fromtimestamp(0, timezone.utc)
+                # Use datetime.min with UTC timezone as fallback for missing timestamps
+                return datetime.min.replace(tzinfo=timezone.utc)
             if isinstance(created_at, datetime):
                 return created_at
             # Handle Firestore timestamp
