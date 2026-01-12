@@ -10,14 +10,14 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 - **Total files**: 18
 - **Intra-repo dependencies**: 27
-- **External stdlib dependencies**: 23
+- **External stdlib dependencies**: 22
 - **External third-party dependencies**: 30
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 23 unique modules
+Total: 22 unique modules
 
 - `contextvars.ContextVar`
 - `datetime.datetime`
@@ -38,8 +38,8 @@ Total: 23 unique modules
 - `typing.Literal`
 - `typing.Optional`
 - `typing.Union`
-- `unittest.mock.MagicMock`
-- ... and 3 more (see JSON for full list)
+- `unittest.mock.Mock`
+- ... and 2 more (see JSON for full list)
 
 ### Third-Party Packages
 
