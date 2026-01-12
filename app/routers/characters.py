@@ -3129,7 +3129,8 @@ async def get_combat(
             combat_state = character.combat_state
             
             if combat_state is None:
-                # Defensive: deserialization returned None
+                # Defensive: deserialization returned None even though raw data had combat_state
+                # This can happen if character_from_firestore fails to parse combat_state
                 logger.info(
                     "get_combat_deserialized_to_none",
                     character_id=character_id,
@@ -3148,8 +3149,9 @@ async def get_combat(
             
             return GetCombatResponse(active=is_active, state=combat_state)
             
-        except Exception as e:
-            # Defensive: if combat_state is malformed, treat as inactive
+        except (ValueError, TypeError, KeyError) as e:
+            # Defensive: if combat_state is malformed or has invalid data, treat as inactive
+            # This handles cases where stored data doesn't match the expected schema
             logger.warning(
                 "get_combat_malformed_state",
                 character_id=character_id,
