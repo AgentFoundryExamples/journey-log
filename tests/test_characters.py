@@ -1981,9 +1981,12 @@ class TestGetNarrativeTurns:
             }
             mock_turns.append(mock_turn)
         
-        # Mock query execution (returns in DESCENDING order, will be reversed)
+        # Mock query execution
+        # Note: We create mock_turns in oldest-first order (i=0,1,2,3,4)
+        # Then reverse them to simulate Firestore's DESCENDING order (newest first)
+        # The actual endpoint code will reverse them again to get oldest-first
         mock_query = Mock()
-        mock_query.stream.return_value = reversed(mock_turns)  # Firestore returns newest first
+        mock_query.stream.return_value = reversed(mock_turns)
         mock_turns_collection.order_by.return_value.limit.return_value = mock_query
         
         # Mock count aggregation
@@ -2053,7 +2056,7 @@ class TestGetNarrativeTurns:
             }
             mock_turns.append(mock_turn)
         
-        # Mock query execution
+        # Mock query execution - simulating Firestore DESCENDING order
         mock_query = Mock()
         mock_query.stream.return_value = reversed(mock_turns)
         mock_turns_collection.order_by.return_value.limit.return_value = mock_query

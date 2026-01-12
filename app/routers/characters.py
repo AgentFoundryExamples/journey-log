@@ -1218,7 +1218,6 @@ async def get_narrative_turns(
         turns = []
         for doc in turn_docs:
             turn_data = doc.to_dict()
-            turn_data["turn_id"] = doc.id  # Ensure turn_id is present
             turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
             turns.append(turn)
         
