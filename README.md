@@ -382,7 +382,7 @@ Game mechanics should transition character status based on damage or healing:
 - `Dead` → `Healthy`: Through resurrection mechanics (if applicable)
 
 **Usage in Combat:**
-Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than "Dead". Directors and game logic should update status fields rather than tracking numerical HP values.
+Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than "Dead". Directors and game logic should update status fields rather than tracking numerical HP values. This ensures consistency with the status-based health model across all game mechanics.
 
 Example character with status:
 ```json

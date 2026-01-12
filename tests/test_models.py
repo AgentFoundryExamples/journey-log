@@ -226,10 +226,9 @@ class TestPlayerState:
                 stats={},
                 location="test",
             )
-        assert "health" in str(exc_info.value).lower()
-        assert "extra" in str(exc_info.value).lower() or "forbidden" in str(
-            exc_info.value
-        ).lower()
+        # Pydantic raises ValidationError for extra fields with "extra_forbidden" type
+        error_str = str(exc_info.value).lower()
+        assert "health" in error_str and "extra" in error_str
 
     def test_status_is_sole_health_indicator(self):
         """Test that status field is the only health indicator in PlayerState."""
