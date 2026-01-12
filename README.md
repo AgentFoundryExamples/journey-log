@@ -34,6 +34,7 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
   - Supports configurable narrative window (recent_n parameter, default 20, max 100)
   - Optional POI inclusion via include_pois flag
   - Returns derived fields: has_active_quest, combat.active, narrative metadata
+  - **Performance**: Minimal Firestore reads (1 character doc read + 1 narrative subcollection query), typically <100ms for moderate datasets
 - **Status-Based Health Tracking**: Character health is tracked through status enum ("Healthy", "Wounded", "Dead")
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
