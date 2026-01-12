@@ -148,7 +148,7 @@ Each character document contains the following top-level fields:
 | `character_id` | `string` | The UUIDv4 identifier (same as document ID, stored for convenience) |
 | `owner_user_id` | `string` | The user ID of the character owner (from X-User-Id header, for access control) |
 | `adventure_prompt` | `string` | Initial adventure prompt or backstory (1+ chars, whitespace normalized) |
-| `player_state` | `map` | Current player state (HP, level, inventory, location, etc.) |
+| `player_state` | `map` | Current player state (status, level, inventory, location, etc.) |
 | `world_pois_reference` | `string` | Reference to the world's POI collection or configuration |
 | `narrative_turns_reference` | `string` | Reference to narrative turns subcollection |
 | `schema_version` | `string` | Schema version for this document (e.g., "1.0.0") |
@@ -260,12 +260,9 @@ class CharacterDocument(BaseModel):
     - `name` (string, 1-64 chars): Character name with normalized whitespace
     - `race` (string, 1-64 chars): Character race with normalized whitespace
     - `class` (string, 1-64 chars): Character class with normalized whitespace
-  - `status` (string): Character health status (enum: "Healthy", "Wounded", "Dead")
+  - `status` (string): Character health status (enum: "Healthy", "Wounded", "Dead") - this is the sole indicator of character health
   - `level` (integer): Character level (≥1)
   - `experience` (integer): Experience points (≥0)
-  - `health` (map): Current and max health points
-    - `current` (integer, ≥0): Current health
-    - `max` (integer, ≥0): Maximum health
   - `stats` (map): Character stats (strength, dexterity, etc.)
   - `equipment` (array): List of weapon objects
   - `inventory` (array): List of inventory item objects
@@ -326,10 +323,6 @@ All identity fields (name, race, class) are validated to:
     "status": "Healthy",
     "level": 10,
     "experience": 5000,
-    "health": {
-      "current": 100,
-      "max": 100
-    },
     "stats": {
       "strength": 18,
       "dexterity": 14,

@@ -96,7 +96,7 @@ class Settings(BaseSettings):
         default=10,
         ge=1,
         le=100,
-        description="Default number of narrative turns to retrieve in queries (1-100)"
+        description="Default number of narrative turns to retrieve in queries (1-100)",
     )
     narrative_turns_max_query_size: int = Field(
         default=100,
@@ -107,17 +107,17 @@ class Settings(BaseSettings):
             "Higher limits may impact query performance and memory usage. "
             "The 1000 limit is set to balance query flexibility with performance considerations, "
             "as Firestore queries are most efficient with smaller result sets."
-        )
+        ),
     )
     narrative_turns_max_user_action_length: int = Field(
         default=8000,
         ge=1,
-        description="Maximum length of user_action field in narrative turns (characters)"
+        description="Maximum length of user_action field in narrative turns (characters)",
     )
     narrative_turns_max_ai_response_length: int = Field(
         default=32000,
         ge=1,
-        description="Maximum length of ai_response field in narrative turns (characters)"
+        description="Maximum length of ai_response field in narrative turns (characters)",
     )
 
     @field_validator("gcp_project_id")

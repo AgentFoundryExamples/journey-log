@@ -29,7 +29,7 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
 - **Combat Management**: Track combat encounters with automatic active/inactive detection
   - `PUT /characters/{id}/combat` - Set or clear combat state (max 5 enemies per combat)
   - `GET /characters/{id}/combat` - Retrieve combat state with stable active/inactive envelope
-- **Health Point (HP) Removal**: Character health is stored internally but never exposed in API responses for security
+- **Status-Based Health Tracking**: Character health is tracked through status enum ("Healthy", "Wounded", "Dead")
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
 - **Structured Logging**: JSON-formatted logs compatible with Cloud Logging
@@ -365,27 +365,33 @@ curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-44665544000
 # Response: {"active": false, "state": null}
 ```
 
-### Health Point (HP) Removal
+### Status-Based Health Tracking
 
-Character health points are stored internally in the `player_state.health` field for game mechanics, but **are never exposed in API responses** for security reasons. This prevents external systems or users from directly inspecting or manipulating HP values. The `status` field ("Healthy", "Wounded", "Dead") provides sufficient information for UI/Director needs without exposing exact HP values.
+Character health is tracked using a status enum field with three possible values: "Healthy", "Wounded", and "Dead". This provides a simplified health model that focuses on game state transitions rather than numerical health tracking.
 
-**Internal Storage (Firestore):**
-```json
-{
-  "player_state": {
-    "health": {"current": 75, "max": 100},
-    "status": "Healthy"
-  }
-}
-```
+**Status Values:**
+- `Healthy`: Character is in good health and can perform all actions
+- `Wounded`: Character is injured and may have reduced capabilities
+- `Dead`: Character is deceased and cannot perform actions
 
-**API Response (HP excluded):**
+**Status Transitions:**
+Game mechanics should transition character status based on damage or healing:
+- `Healthy` → `Wounded`: When character takes damage in combat
+- `Wounded` → `Dead`: When character takes critical damage or is defeated
+- `Wounded` → `Healthy`: When character is healed or rests
+- `Dead` → `Healthy`: Through resurrection mechanics (if applicable)
+
+**Usage in Combat:**
+Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than "Dead". Directors and game logic should update status fields rather than tracking numerical HP values. This ensures consistency with the status-based health model across all game mechanics.
+
+Example character with status:
 ```json
 {
   "character": {
     "player_state": {
-      "status": "Healthy"
-      // health field is omitted
+      "status": "Healthy",
+      "level": 5,
+      "experience": 1000
     }
   }
 }

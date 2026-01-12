@@ -87,10 +87,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             "request_id": request_id,
         },
     )
-    
+
     # Add request ID to response headers
     response.headers[settings.request_id_header] = request_id
-    
+
     return response
 
 
@@ -119,7 +119,7 @@ async def validation_exception_handler(
         "validation_error",
         errors=exc.errors(),
     )
-    
+
     def _to_json_safe(value: Any) -> Any:
         """Attempt to return a JSON-serializable value, or its string representation."""
         try:
@@ -127,7 +127,7 @@ async def validation_exception_handler(
             return value
         except (TypeError, ValueError):
             return str(value)
-    
+
     # Serialize errors to JSON-safe format
     errors = []
     for error in exc.errors():
@@ -151,10 +151,10 @@ async def validation_exception_handler(
             "request_id": request_id,
         },
     )
-    
+
     # Add request ID to response headers
     response.headers[settings.request_id_header] = request_id
-    
+
     return response
 
 
@@ -206,10 +206,10 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content=error_response,
     )
-    
+
     # Add request ID to response headers
     response.headers[settings.request_id_header] = request_id
-    
+
     return response
 
 
