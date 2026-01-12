@@ -22,6 +22,7 @@
           "pydantic.Field",
           "pydantic.ValidationInfo",
           "pydantic.field_validator",
+          "pydantic.model_validator",
           "pydantic_settings.BaseSettings",
           "pydantic_settings.SettingsConfigDict"
         ]
@@ -161,6 +162,7 @@
           "fastapi.APIRouter",
           "fastapi.HTTPException",
           "fastapi.Header",
+          "fastapi.Query",
           "fastapi.status",
           "google.cloud.firestore",
           "pydantic.BaseModel",
@@ -464,6 +466,7 @@
       "fastapi.FastAPI",
       "fastapi.HTTPException",
       "fastapi.Header",
+      "fastapi.Query",
       "fastapi.Request",
       "fastapi.Response",
       "fastapi.exceptions.RequestValidationError",
@@ -491,6 +494,6 @@
       "uvicorn"
     ],
     "stdlib_count": 23,
-    "third-party_count": 30
+    "third-party_count": 31
   }
 }
