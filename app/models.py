@@ -256,6 +256,10 @@ class NarrativeTurn(BaseModel):
     Represents one interaction between the player and the game master (AI),
     including the player's action, AI's response, and timestamp.
     
+    Field size limits:
+    - user_action: max 8000 characters
+    - ai_response: max 32000 characters
+    
     Referenced in: docs/SCHEMA.md - Narrative Turns Subcollection
     """
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -263,14 +267,18 @@ class NarrativeTurn(BaseModel):
     turn_id: str = Field(description="Unique turn identifier (UUIDv4)")
     turn_number: Optional[int] = Field(default=None, description="Sequential turn counter")
     user_action: str = Field(
+        min_length=1,
+        max_length=8000,
         alias="player_action",
         serialization_alias="player_action",
-        description="Player's action or input"
+        description="Player's action or input (max 8000 characters)"
     )
     ai_response: str = Field(
+        min_length=1,
+        max_length=32000,
         alias="gm_response",
         serialization_alias="gm_response",
-        description="Game master's/AI's response"
+        description="Game master's/AI's response (max 32000 characters)"
     )
     timestamp: datetime = Field(
         description="When the turn occurred (datetime object or ISO 8601 string)"

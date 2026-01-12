@@ -508,6 +508,12 @@ Character documents have two required subcollections for unbounded data:
 
 **Purpose:** Stores the history of narrative turns/interactions for the character.
 
+**Storage Strategy:**
+- Narrative turns persist indefinitely per character (no automatic trimming or deletion)
+- Each turn is stored as a separate document in the subcollection
+- Subcollection grows unbounded - monitoring recommended to track storage costs
+- Field size limits enforced to prevent oversized documents
+
 **Document Structure:**
 ```json
 {
@@ -530,15 +536,80 @@ Character documents have two required subcollections for unbounded data:
 ```
 
 **Key Fields:**
-- `turn_id`: Unique identifier for the turn (UUIDv4)
-- `turn_number`: Sequential turn counter
-- `timestamp`: When the turn occurred (Firestore Timestamp)
-- `player_action`: What the player did
-- `gm_response`: The game master's/AI's response
-- `game_state_snapshot`: Snapshot of relevant game state
-- `metadata`: Additional context (LLM metrics, etc.)
+- `turn_id`: Unique identifier for the turn (UUIDv4, required)
+- `turn_number`: Sequential turn counter (optional, integer)
+- `timestamp`: When the turn occurred (Firestore Timestamp, required)
+  - Server defaults to current time when omitted on write
+  - Used for ordering queries (see Ordering section below)
+- `player_action`: What the player did (required, max 8000 characters)
+- `gm_response`: The game master's/AI's response (required, max 32000 characters)
+- `game_state_snapshot`: Snapshot of relevant game state (optional, map)
+- `metadata`: Additional context like LLM metrics (optional, map)
 
-**Ordering:** Query by `turn_number` or `timestamp` for chronological history
+**Field Size Limits:**
+- `player_action`: Maximum 8000 characters (validated by Pydantic model)
+- `gm_response`: Maximum 32000 characters (validated by Pydantic model)
+- These limits are enforced to prevent individual documents from becoming too large
+- Configurable via environment variables (see Configuration section below)
+
+**Ordering and Query Guarantees:**
+- Documents are indexed by `timestamp` descending for efficient recent-turn queries
+- Query helpers return results in oldest-to-newest order (natural reading order)
+- `timestamp` precision is microseconds (Firestore Timestamp)
+- Timestamp ordering is guaranteed consistent even for concurrent writes
+- Firestore automatically maintains indexes for timestamp-based queries
+
+**Default Query Behavior:**
+- Default query size: 10 turns (configurable via `NARRATIVE_TURNS_DEFAULT_QUERY_SIZE`)
+- Maximum query size: 100 turns (configurable via `NARRATIVE_TURNS_MAX_QUERY_SIZE`)
+- Queries automatically reversed to oldest-first for natural chronological order
+- Pagination supported for accessing older turns beyond the query limit
+
+**Helper Functions:**
+The following helper functions are provided in `app/firestore.py`:
+- `write_narrative_turn(character_id, turn_data)`: Write a new turn
+- `query_narrative_turns(character_id, limit=None)`: Query recent turns (oldest-to-newest)
+- `get_narrative_turn_by_id(character_id, turn_id)`: Get a specific turn
+- `count_narrative_turns(character_id)`: Count total turns (expensive for large collections)
+
+**Configuration:**
+Narrative turn behavior is configurable via environment variables (see `.env.example`):
+- `NARRATIVE_TURNS_DEFAULT_QUERY_SIZE`: Default number of turns to retrieve (default: 10, range: 1-100)
+- `NARRATIVE_TURNS_MAX_QUERY_SIZE`: Maximum turns per query (default: 100, range: 1-1000)
+- `NARRATIVE_TURNS_MAX_USER_ACTION_LENGTH`: Max characters in player_action (default: 8000)
+- `NARRATIVE_TURNS_MAX_AI_RESPONSE_LENGTH`: Max characters in gm_response (default: 32000)
+
+**Edge Cases:**
+- **Empty history**: Characters with no turns return empty list (not an error)
+- **Future timestamps**: Accepted but may affect ordering - validation recommended
+- **Past timestamps**: Accepted for backfilling historical data
+- **Missing timestamp**: Server automatically sets to current time on write
+- **Duplicate turn_id**: Will overwrite existing turn (use unique UUIDs)
+- **Large collections**: Pagination recommended when total turns exceed max query size
+
+**Example Usage:**
+```python
+from app.firestore import query_narrative_turns, write_narrative_turn
+from app.models import NarrativeTurn, narrative_turn_to_firestore
+from datetime import datetime, timezone
+import uuid
+
+# Write a new turn
+turn = NarrativeTurn(
+    turn_id=str(uuid.uuid4()),
+    turn_number=1,
+    player_action="I explore the forest",
+    gm_response="You discover a hidden path",
+    timestamp=datetime.now(timezone.utc)
+)
+turn_data = narrative_turn_to_firestore(turn)
+write_narrative_turn(character_id, turn_data)
+
+# Query last 10 turns (oldest to newest)
+recent_turns = query_narrative_turns(character_id, limit=10)
+for turn in recent_turns:
+    print(f"Turn {turn['turn_number']}: {turn['player_action']}")
+```
 
 ### 2. Points of Interest (POIs) Subcollection
 
