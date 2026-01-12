@@ -36,6 +36,7 @@ from app.logging import get_logger
 from app.models import (
     CharacterDocument,
     CharacterIdentity,
+    CombatState,
     Health,
     Location,
     NarrativeTurn,
@@ -2669,4 +2670,280 @@ async def delete_quest(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete quest: {str(e)}",
+        )
+
+
+# ==============================================================================
+# Combat Management Endpoints
+# ==============================================================================
+
+
+class UpdateCombatRequest(BaseModel):
+    """
+    Request model for updating combat state.
+    
+    The combat_state field accepts a full CombatState object or null to clear combat.
+    Server-side validation ensures ≤5 enemies and valid status enum values.
+    """
+    model_config = {"extra": "forbid"}
+    
+    combat_state: Optional[CombatState] = Field(
+        description="Full combat state to set, or null to clear combat"
+    )
+
+
+class UpdateCombatResponse(BaseModel):
+    """
+    Response model for combat state updates.
+    
+    Returns the active/inactive status and the resulting combat state.
+    """
+    model_config = {"extra": "forbid"}
+    
+    active: bool = Field(
+        description="Whether combat is currently active (any enemy not Dead)"
+    )
+    state: Optional[CombatState] = Field(
+        description="Current combat state, or null if combat is cleared"
+    )
+
+
+@router.put(
+    "/{character_id}/combat",
+    response_model=UpdateCombatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update combat state for a character",
+    description=(
+        "Set or clear the combat state for a character with full state replacement.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Request Body:**\n"
+        "- `combat_state`: Full CombatState object or null to clear combat\n\n"
+        "**CombatState Validation:**\n"
+        "- Maximum 5 enemies per combat (422 error if exceeded)\n"
+        "- All enemy statuses must be valid enum values (Healthy, Wounded, Dead)\n"
+        "- All required fields must be present (combat_id, started_at, enemies)\n"
+        "- Empty enemies list is allowed and sets active=false\n\n"
+        "**Server-Side is_active Computation:**\n"
+        "- active=true when any enemy has status != Dead\n"
+        "- active=false when all enemies are Dead or enemies list is empty\n"
+        "- active=false when combat_state is null\n\n"
+        "**Atomicity:**\n"
+        "Uses Firestore transaction to atomically:\n"
+        "1. Verify character exists and user owns it\n"
+        "2. Update combat_state field (or clear to null)\n"
+        "3. Update character.updated_at timestamp\n"
+        "4. Log when combat transitions from active to inactive\n\n"
+        "**Response:**\n"
+        "- Returns {\"active\": bool, \"state\": CombatState | null}\n"
+        "- HTTP 200 for successful updates (both set and clear operations)\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Validation error (>5 enemies, invalid status, missing required fields)\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)\n\n"
+        "**Edge Cases:**\n"
+        "- Submitting >5 enemies returns 422 with detailed error\n"
+        "- Submitting null clears combat and returns {\"active\": false, \"state\": null}\n"
+        "- All enemies Dead returns {\"active\": false, \"state\": <combat_state>}\n"
+        "- Race conditions: last writer wins without corrupting other fields\n"
+        "- Unknown status strings cause explicit validation errors"
+    ),
+)
+async def update_combat(
+    character_id: str,
+    request: UpdateCombatRequest,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+) -> UpdateCombatResponse:
+    """
+    Update or clear combat state for a character with atomic transaction.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Validates CombatState payload (≤5 enemies, valid status enum)
+    4. Computes is_active flag server-side based on enemy statuses
+    5. Uses Firestore transaction to atomically update combat_state and updated_at
+    6. Logs when combat transitions from active to inactive
+    7. Returns stable schema: {"active": bool, "state": CombatState | null}
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        request: Combat state update request (combat_state or null)
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+        
+    Returns:
+        UpdateCombatResponse with active flag and current combat state
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id
+            - 403: Access denied (user not owner)
+            - 404: Character not found
+            - 422: Validation error (>5 enemies, invalid status)
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "update_combat_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("update_combat_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+    
+    user_id = x_user_id.strip()
+    
+    # Compute is_active flag for the new combat state
+    new_combat_state = request.combat_state
+    is_active = False
+    
+    if new_combat_state is not None:
+        # Use the is_active property from CombatState model
+        is_active = new_combat_state.is_active
+    
+    # Log attempt
+    logger.info(
+        "update_combat_attempt",
+        character_id=character_id,
+        user_id=user_id,
+        clearing_combat=new_combat_state is None,
+        new_active_state=is_active,
+    )
+    
+    try:
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        
+        @firestore.transactional
+        def update_combat_in_transaction(transaction):
+            """Atomically update combat state and log transitions."""
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+            
+            if not char_snapshot.exists:
+                return None, None, "not_found"
+            
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if owner_user_id != user_id:
+                return None, None, "access_denied"
+            
+            # 3. Get existing combat state to detect transitions
+            existing_combat_data = char_data.get("combat_state")
+            was_active = False
+            
+            if existing_combat_data is not None:
+                # Check if previous combat was active by examining enemy statuses
+                enemies = existing_combat_data.get("enemies", [])
+                was_active = any(
+                    enemy.get("status") != "Dead" 
+                    for enemy in enemies
+                )
+            
+            # 4. Detect transition from active to inactive for logging
+            transition_to_inactive = was_active and not is_active
+            
+            # 5. Serialize new combat state for Firestore (or None to clear)
+            combat_state_data = None
+            if new_combat_state is not None:
+                # Use mode='python' to get datetime objects (not JSON strings)
+                combat_state_data = new_combat_state.model_dump(mode='python')
+            
+            # 6. Update character with new combat state and updated_at timestamp
+            transaction.update(char_ref, {
+                "combat_state": combat_state_data,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            
+            return combat_state_data, transition_to_inactive, "success"
+        
+        # Execute transaction
+        combat_state_data, transition_to_inactive, result = update_combat_in_transaction(transaction)
+        
+        # Handle transaction results
+        if result == "not_found":
+            logger.warning(
+                "update_combat_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "update_combat_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+        
+        # Log transition from active to inactive if it occurred
+        if transition_to_inactive:
+            logger.info(
+                "combat_transitioned_to_inactive",
+                character_id=character_id,
+                reason="all_enemies_dead_or_cleared",
+            )
+        
+        logger.info(
+            "update_combat_success",
+            character_id=character_id,
+            active=is_active,
+            cleared=new_combat_state is None,
+        )
+        
+        # Construct response
+        # If combat_state_data is None, return null state
+        # Otherwise, reconstruct CombatState from the data
+        response_state = None
+        if combat_state_data is not None:
+            response_state = CombatState(**combat_state_data)
+        
+        return UpdateCombatResponse(
+            active=is_active,
+            state=response_state,
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "update_combat_error",
+            character_id=character_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update combat state: {str(e)}",
         )
