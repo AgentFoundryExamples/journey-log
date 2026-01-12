@@ -18,6 +18,15 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
   - `GET /characters/{id}` - Get full character details by ID
   - `POST /characters/{id}/narrative` - Append narrative turns to character history
   - `GET /characters/{id}/narrative` - Retrieve narrative turns with filtering (last N, since timestamp)
+- **Point of Interest (POI) Management**: Track discovered locations and landmarks
+  - `POST /characters/{id}/pois` - Add new POI to character's world (max 200 per character)
+  - `GET /characters/{id}/pois/random` - Sample N random POIs for narrative context (default: 3, max: 20)
+  - `GET /characters/{id}/pois` - Retrieve all POIs with pagination, sorted by discovery time
+- **Quest Management**: Single-active-quest system with archival
+  - `PUT /characters/{id}/quest` - Set active quest (enforces single-quest invariant, returns 409 if quest exists)
+  - `GET /characters/{id}/quest` - Retrieve active quest (returns null if none)
+  - `DELETE /characters/{id}/quest` - Clear active quest and archive it (max 50 archived quests, FIFO)
+- **Health Point (HP) Removal**: Character health is stored internally but never exposed in API responses for security
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
 - **Structured Logging**: JSON-formatted logs compatible with Cloud Logging
@@ -173,9 +182,98 @@ curl -X DELETE http://localhost:8080/firestore-test
 
 **Security Note**: In production, protect these endpoints with authentication (e.g., Cloud Run IAM) to prevent unauthorized access.
 
+## Usage Examples
+
+### POI Management
+
+```bash
+# Add a new POI to a character
+curl -X POST http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "name": "Ancient Dragon Lair",
+    "description": "A massive cavern filled with treasure and danger",
+    "tags": ["dungeon", "dragon", "high-level"]
+  }'
+
+# Get 5 random POIs for narrative context
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=5" \
+  -H "X-User-Id: user123"
+
+# List all POIs for a character
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+  -H "X-User-Id: user123"
+```
+
+### Quest Management
+
+```bash
+# Set an active quest
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "name": "Slay the Dragon",
+    "description": "Defeat the ancient red dragon threatening the kingdom",
+    "requirements": ["Gather party", "Forge dragonslayer sword", "Storm the lair"],
+    "rewards": {
+      "items": ["Dragon Scale Armor", "Ancient Crown"],
+      "currency": {"gold": 10000},
+      "experience": 5000
+    },
+    "completion_state": "in_progress",
+    "updated_at": "2026-01-12T10:00:00Z"
+  }'
+
+# Get active quest
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "X-User-Id: user123"
+
+# Try to set another quest (will fail with 409)
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{...}'
+# Error: 409 Conflict - Must DELETE existing quest first
+
+# Complete and archive quest
+curl -X DELETE http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "X-User-Id: user123"
+# Success: 204 No Content, quest is now archived
+```
+
+### Health Point (HP) Removal
+
+Character health points are stored internally in the `player_state.health` field for game mechanics, but **are never exposed in API responses** for security reasons. This prevents external systems or users from directly inspecting or manipulating HP values. The `status` field ("Healthy", "Wounded", "Dead") provides sufficient information for UI/Director needs without exposing exact HP values.
+
+**Internal Storage (Firestore):**
+```json
+{
+  "player_state": {
+    "health": {"current": 75, "max": 100},
+    "status": "Healthy"
+  }
+}
+```
+
+**API Response (HP excluded):**
+```json
+{
+  "character": {
+    "player_state": {
+      "status": "Healthy"
+      // health field is omitted
+    }
+  }
+}
+```
+
 ## Environment Variables
 
 See `.env.example` for a complete list of available environment variables with descriptions.
+
+**Note for POI/Quest Features:** No new environment variables or secrets are needed for POI and Quest endpoints. All POI and quest data is stored in the existing Firestore character documents using the existing `GCP_PROJECT_ID` configuration. The existing `.env.example` entries are sufficient for all features.
 
 ### Required Variables
 - `GCP_PROJECT_ID`: Required in `staging` and `prod` environments
@@ -191,6 +289,8 @@ See `.env.example` for a complete list of available environment variables with d
 - `API_PORT`: Defaults to `8080`
 - `LOG_LEVEL`: Defaults to `INFO`
 - `REQUEST_ID_HEADER`: Defaults to `X-Request-ID` (for Cloud Run compatibility)
+- `NARRATIVE_TURNS_DEFAULT_QUERY_SIZE`: Default number of narrative turns to retrieve (default: 10)
+- `NARRATIVE_TURNS_MAX_QUERY_SIZE`: Maximum narrative turns per query (default: 100)
 
 ## Structured Logging
 

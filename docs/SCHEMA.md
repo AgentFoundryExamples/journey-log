@@ -1625,6 +1625,638 @@ curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narr
 
 ---
 
+### POI Management Endpoints
+
+Points of Interest (POIs) are stored in the character's `world_pois` array (max 200 entries). These endpoints allow Directors to add POIs, retrieve all POIs, or sample random POIs for contextual world-building.
+
+#### Create POI
+
+**Endpoint:** `POST /characters/{character_id}/pois`
+
+**Description:** Add a new Point of Interest to a character's world_pois array. Each POI is assigned a unique ID and optional timestamp. This endpoint is used by Directors to record discovered locations, landmarks, dungeons, or other notable places in the game world.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Required Headers:**
+- `X-User-Id` (string): User identifier (must match character owner for access control)
+
+**Request Body:**
+```json
+{
+  "name": "Ancient Dragon's Lair",
+  "description": "A vast cavern system deep beneath the mountains, rumored to house an ancient red dragon and untold treasures.",
+  "timestamp": "2026-01-11T14:30:00Z",
+  "tags": ["dungeon", "dragon", "mountain", "high-danger"]
+}
+```
+
+**Request Fields:**
+- `name` (string, required): POI name (1-200 characters)
+- `description` (string, required): POI description (1-2000 characters)
+- `timestamp` (string, optional): ISO 8601 timestamp when POI was discovered. Defaults to server UTC now if omitted.
+- `tags` (array of strings, optional): List of tags for categorizing the POI (max 20 tags, each max 50 characters)
+
+**Response Format:**
+```json
+{
+  "poi": {
+    "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Ancient Dragon's Lair",
+    "description": "A vast cavern system deep beneath the mountains, rumored to house an ancient red dragon and untold treasures.",
+    "created_at": "2026-01-11T14:30:00Z",
+    "tags": ["dungeon", "dragon", "mountain", "high-danger"]
+  }
+}
+```
+
+**Response Fields:**
+- `poi` (object): The created PointOfInterest with server-assigned ID and timestamp
+  - `id` (string): Unique POI identifier (UUIDv4, server-generated)
+  - `name` (string): POI name
+  - `description` (string): POI description
+  - `created_at` (string): ISO 8601 timestamp when POI was created
+  - `tags` (array of strings, nullable): Tags for categorizing the POI
+
+**Storage Capacity:**
+- Maximum 200 POIs per character (enforced by `world_pois` array limit)
+- Attempting to add a POI when at capacity returns 400 Bad Request
+- Consider archiving or removing old POIs before adding new ones
+
+**Atomicity:**
+Uses Firestore transaction to atomically:
+1. Verify character exists and user owns it
+2. Check `world_pois` array is not at capacity (200 max)
+3. Generate unique POI ID and append to array
+4. Update character.updated_at timestamp
+
+**Error Responses:**
+- `400 Bad Request`: Missing/invalid X-User-Id header, POI capacity exceeded (200 max)
+- `403 Forbidden`: X-User-Id does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Validation error (invalid UUID, oversized fields, invalid timestamp, too many/long tags)
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Add a POI with server-generated timestamp
+curl -X POST http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "name": "Whispering Woods",
+    "description": "A mysterious forest where the trees seem to whisper ancient secrets."
+  }'
+
+# Add a POI with explicit timestamp and tags
+curl -X POST http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "name": "Abandoned Temple",
+    "description": "An overgrown temple dedicated to a forgotten deity.",
+    "timestamp": "2026-01-11T10:00:00Z",
+    "tags": ["temple", "ruins", "exploration"]
+  }'
+
+# HTTPie example
+http POST http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+  X-User-Id:user123 \
+  name="Haunted Mansion" \
+  description="A decrepit mansion on the hill, locals say it's cursed."
+```
+
+**Edge Cases:**
+- Duplicate POI names are allowed (each has a unique ID)
+- Empty tags array is valid (tags are optional)
+- Timestamps in the past are accepted (for backfilling historical discoveries)
+- Timestamps in the future are accepted (no validation, but may affect sorting)
+- When capacity (200) is reached, returns clear error message suggesting archival
+
+---
+
+#### Get Random POIs
+
+**Endpoint:** `GET /characters/{character_id}/pois/random`
+
+**Description:** Retrieve N randomly sampled POIs from a character's world_pois array without replacement. This endpoint is useful for Directors who want to inject contextual variety into narratives by referencing previously discovered locations. Sampling is non-deterministic - the same request may return different POIs on each call.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Optional Headers:**
+- `X-User-Id` (string): User identifier for access control
+  - If provided but empty/whitespace-only, returns 400 error
+  - If omitted entirely, allows anonymous access without verification
+  - If provided, must match the character's owner_user_id
+
+**Optional Query Parameters:**
+- `n` (integer): Number of POIs to sample (default: 3, min: 1, max: 20)
+
+**Response Format:**
+```json
+{
+  "pois": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Ancient Dragon's Lair",
+      "description": "A vast cavern system deep beneath the mountains.",
+      "created_at": "2026-01-11T14:30:00Z",
+      "tags": ["dungeon", "dragon", "mountain", "high-danger"]
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Whispering Woods",
+      "description": "A mysterious forest where the trees whisper.",
+      "created_at": "2026-01-11T15:00:00Z",
+      "tags": null
+    }
+  ],
+  "count": 2,
+  "requested_n": 3,
+  "total_available": 15
+}
+```
+
+**Response Fields:**
+- `pois` (array): Randomly sampled POIs (up to N)
+- `count` (integer): Number of POIs returned (may be less than requested_n if fewer POIs exist)
+- `requested_n` (integer): Number of POIs requested (n parameter value)
+- `total_available` (integer): Total number of POIs available for this character
+
+**Sampling Behavior:**
+- POIs are sampled uniformly at random without replacement
+- If fewer than N POIs exist, returns all available POIs (no error)
+- If no POIs exist, returns empty list with count=0 (not an error)
+- Same request may return different POIs on each call (non-deterministic)
+- Default sampling limit: 3 POIs (configurable via n parameter)
+- Maximum sampling limit: 20 POIs (enforced by validation)
+
+**Default Limits:**
+- Default n=3: Provides enough context without overwhelming the narrative
+- Maximum n=20: Balances response size with utility for Directors
+
+**Error Responses:**
+- `400 Bad Request`: Invalid query parameters (n <= 0 or n > 20) or empty X-User-Id
+- `403 Forbidden`: X-User-Id provided but does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Get 3 random POIs (default)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/random
+
+# Get 5 random POIs
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=5"
+
+# Get 10 random POIs with access control
+curl -H "X-User-Id: user123" \
+  "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=10"
+
+# HTTPie example
+http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/random \
+  n==7 \
+  X-User-Id:user123
+```
+
+**Edge Cases:**
+- When POI count < n: Returns all available POIs without error (e.g., requesting 5 but only 3 exist returns 3)
+- When POI count = 0: Returns empty array with count=0, total_available=0
+- When n=1: Returns single random POI (useful for "surprise encounter" mechanics)
+- When n >= total_available: Returns all POIs in random order
+- Missing `X-User-Id` allows anonymous access (useful for public character viewing)
+- Empty/whitespace-only `X-User-Id` returns 400 error (client error)
+
+**Use Cases for Directors:**
+- Inject previously discovered locations into narrative prompts
+- Create random encounters at familiar locations
+- Remind players of unexplored areas
+- Generate location-based quest hooks
+
+---
+
+#### Get All POIs
+
+**Endpoint:** `GET /characters/{character_id}/pois`
+
+**Description:** Retrieve all POIs for a character sorted by created_at descending (newest first). This endpoint supports pagination for characters with many POIs. Directors can use this to review all discovered locations or to populate UI elements showing the character's exploration history.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Optional Headers:**
+- `X-User-Id` (string): User identifier for access control
+  - If provided but empty/whitespace-only, returns 400 error
+  - If omitted entirely, allows anonymous access without verification
+  - If provided, must match the character's owner_user_id
+
+**Optional Query Parameters:**
+- `limit` (integer): Maximum number of POIs to return (default: unlimited, max: 200)
+- `cursor` (string): Pagination cursor from previous response (None for first page)
+
+**Response Format:**
+```json
+{
+  "pois": [
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Crystal Cavern",
+      "description": "A glittering cave filled with luminescent crystals.",
+      "created_at": "2026-01-12T08:00:00Z",
+      "tags": ["cave", "magic", "rare-resource"]
+    },
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Ancient Dragon's Lair",
+      "description": "A vast cavern system deep beneath the mountains.",
+      "created_at": "2026-01-11T14:30:00Z",
+      "tags": ["dungeon", "dragon", "mountain", "high-danger"]
+    }
+  ],
+  "count": 2,
+  "cursor": "10"
+}
+```
+
+**Response Fields:**
+- `pois` (array): List of POIs sorted by created_at descending (newest first)
+- `count` (integer): Number of POIs returned in this response
+- `cursor` (string, nullable): Pagination cursor for next page (null if no more results)
+
+**Pagination:**
+- Results are sorted by `created_at` descending (newest first)
+- Use `limit` to control page size
+- Use `cursor` from previous response to get next page
+- When cursor is exhausted (null), no more pages available
+- Simple offset-based pagination: cursor is the integer index for next page start
+
+**Sorting:**
+- POIs are sorted by `created_at` timestamp descending (newest discoveries first)
+- POIs without `created_at` timestamp are sorted to the end (using datetime.min as fallback)
+
+**Error Responses:**
+- `400 Bad Request`: Invalid query parameters (limit out of range 1-200, invalid cursor) or empty X-User-Id
+- `403 Forbidden`: X-User-Id provided but does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Get all POIs (no pagination)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois
+
+# Get first 10 POIs
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=10"
+
+# Get next 10 POIs using cursor from previous response
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=10&cursor=10"
+
+# Get all POIs with access control
+curl -H "X-User-Id: user123" \
+  http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois
+
+# HTTPie example with pagination
+http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+  limit==20 \
+  cursor==0 \
+  X-User-Id:user123
+```
+
+**Edge Cases:**
+- Character with no POIs returns empty array (not an error)
+- When limit > remaining POIs: Returns all remaining POIs with cursor=null
+- Invalid cursor format returns 400 error with clear message
+- Missing `created_at` timestamps are handled gracefully (sorted to end)
+- Requesting all POIs without limit returns entire array (up to 200 max)
+
+---
+
+### Quest Management Endpoints
+
+Quest management follows a **single-active-quest invariant**: only one quest can be active per character at any time. This design simplifies narrative focus and prevents quest conflict. Completed quests are automatically archived when deleted, maintaining a history of up to 50 quests (oldest removed first).
+
+#### Set Active Quest
+
+**Endpoint:** `PUT /characters/{character_id}/quest`
+
+**Description:** Set or update the active quest for a character. Only one quest can be active at a time - attempting to set a quest when one already exists returns 409 Conflict. Directors must DELETE the existing quest before setting a new one to enforce intentional quest progression.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Required Headers:**
+- `X-User-Id` (string): User identifier (must match character owner for access control)
+
+**Request Body:**
+```json
+{
+  "name": "Retrieve the Lost Amulet",
+  "description": "The village elder has tasked you with recovering the Amulet of Light from the Ancient Dragon's Lair. The amulet was stolen decades ago and is said to protect the village from dark forces.",
+  "requirements": [
+    "Locate the Ancient Dragon's Lair",
+    "Defeat or negotiate with the dragon",
+    "Retrieve the Amulet of Light"
+  ],
+  "rewards": {
+    "items": ["Amulet of Light", "Dragon Scale Shield"],
+    "currency": {
+      "gold": 500,
+      "reputation": 100
+    },
+    "experience": 1000
+  },
+  "completion_state": "in_progress",
+  "updated_at": "2026-01-11T15:00:00Z"
+}
+```
+
+**Request Fields:**
+- `name` (string, required): Quest name
+- `description` (string, required): Quest description/objectives
+- `requirements` (array of strings, optional): List of quest requirement descriptions (default: [])
+- `rewards` (object, required): Quest rewards upon completion
+  - `items` (array of strings, optional): List of item names awarded (default: [])
+  - `currency` (object, optional): Currency rewards as name:amount pairs (default: {}, amounts must be non-negative)
+  - `experience` (integer, optional, nullable): Experience points awarded (must be non-negative)
+- `completion_state` (string, required): Quest status - must be one of: `"not_started"`, `"in_progress"`, or `"completed"`
+- `updated_at` (string, required): ISO 8601 timestamp when quest was last updated
+
+**Response Format:**
+```json
+{
+  "quest": {
+    "name": "Retrieve the Lost Amulet",
+    "description": "The village elder has tasked you with recovering the Amulet of Light...",
+    "requirements": [
+      "Locate the Ancient Dragon's Lair",
+      "Defeat or negotiate with the dragon",
+      "Retrieve the Amulet of Light"
+    ],
+    "rewards": {
+      "items": ["Amulet of Light", "Dragon Scale Shield"],
+      "currency": {
+        "gold": 500,
+        "reputation": 100
+      },
+      "experience": 1000
+    },
+    "completion_state": "in_progress",
+    "updated_at": "2026-01-11T15:00:00Z"
+  }
+}
+```
+
+**Response Fields:**
+- `quest` (object): The stored Quest object with all fields as provided in request
+
+**Single-Active-Quest Invariant:**
+- Only one active quest is allowed per character
+- Attempting to set a quest when one already exists returns **409 Conflict**
+- The 409 response includes guidance to DELETE the existing quest first
+- This enforces intentional quest progression and prevents conflicts
+- Directors must explicitly clear the current quest before setting a new one
+
+**Atomicity:**
+Uses Firestore transaction to atomically:
+1. Verify character exists and user owns it
+2. Check that no active quest exists (enforces single-quest invariant)
+3. Set `active_quest` field with validated Quest data
+4. Update character.updated_at timestamp
+
+**Error Responses:**
+- `400 Bad Request`: Missing/invalid X-User-Id header
+- `403 Forbidden`: X-User-Id does not match character owner
+- `404 Not Found`: Character not found
+- `409 Conflict`: Active quest already exists (DELETE required before replacing)
+- `422 Unprocessable Entity`: Validation error (invalid UUID, invalid completion_state, negative currency/experience, empty currency keys)
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Set a new quest with minimal rewards
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "name": "Explore the Whispering Woods",
+    "description": "Investigate strange sounds coming from the forest.",
+    "requirements": ["Enter the forest", "Find the source of whispers"],
+    "rewards": {
+      "items": [],
+      "currency": {},
+      "experience": 100
+    },
+    "completion_state": "not_started",
+    "updated_at": "2026-01-11T10:00:00Z"
+  }'
+
+# Set a quest with complex rewards
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "name": "Defeat the Necromancer",
+    "description": "The necromancer threatens the kingdom. Defeat him.",
+    "requirements": ["Gather allies", "Storm the tower", "Defeat necromancer"],
+    "rewards": {
+      "items": ["Staff of Light", "Crown of Heroes"],
+      "currency": {"gold": 1000, "gems": 50},
+      "experience": 5000
+    },
+    "completion_state": "in_progress",
+    "updated_at": "2026-01-12T08:00:00Z"
+  }'
+
+# HTTPie example
+http PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  X-User-Id:user123 \
+  name="Find the Hidden Treasure" \
+  description="A map was discovered pointing to buried treasure." \
+  requirements:='["Decode the map", "Travel to the island", "Dig for treasure"]' \
+  rewards:='{"items": ["Treasure Chest"], "currency": {"gold": 2000}, "experience": 500}' \
+  completion_state="not_started" \
+  updated_at="2026-01-11T12:00:00Z"
+```
+
+**Edge Cases:**
+- When active quest exists: Returns **409 Conflict** with clear error message
+  - Error message: "An active quest already exists for this character. Please DELETE the existing quest before setting a new one."
+  - This enforces the single-active-quest invariant
+- Empty requirements array is valid (optional objectives)
+- Empty rewards.items array is valid
+- Empty rewards.currency dict is valid (quest gives only experience)
+- Null experience is valid (quest gives only items/currency)
+- Currency keys must be non-empty strings
+- Currency amounts and experience must be non-negative (validated by model)
+
+---
+
+#### Get Active Quest
+
+**Endpoint:** `GET /characters/{character_id}/quest`
+
+**Description:** Retrieve the active quest for a character. Returns the Quest object if one exists, or null if no active quest. Directors can use this to check quest status or retrieve quest details for narrative context.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Optional Headers:**
+- `X-User-Id` (string): User identifier for access control
+  - If provided but empty/whitespace-only, returns 400 error
+  - If omitted entirely, allows anonymous access without verification
+  - If provided, must match the character's owner_user_id
+
+**Response Format (quest exists):**
+```json
+{
+  "quest": {
+    "name": "Retrieve the Lost Amulet",
+    "description": "The village elder has tasked you with recovering the Amulet of Light...",
+    "requirements": [
+      "Locate the Ancient Dragon's Lair",
+      "Defeat or negotiate with the dragon",
+      "Retrieve the Amulet of Light"
+    ],
+    "rewards": {
+      "items": ["Amulet of Light", "Dragon Scale Shield"],
+      "currency": {
+        "gold": 500,
+        "reputation": 100
+      },
+      "experience": 1000
+    },
+    "completion_state": "in_progress",
+    "updated_at": "2026-01-11T15:00:00Z"
+  }
+}
+```
+
+**Response Format (no quest):**
+```json
+{
+  "quest": null
+}
+```
+
+**Response Fields:**
+- `quest` (object or null): The active Quest object or null if no active quest exists
+
+**Error Responses:**
+- `400 Bad Request`: X-User-Id header provided but empty/whitespace-only
+- `403 Forbidden`: X-User-Id provided but does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Get active quest (anonymous access)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest
+
+# Get active quest with access control
+curl -H "X-User-Id: user123" \
+  http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest
+
+# HTTPie example
+http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  X-User-Id:user123
+```
+
+**Edge Cases:**
+- Character with no active quest returns `{"quest": null}` (not an error, 200 status)
+- Missing `X-User-Id` allows anonymous access (useful for public character viewing)
+- Empty/whitespace-only `X-User-Id` returns 400 error (client error)
+
+---
+
+#### Delete Active Quest
+
+**Endpoint:** `DELETE /characters/{character_id}/quest`
+
+**Description:** Clear the active quest for a character and automatically archive it to the `archived_quests` array. This operation is idempotent - succeeds even if no active quest exists. The archived quest is stored with a `cleared_at` timestamp for history tracking. The archived_quests array maintains a maximum of 50 entries (oldest removed first when limit exceeded).
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Required Headers:**
+- `X-User-Id` (string): User identifier (must match character owner for access control)
+
+**Response:**
+- **204 No Content**: Quest successfully deleted (or no quest existed)
+- No response body
+
+**Archival Behavior:**
+- When a quest is deleted, it is automatically appended to `archived_quests` array
+- Each archived entry includes:
+  - `quest`: The full Quest object
+  - `cleared_at`: ISO 8601 timestamp when the quest was cleared
+- Maximum 50 archived quests maintained (oldest entries removed first when exceeded)
+- Provides quest history for Directors and players
+
+**Atomicity:**
+Uses Firestore transaction to atomically:
+1. Verify character exists and user owns it
+2. Remove `active_quest` field (set to null)
+3. Append quest to `archived_quests` array with `cleared_at` timestamp
+4. Trim `archived_quests` to maintain ≤50 entries (oldest first)
+5. Update character.updated_at timestamp
+
+**Idempotency:**
+- Operation succeeds even if no active quest exists
+- Returns 204 No Content in both cases (quest deleted or already absent)
+- Safe to call multiple times without side effects
+
+**Error Responses:**
+- `400 Bad Request`: Missing/invalid X-User-Id header
+- `403 Forbidden`: X-User-Id does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Delete active quest
+curl -X DELETE http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  -H "X-User-Id: user123"
+
+# HTTPie example
+http DELETE http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
+  X-User-Id:user123
+
+# Expected success response (no body, 204 status)
+# HTTP/1.1 204 No Content
+```
+
+**Edge Cases:**
+- When no active quest exists: Succeeds with 204 (idempotent, no-op)
+- When `archived_quests` reaches 50 entries: Oldest quest is removed before adding new one
+- Empty `archived_quests` array is created if it doesn't exist
+- Quest with all null optional fields still gets archived correctly
+
+**Workflow Example:**
+```bash
+# 1. Set initial quest
+curl -X PUT http://localhost:8080/characters/<ID>/quest -H "X-User-Id: user123" -d '{...}'
+# Success: 200 OK
+
+# 2. Try to set another quest without deleting first
+curl -X PUT http://localhost:8080/characters/<ID>/quest -H "X-User-Id: user123" -d '{...}'
+# Error: 409 Conflict - "An active quest already exists..."
+
+# 3. Delete existing quest (archives it)
+curl -X DELETE http://localhost:8080/characters/<ID>/quest -H "X-User-Id: user123"
+# Success: 204 No Content
+
+# 4. Now can set new quest
+curl -X PUT http://localhost:8080/characters/<ID>/quest -H "X-User-Id: user123" -d '{...}'
+# Success: 200 OK
+```
+
+---
+
 ## References
 
 - [Firestore Data Model](https://cloud.google.com/firestore/docs/data-model)
