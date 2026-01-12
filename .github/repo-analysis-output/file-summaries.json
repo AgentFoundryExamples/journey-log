@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 19,
+  "total_files": 20,
   "files": [
     {
       "schema_version": "2.0",
@@ -209,6 +209,20 @@
       "metrics": {
         "size_bytes": 36385,
         "loc": 804,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_context_aggregation.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 26472,
+        "loc": 548,
         "todo_count": 0
       }
     },

@@ -37,6 +37,7 @@
   ├── __init__.py
   ├── test_characters.py
   ├── test_combat.py
+  ├── test_context_aggregation.py
   ├── test_firestore_serialization.py
   ├── test_models.py
   ├── test_narrative_turns.py

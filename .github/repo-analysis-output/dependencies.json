@@ -251,6 +251,27 @@
       }
     },
     {
+      "id": "tests/test_context_aggregation.py",
+      "path": "tests/test_context_aggregation.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "copy",
+          "datetime.datetime",
+          "datetime.timedelta",
+          "datetime.timezone",
+          "unittest.mock.Mock",
+          "unittest.mock.call"
+        ],
+        "third-party": [
+          "fastapi.status",
+          "fastapi.testclient.TestClient",
+          "google.cloud.firestore",
+          "pytest"
+        ]
+      }
+    },
+    {
       "id": "tests/test_firestore_serialization.py",
       "path": "tests/test_firestore_serialization.py",
       "type": "file",
@@ -410,6 +431,14 @@
       "target": "app/dependencies.py"
     },
     {
+      "source": "tests/test_context_aggregation.py",
+      "target": "app/main.py"
+    },
+    {
+      "source": "tests/test_context_aggregation.py",
+      "target": "app/dependencies.py"
+    },
+    {
       "source": "tests/test_firestore_serialization.py",
       "target": "app/models.py"
     },
@@ -437,6 +466,7 @@
   "external_dependencies_summary": {
     "stdlib": [
       "contextvars.ContextVar",
+      "copy",
       "datetime.datetime",
       "datetime.timedelta",
       "datetime.timezone",
@@ -457,6 +487,7 @@
       "typing.Optional",
       "typing.Union",
       "unittest.mock.Mock",
+      "unittest.mock.call",
       "unittest.mock.patch",
       "uuid"
     ],
@@ -493,7 +524,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 23,
+    "stdlib_count": 25,
     "third-party_count": 31
   }
 }

@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 19
+Total files: 20
 
 ## app/__init__.py
 **Language:** Python  
@@ -139,6 +139,15 @@ Total files: 19
 **Summary:** Python test file (role: test)  
 **Size:** 35.53 KB  
 **LOC:** 804  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_context_aggregation.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 25.85 KB  
+**LOC:** 548  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py
