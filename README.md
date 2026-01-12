@@ -289,8 +289,6 @@ See `.env.example` for a complete list of available environment variables with d
 - `API_PORT`: Defaults to `8080`
 - `LOG_LEVEL`: Defaults to `INFO`
 - `REQUEST_ID_HEADER`: Defaults to `X-Request-ID` (for Cloud Run compatibility)
-- `NARRATIVE_TURNS_DEFAULT_QUERY_SIZE`: Default number of narrative turns to retrieve (default: 10)
-- `NARRATIVE_TURNS_MAX_QUERY_SIZE`: Maximum narrative turns per query (default: 100)
 
 ## Structured Logging
 

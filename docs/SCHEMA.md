@@ -1629,6 +1629,13 @@ curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/narr
 
 Points of Interest (POIs) are stored in the character's `world_pois` array (max 200 entries). These endpoints allow Directors to add POIs, retrieve all POIs, or sample random POIs for contextual world-building.
 
+**POI Storage Model:**
+- **Embedded POIs** (`world_pois` array): Character-specific discovered POIs, limited to 200 entries. Used by these API endpoints.
+- **World POI Reference** (`world_pois_reference` field): String reference to world-global POI configuration (e.g., "world-v1" or "characters/{id}/pois"). This field indicates where the character's world POIs originate from, separate from character-specific discoveries.
+- **POI Subcollection** (optional): For unbounded POI data, characters can have a `pois/` subcollection referenced by `world_pois_reference`. Not currently exposed via these API endpoints.
+
+The API endpoints documented below operate on the **embedded `world_pois` array** within the character document for performance and simplicity.
+
 #### Create POI
 
 **Endpoint:** `POST /characters/{character_id}/pois`
