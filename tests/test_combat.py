@@ -19,7 +19,7 @@ including validation, state computation, and edge cases.
 """
 
 from datetime import datetime, timezone
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
