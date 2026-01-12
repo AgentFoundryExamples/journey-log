@@ -91,6 +91,46 @@ def valid_create_request():
     }
 
 
+@pytest.fixture
+def sample_character_data():
+    """Sample character document data for testing."""
+    return {
+        "character_id": "550e8400-e29b-41d4-a716-446655440000",
+        "owner_user_id": "user123",
+        "adventure_prompt": "Test adventure prompt",
+        "player_state": {
+            "identity": {
+                "name": "Test Hero",
+                "race": "Human",
+                "class": "Warrior",
+            },
+            "status": "Healthy",
+            "level": 1,
+            "experience": 0,
+            "health": {"current": 100, "max": 100},
+            "stats": {},
+            "equipment": [],
+            "inventory": [],
+            "location": {
+                "id": "origin:nexus",
+                "display_name": "The Nexus",
+            },
+            "additional_fields": {},
+        },
+        "world_pois": [],
+        "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+        "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+        "schema_version": "1.0.0",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+        "world_state": None,
+        "active_quest": None,
+        "archived_quests": [],
+        "combat_state": None,
+        "additional_metadata": {},
+    }
+
+
 class TestCreateCharacter:
     """Tests for POST /characters endpoint."""
     
@@ -3435,3 +3475,545 @@ class TestHPExclusion:
         # Verify other fields are present
         assert "level" in data["character"]["player_state"]
         assert "status" in data["character"]["player_state"]
+
+
+# ==============================================================================
+# Quest Management Tests
+# ==============================================================================
+
+
+@pytest.fixture
+def valid_quest():
+    """Valid quest data for testing."""
+    return {
+        "name": "Dragon Slayer",
+        "description": "Defeat the ancient dragon terrorizing the village",
+        "requirements": ["Reach level 10", "Acquire dragon-slaying sword"],
+        "rewards": {
+            "items": ["Dragon Scale", "Ancient Artifact"],
+            "currency": {"gold": 1000, "gems": 50},
+            "experience": 5000
+        },
+        "completion_state": "in_progress",
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@pytest.fixture
+def sample_character_with_quest(sample_character_data, valid_quest):
+    """Character data with an active quest."""
+    data = sample_character_data.copy()
+    data["active_quest"] = valid_quest.copy()
+    return data
+
+
+class TestSetQuest:
+    """Tests for PUT /characters/{character_id}/quest endpoint."""
+    
+    def test_set_quest_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+        valid_quest,
+    ):
+        """Test successful quest creation."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        
+        # Character has no active quest
+        char_data = sample_character_data.copy()
+        char_data["active_quest"] = None
+        mock_char_snapshot.to_dict.return_value = char_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=valid_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "quest" in data
+        assert data["quest"]["name"] == valid_quest["name"]
+        assert data["quest"]["description"] == valid_quest["description"]
+        assert data["quest"]["completion_state"] == valid_quest["completion_state"]
+        assert data["quest"]["rewards"]["items"] == valid_quest["rewards"]["items"]
+        assert data["quest"]["rewards"]["currency"] == valid_quest["rewards"]["currency"]
+        assert data["quest"]["rewards"]["experience"] == valid_quest["rewards"]["experience"]
+    
+    def test_set_quest_conflict_when_quest_exists(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+        valid_quest,
+    ):
+        """Test that setting a quest when one already exists returns 409."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=valid_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_409_CONFLICT
+        data = response.json()
+        assert "error" in data
+        assert "already exists" in data["message"].lower()
+        assert "DELETE" in data["message"]
+    
+    def test_set_quest_missing_user_id(self, test_client, valid_quest):
+        """Test that missing X-User-Id header returns 422."""
+        response = test_client.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=valid_quest,
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_set_quest_empty_user_id(self, test_client_with_mock_db, valid_quest):
+        """Test that empty X-User-Id header returns 400."""
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=valid_quest,
+            headers={"X-User-Id": "   "},
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        data = response.json()
+        assert "X-User-Id" in data["message"]
+    
+    def test_set_quest_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_quest,
+    ):
+        """Test that non-existent character returns 404."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=valid_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+    
+    def test_set_quest_user_mismatch(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+        valid_quest,
+    ):
+        """Test that mismatched user ID returns 403."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=valid_quest,
+            headers={"X-User-Id": "wrong_user"},
+        )
+        
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+    
+    def test_set_quest_invalid_completion_state(
+        self,
+        test_client_with_mock_db,
+        valid_quest,
+    ):
+        """Test that invalid completion_state returns 422."""
+        invalid_quest = valid_quest.copy()
+        invalid_quest["completion_state"] = "invalid_state"
+        
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=invalid_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_set_quest_missing_required_fields(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test that missing required fields returns 422."""
+        incomplete_quest = {
+            "name": "Test Quest",
+            # Missing description, rewards, completion_state, updated_at
+        }
+        
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=incomplete_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_set_quest_negative_experience(
+        self,
+        test_client_with_mock_db,
+        valid_quest,
+    ):
+        """Test that negative experience value returns 422."""
+        invalid_quest = valid_quest.copy()
+        invalid_quest["rewards"]["experience"] = -100
+        
+        response = test_client_with_mock_db.put(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            json=invalid_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_set_quest_invalid_uuid(self, test_client_with_mock_db, valid_quest):
+        """Test that invalid UUID format returns 422."""
+        response = test_client_with_mock_db.put(
+            "/characters/invalid-uuid/quest",
+            json=valid_quest,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestGetQuest:
+    """Tests for GET /characters/{character_id}/quest endpoint."""
+    
+    def test_get_quest_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+    ):
+        """Test successful quest retrieval."""
+        
+        # Setup mock
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "quest" in data
+        assert data["quest"] is not None
+        assert data["quest"]["name"] == "Dragon Slayer"
+        assert data["quest"]["completion_state"] == "in_progress"
+    
+    def test_get_quest_null_when_no_quest(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that null is returned when no active quest exists."""
+        
+        # Setup mock
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        
+        char_data = sample_character_data.copy()
+        char_data["active_quest"] = None
+        mock_char_snapshot.to_dict.return_value = char_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "quest" in data
+        assert data["quest"] is None
+    
+    def test_get_quest_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that non-existent character returns 404."""
+        
+        # Setup mock
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+        )
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+    
+    def test_get_quest_with_user_verification(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+    ):
+        """Test quest retrieval with user ID verification."""
+        
+        # Setup mock
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request with matching user ID
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_200_OK
+    
+    def test_get_quest_user_mismatch(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+    ):
+        """Test that mismatched user ID returns 403."""
+        
+        # Setup mock
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "wrong_user"},
+        )
+        
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+    
+    def test_get_quest_empty_user_id(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+    ):
+        """Test that empty X-User-Id header returns 400."""
+        
+        # Setup mock
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "   "},
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestDeleteQuest:
+    """Tests for DELETE /characters/{character_id}/quest endpoint."""
+    
+    def test_delete_quest_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+    ):
+        """Test successful quest deletion and archival."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+    
+    def test_delete_quest_idempotent_when_no_quest(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that deleting when no quest exists still returns 204."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        
+        char_data = sample_character_data.copy()
+        char_data["active_quest"] = None
+        char_data["archived_quests"] = []
+        mock_char_snapshot.to_dict.return_value = char_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+    
+    def test_delete_quest_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that non-existent character returns 404."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+    
+    def test_delete_quest_missing_user_id(self, test_client):
+        """Test that missing X-User-Id header returns 422."""
+        response = test_client.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_delete_quest_empty_user_id(self, test_client_with_mock_db):
+        """Test that empty X-User-Id header returns 400."""
+        response = test_client_with_mock_db.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "   "},
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_delete_quest_user_mismatch(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+    ):
+        """Test that mismatched user ID returns 403."""
+        
+        # Setup mock transaction
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_with_quest
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        response = test_client_with_mock_db.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "wrong_user"},
+        )
+        
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+    
+    def test_delete_quest_archived_quests_trimmed_at_50(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_with_quest,
+        valid_quest,
+    ):
+        """Test that archived quests are trimmed to maintain ≤50 entries."""
+        
+        # Setup character with 50 archived quests
+        char_data = sample_character_with_quest.copy()
+        char_data["archived_quests"] = [
+            {
+                "quest": valid_quest.copy(),
+                "cleared_at": (datetime.now(timezone.utc) - timedelta(days=i)).isoformat()
+            }
+            for i in range(50, 0, -1)  # 50 entries, oldest to newest
+        ]
+        
+        # Setup mock transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = char_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Track the update call to verify trimming
+        update_calls = []
+        def capture_update(ref, data):
+            update_calls.append(data)
+        mock_transaction.update = capture_update
+        
+        # Make request
+        response = test_client_with_mock_db.delete(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/quest",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_204_NO_CONTENT
+        
+        # Verify that update was called with trimmed archived_quests list
+        assert len(update_calls) > 0
+        # Verify the archived_quests list was trimmed to 50 entries
+        if len(update_calls) > 0 and 'archived_quests' in update_calls[0]:
+            # The implementation should have trimmed to keep last 50 entries
+            assert len(update_calls[0]['archived_quests']) <= 50
