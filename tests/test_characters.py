@@ -4011,6 +4011,9 @@ class TestDeleteQuest:
         # Assertions
         assert response.status_code == status.HTTP_204_NO_CONTENT
         
-        # Verify that update was called (transaction logic would enforce 50 limit)
-        # Note: In actual implementation, the transaction would trim the list
-        assert len(update_calls) > 0 or True  # Mock may not capture all details
+        # Verify that update was called with trimmed archived_quests list
+        assert len(update_calls) > 0
+        # Verify the archived_quests list was trimmed to 50 entries
+        if len(update_calls) > 0 and 'archived_quests' in update_calls[0]:
+            # The implementation should have trimmed to keep last 50 entries
+            assert len(update_calls[0]['archived_quests']) <= 50

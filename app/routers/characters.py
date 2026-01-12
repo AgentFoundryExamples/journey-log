@@ -2296,7 +2296,9 @@ async def set_quest(
             quest_name=quest.name,
         )
         
-        return SetQuestResponse(quest=quest)
+        # The 'quest_data' is what was prepared for Firestore.
+        # Construct the response from this data to ensure consistency.
+        return SetQuestResponse(quest=Quest(**quest_data))
         
     except HTTPException:
         # Re-raise HTTP exceptions
@@ -2436,17 +2438,10 @@ async def get_quest(
                     detail="Access denied: user ID does not match character owner",
                 )
         
-        # Extract active quest
-        active_quest_data = char_data.get("active_quest")
-        active_quest = None
-        
-        if active_quest_data is not None:
-            # Convert timestamps
-            if 'updated_at' in active_quest_data:
-                active_quest_data['updated_at'] = datetime_from_firestore(active_quest_data['updated_at'])
-            
-            # Construct Quest object
-            active_quest = Quest(**active_quest_data)
+        # Use the centralized deserialization logic from character_from_firestore
+        # to construct the full character document, which handles nested timestamps.
+        character = character_from_firestore(char_data, character_id=character_id)
+        active_quest = character.active_quest
         
         logger.info(
             "get_quest_success",
