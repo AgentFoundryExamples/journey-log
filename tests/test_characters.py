@@ -18,7 +18,7 @@ Tests cover character creation, validation, uniqueness constraints,
 and default value application.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import Mock
 import pytest
 from fastapi import status
@@ -162,8 +162,8 @@ class TestCreateCharacter:
         assert character["player_state"]["status"] == "Healthy"
         assert character["player_state"]["level"] == 1
         assert character["player_state"]["experience"] == 0
-        assert character["player_state"]["health"]["current"] == 100
-        assert character["player_state"]["health"]["max"] == 100
+        # Health field should be excluded from API responses
+        assert "health" not in character["player_state"]
         assert character["player_state"]["equipment"] == []
         assert character["player_state"]["inventory"] == []
         assert character["player_state"]["location"]["id"] == "origin:nexus"
@@ -2587,3 +2587,851 @@ class TestGetNarrativeTurns:
         response_data = response.json()
         assert "error" in response_data
         assert "internal error" in response_data["message"].lower()
+
+
+# ==============================================================================
+# POI Management Tests
+# ==============================================================================
+
+
+class TestCreatePOI:
+    """Tests for POST /characters/{character_id}/pois endpoint."""
+    
+    def test_create_poi_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test successful POI creation."""
+        
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        
+        # Mock character document retrieval
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": [],
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Dragon's Lair",
+                "description": "A dark cave where a dragon resides",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        assert "poi" in data
+        poi = data["poi"]
+        assert "id" in poi
+        assert poi["name"] == "Dragon's Lair"
+        assert poi["description"] == "A dark cave where a dragon resides"
+        assert "created_at" in poi
+        assert poi["tags"] is None
+    
+    def test_create_poi_with_tags_and_timestamp(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test POI creation with optional tags and timestamp."""
+        
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        
+        # Mock character document retrieval
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": [],
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Ancient Temple",
+                "description": "A mysterious temple from ages past",
+                "timestamp": "2026-01-11T12:00:00Z",
+                "tags": ["dungeon", "quest", "ancient"],
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        poi = data["poi"]
+        assert poi["name"] == "Ancient Temple"
+        assert poi["tags"] == ["dungeon", "quest", "ancient"]
+    
+    def test_create_poi_missing_user_id(self, test_client):
+        """Test that missing X-User-Id returns 422."""
+        response = test_client.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+            },
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_create_poi_empty_user_id(self, test_client_with_mock_db):
+        """Test that empty X-User-Id returns 400."""
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "   "},
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_create_poi_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 404 when character does not exist."""
+        
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        
+        # Mock character not found
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+    
+    def test_create_poi_access_denied(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 403 when user does not own character."""
+        
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        
+        # Mock character document retrieval
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "different_user",
+            "world_pois": [],
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+    
+    def test_create_poi_capacity_exceeded(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 400 when POI capacity is exceeded."""
+        
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+        
+        # Mock character with 200 POIs (at capacity)
+        # Create a minimal list to save memory - only need to check length
+        existing_pois = [{"id": f"poi_{i}", "name": f"POI {i}", "description": "test"} for i in range(20)]
+        # Extend to 200 by duplicating (saves memory compared to list comprehension)
+        existing_pois = existing_pois * 10
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": existing_pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "capacity" in response.json()["message"].lower()
+    
+    def test_create_poi_missing_name(self, test_client):
+        """Test validation error for missing name."""
+        response = test_client.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_create_poi_missing_description(self, test_client):
+        """Test validation error for missing description."""
+        response = test_client.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_create_poi_name_too_long(self, test_client):
+        """Test validation error for oversized name."""
+        response = test_client.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "A" * 201,  # Over 200 char limit
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_create_poi_description_too_long(self, test_client):
+        """Test validation error for oversized description."""
+        response = test_client.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "D" * 2001,  # Over 2000 char limit
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_create_poi_too_many_tags(self, test_client):
+        """Test validation error for too many tags."""
+        response = test_client.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+                "tags": [f"tag{i}" for i in range(21)],  # Over 20 tag limit
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    
+    def test_create_poi_invalid_uuid(self, test_client_with_mock_db):
+        """Test 422 for invalid character UUID."""
+        response = test_client_with_mock_db.post(
+            "/characters/not-a-valid-uuid/pois",
+            json={
+                "name": "Test POI",
+                "description": "Test description",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+        
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestGetRandomPOIs:
+    """Tests for GET /characters/{character_id}/pois/random endpoint."""
+    
+    def test_get_random_pois_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test successful random POI retrieval."""
+        
+        # Mock character with POIs
+        pois = [
+            {"id": "poi1", "name": "POI 1", "description": "Description 1", "created_at": datetime.now(timezone.utc), "tags": ["tag1"]},
+            {"id": "poi2", "name": "POI 2", "description": "Description 2", "created_at": datetime.now(timezone.utc), "tags": None},
+            {"id": "poi3", "name": "POI 3", "description": "Description 3", "created_at": datetime.now(timezone.utc), "tags": ["tag2", "tag3"]},
+            {"id": "poi4", "name": "POI 4", "description": "Description 4", "created_at": datetime.now(timezone.utc), "tags": None},
+            {"id": "poi5", "name": "POI 5", "description": "Description 5", "created_at": datetime.now(timezone.utc), "tags": ["tag4"]},
+        ]
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=3",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "pois" in data
+        assert "count" in data
+        assert "requested_n" in data
+        assert "total_available" in data
+        assert data["requested_n"] == 3
+        assert data["count"] == 3
+        assert data["total_available"] == 5
+        assert len(data["pois"]) == 3
+    
+    def test_get_random_pois_default_n(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test random POI retrieval with default n=3."""
+        
+        # Mock character with 5 POIs
+        pois = [
+            {"id": f"poi{i}", "name": f"POI {i}", "description": f"Description {i}", "created_at": datetime.now(timezone.utc), "tags": None}
+            for i in range(5)
+        ]
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request without n parameter
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["requested_n"] == 3  # default value
+        assert data["count"] == 3
+    
+    def test_get_random_pois_fewer_than_n(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test random POI retrieval when fewer POIs exist than requested."""
+        
+        # Mock character with only 2 POIs
+        pois = [
+            {"id": "poi1", "name": "POI 1", "description": "Description 1", "created_at": datetime.now(timezone.utc), "tags": None},
+            {"id": "poi2", "name": "POI 2", "description": "Description 2", "created_at": datetime.now(timezone.utc), "tags": None},
+        ]
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request for n=5
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=5",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["requested_n"] == 5
+        assert data["count"] == 2  # Only 2 available
+        assert data["total_available"] == 2
+        assert len(data["pois"]) == 2
+    
+    def test_get_random_pois_empty_list(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test random POI retrieval with empty POI list."""
+        
+        # Mock character with no POIs
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": [],
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=3",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["requested_n"] == 3
+        assert data["count"] == 0
+        assert data["total_available"] == 0
+        assert data["pois"] == []
+    
+    def test_get_random_pois_invalid_n_zero(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 400 for n=0."""
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=0",
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_get_random_pois_invalid_n_negative(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 400 for negative n."""
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=-1",
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_get_random_pois_invalid_n_too_large(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 400 for n > 20."""
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=21",
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_get_random_pois_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 404 when character does not exist."""
+        
+        # Mock character not found
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+    
+    def test_get_random_pois_access_denied(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 403 when user does not own character."""
+        
+        # Mock character
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "different_user",
+            "world_pois": [],
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois/random",
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+class TestGetPOIs:
+    """Tests for GET /characters/{character_id}/pois endpoint."""
+    
+    def test_get_pois_success(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test successful POI list retrieval."""
+        
+        # Mock character with POIs (unsorted)
+        now = datetime.now(timezone.utc)
+        pois = [
+            {"id": "poi1", "name": "POI 1", "description": "Desc 1", "created_at": now, "tags": None},
+            {"id": "poi2", "name": "POI 2", "description": "Desc 2", "created_at": now - timedelta(days=1), "tags": ["tag1"]},
+            {"id": "poi3", "name": "POI 3", "description": "Desc 3", "created_at": now - timedelta(days=2), "tags": None},
+        ]
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "pois" in data
+        assert "count" in data
+        assert "cursor" in data
+        assert data["count"] == 3
+        assert data["cursor"] is None  # No pagination needed
+        
+        # Verify POIs are sorted by created_at descending (newest first)
+        returned_pois = data["pois"]
+        assert len(returned_pois) == 3
+        assert returned_pois[0]["id"] == "poi1"  # Most recent
+        assert returned_pois[1]["id"] == "poi2"
+        assert returned_pois[2]["id"] == "poi3"  # Oldest
+    
+    def test_get_pois_with_pagination(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test POI list retrieval with pagination."""
+        
+        # Mock character with 5 POIs
+        now = datetime.now(timezone.utc)
+        pois = [
+            {"id": f"poi{i}", "name": f"POI {i}", "description": f"Desc {i}", "created_at": now - timedelta(days=i), "tags": None}
+            for i in range(5)
+        ]
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request for first page (limit=2)
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=2",
+        )
+        
+        # Assertions for first page
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["count"] == 2
+        assert data["cursor"] == "2"  # Next page starts at index 2
+        assert len(data["pois"]) == 2
+        
+        # Make request for second page using cursor
+        response2 = test_client_with_mock_db.get(
+            f"/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=2&cursor={data['cursor']}",
+        )
+        
+        # Assertions for second page
+        assert response2.status_code == status.HTTP_200_OK
+        data2 = response2.json()
+        assert data2["count"] == 2
+        assert data2["cursor"] == "4"  # Next page starts at index 4
+    
+    def test_get_pois_last_page(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that last page returns null cursor."""
+        
+        # Mock character with 3 POIs
+        pois = [
+            {"id": f"poi{i}", "name": f"POI {i}", "description": f"Desc {i}", "created_at": datetime.now(timezone.utc), "tags": None}
+            for i in range(3)
+        ]
+        
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request for page that includes all remaining POIs
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=5",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["count"] == 3
+        assert data["cursor"] is None  # No more pages
+    
+    def test_get_pois_empty_list(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test POI list retrieval with empty list."""
+        
+        # Mock character with no POIs
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": [],
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["count"] == 0
+        assert data["pois"] == []
+        assert data["cursor"] is None
+    
+    def test_get_pois_invalid_limit(
+        self,
+        test_client_with_mock_db,
+    ):
+        """Test 400 for invalid limit."""
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=201",
+        )
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+    
+    def test_get_pois_character_not_found(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test 404 when character does not exist."""
+        
+        # Mock character not found
+        mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = False
+        mock_char_ref.get.return_value = mock_char_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+class TestHPExclusion:
+    """Tests to verify HP/health field is excluded from all API responses."""
+    
+    @pytest.fixture
+    def sample_character_data(self):
+        """Sample character data for testing."""
+        return {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "A brave hero seeks adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "level": 5,
+                "experience": 1000,
+                "health": {"current": 80, "max": 100},
+                "stats": {"strength": 18, "dexterity": 14},
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+    
+    def test_create_character_excludes_hp(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        valid_create_request,
+    ):
+        """Test that character creation response excludes health field."""
+        
+        # Mock Firestore operations for transaction
+        mock_query = mock_firestore_client.collection.return_value.where.return_value
+        mock_query.stream.return_value = []  # No existing character
+        
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        
+        # Mock document retrieval after creation
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            "character_id": "test-uuid",
+            "owner_user_id": "user123",
+            "adventure_prompt": valid_create_request["adventure_prompt"],
+            "player_state": {
+                "identity": {
+                    "name": valid_create_request["name"],
+                    "race": valid_create_request["race"],
+                    "class": valid_create_request["class"],
+                },
+                "status": "Healthy",
+                "level": 1,
+                "experience": 0,
+                "health": {"current": 100, "max": 100},
+                "stats": {},
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/test-uuid/pois",
+            "narrative_turns_reference": "characters/test-uuid/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters",
+            json=valid_create_request,
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        data = response.json()
+        
+        # Verify health is NOT in the response
+        assert "health" not in data["character"]["player_state"]
+        # Verify other fields are present
+        assert "level" in data["character"]["player_state"]
+        assert "experience" in data["character"]["player_state"]
+        assert "status" in data["character"]["player_state"]
+    
+    def test_get_character_excludes_hp(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that character retrieval response excludes health field."""
+        
+        # Mock Firestore document retrieval
+        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = sample_character_data
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000",
+        )
+        
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify health is NOT in the response
+        assert "health" not in data["character"]["player_state"]
+        # Verify other fields are present
+        assert "level" in data["character"]["player_state"]
+        assert "status" in data["character"]["player_state"]

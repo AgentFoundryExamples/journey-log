@@ -17,13 +17,14 @@ Character management router.
 Provides endpoints for creating and managing character documents.
 """
 
+import random
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, status
 from google.cloud import firestore  # type: ignore[import-untyped]
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, model_serializer
 
 from app.config import (
     get_settings,
@@ -39,6 +40,7 @@ from app.models import (
     Location,
     NarrativeTurn,
     PlayerState,
+    PointOfInterest,
     Status,
     character_to_firestore,
     character_from_firestore,
@@ -54,6 +56,20 @@ router = APIRouter(
     prefix="/characters",
     tags=["characters"],
 )
+
+
+def exclude_health_from_character_dict(char_dict: dict) -> dict:
+    """
+    Remove health field from character dictionary for API responses.
+    
+    This helper ensures HP is never exposed in API responses per security requirements.
+    """
+    if "player_state" in char_dict and "health" in char_dict["player_state"]:
+        # Create a copy to avoid mutating the original
+        char_dict = char_dict.copy()
+        char_dict["player_state"] = char_dict["player_state"].copy()
+        del char_dict["player_state"]["health"]
+    return char_dict
 
 
 class CreateCharacterRequest(BaseModel):
@@ -120,11 +136,29 @@ class CreateCharacterRequest(BaseModel):
 class CreateCharacterResponse(BaseModel):
     """Response model for character creation."""
     character: CharacterDocument = Field(description="The created character document")
+    
+    @model_serializer(mode='wrap')
+    def _serialize(self, serializer, info):
+        """Custom serializer to exclude health field."""
+        data = serializer(self)
+        # The data structure is: {'character': {...}}
+        if 'character' in data:
+            data['character'] = exclude_health_from_character_dict(data['character'])
+        return data
 
 
 class GetCharacterResponse(BaseModel):
     """Response model for character retrieval."""
     character: CharacterDocument = Field(description="The character document")
+    
+    @model_serializer(mode='wrap')
+    def _serialize(self, serializer, info):
+        """Custom serializer to exclude health field."""
+        data = serializer(self)
+        # The data structure is: {'character': {...}}
+        if 'character' in data:
+            data['character'] = exclude_health_from_character_dict(data['character'])
+        return data
 
 
 class CharacterMetadata(BaseModel):
@@ -1272,4 +1306,790 @@ async def get_narrative_turns(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve narrative turns due to an internal error",
+        )
+
+
+# ==============================================================================
+# POI Management Endpoints
+# ==============================================================================
+
+
+class CreatePOIRequest(BaseModel):
+    """
+    Request model for creating a new POI for a character.
+    
+    Required fields:
+    - name: POI name (1-200 characters)
+    - description: POI description (1-2000 characters)
+    
+    Optional fields:
+    - timestamp: When the POI was discovered (ISO 8601 string, defaults to server UTC now)
+    - tags: List of tags for categorizing the POI (max 20 tags, each max 50 chars)
+    """
+    model_config = {"extra": "forbid"}
+    
+    name: str = Field(
+        min_length=1,
+        max_length=200,
+        description="POI name (1-200 characters)"
+    )
+    description: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="POI description (1-2000 characters)"
+    )
+    timestamp: Optional[str] = Field(
+        default=None,
+        description="Optional ISO 8601 timestamp when POI was discovered. Defaults to server UTC now if omitted."
+    )
+    tags: Optional[list[str]] = Field(
+        default=None,
+        max_length=20,
+        description="Optional list of tags for categorizing the POI (max 20 tags)"
+    )
+    
+    @model_validator(mode='after')
+    def validate_tags(self) -> 'CreatePOIRequest':
+        """Validate tags list size and individual tag lengths."""
+        if self.tags is not None:
+            if len(self.tags) > 20:
+                raise ValueError(
+                    f"tags list cannot exceed 20 entries (got {len(self.tags)}). "
+                    "Consider using more general tags or removing redundant ones."
+                )
+            for tag in self.tags:
+                if len(tag) > 50:
+                    raise ValueError(
+                        f"Individual tag cannot exceed 50 characters (got {len(tag)} for tag: {tag[:20]}...)"
+                    )
+                if not tag.strip():
+                    raise ValueError("Tags cannot be empty or only whitespace")
+        return self
+
+
+class CreatePOIResponse(BaseModel):
+    """Response model for POI creation."""
+    poi: PointOfInterest = Field(description="The created POI with server-assigned created_at")
+
+
+class GetPOIsResponse(BaseModel):
+    """Response model for getting POIs with pagination."""
+    pois: list[PointOfInterest] = Field(description="List of POIs sorted by created_at desc")
+    count: int = Field(description="Number of POIs returned in this response")
+    cursor: Optional[str] = Field(
+        default=None,
+        description="Cursor for next page (None if no more results)"
+    )
+
+
+class GetRandomPOIsResponse(BaseModel):
+    """Response model for random POI sampling."""
+    pois: list[PointOfInterest] = Field(description="Randomly sampled POIs")
+    count: int = Field(description="Number of POIs returned")
+    requested_n: int = Field(description="Number of POIs requested")
+    total_available: int = Field(description="Total number of POIs available")
+
+
+@router.post(
+    "/{character_id}/pois",
+    response_model=CreatePOIResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a POI to a character",
+    description=(
+        "Create and append a new Point of Interest to a character's world_pois array.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Request Body:**\n"
+        "- `name`: POI name (1-200 characters)\n"
+        "- `description`: POI description (1-2000 characters)\n"
+        "- `timestamp`: Optional ISO 8601 timestamp (defaults to server UTC now)\n"
+        "- `tags`: Optional list of tags (max 20 tags, each max 50 characters)\n\n"
+        "**Validation:**\n"
+        "- name: required, 1-200 characters\n"
+        "- description: required, 1-2000 characters\n"
+        "- tags: max 20 entries, each max 50 characters\n"
+        "- Duplicate POI names are allowed (each has unique id)\n\n"
+        "**Atomicity:**\n"
+        "Uses Firestore transaction to atomically:\n"
+        "1. Verify character exists and user owns it\n"
+        "2. Check world_pois array is not at capacity (200 max)\n"
+        "3. Append POI with generated id and timestamp\n"
+        "4. Update character.updated_at timestamp\n\n"
+        "**Response:**\n"
+        "- Returns the stored PointOfInterest (with server-generated id and created_at)\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header, POI capacity exceeded (200 max)\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Validation error (invalid field values, oversized fields)\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def create_poi(
+    character_id: str,
+    request: CreatePOIRequest,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+) -> CreatePOIResponse:
+    """
+    Create and append a POI to a character's world_pois array.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Validates payload (name, description, optional timestamp, optional tags)
+    4. Generates POI id and assigns server timestamp if not provided
+    5. Uses Firestore transaction to atomically append POI and update character
+    6. Returns stored POI with generated id and timestamp
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        request: POI creation request data
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+        
+    Returns:
+        CreatePOIResponse with the created POI
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id or POI capacity exceeded
+            - 403: Access denied (user not owner)
+            - 404: Character not found
+            - 422: Validation error
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "create_poi_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("create_poi_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+    
+    user_id = x_user_id.strip()
+    
+    # Parse and validate timestamp if provided
+    poi_timestamp: Optional[datetime] = None
+    if request.timestamp:
+        try:
+            poi_timestamp = datetime_to_firestore(request.timestamp)
+        except ValueError as e:
+            logger.warning(
+                "create_poi_invalid_timestamp",
+                character_id=character_id,
+                timestamp=request.timestamp,
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid timestamp format: {str(e)}",
+            )
+    
+    # Log creation attempt
+    logger.info(
+        "create_poi_attempt",
+        character_id=character_id,
+        user_id=user_id,
+        name=request.name,
+        has_timestamp=poi_timestamp is not None,
+        has_tags=request.tags is not None,
+    )
+    
+    try:
+        # Generate POI ID outside transaction to avoid race condition on retry
+        poi_id = str(uuid.uuid4()).lower()
+        
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        
+        @firestore.transactional
+        def create_poi_in_transaction(transaction):
+            """Atomically append POI and update character."""
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+            
+            if not char_snapshot.exists:
+                return None, "not_found"
+            
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if owner_user_id != user_id:
+                return None, "access_denied"
+            
+            # 3. Check world_pois capacity (max 200 per schema)
+            existing_pois = char_data.get("world_pois", [])
+            if len(existing_pois) >= 200:
+                return None, "capacity_exceeded"
+            
+            # 4. Create POI data
+            # Use server timestamp if not provided by client
+            created_at = poi_timestamp if poi_timestamp else datetime.now(timezone.utc)
+            
+            poi_data = {
+                "id": poi_id,
+                "name": request.name,
+                "description": request.description,
+                "created_at": created_at,
+                "tags": request.tags,
+            }
+            
+            # 5. Append POI to world_pois array (create new list to avoid mutation)
+            updated_pois = existing_pois + [poi_data]
+            
+            # 6. Update character with new POI and updated_at timestamp
+            transaction.update(char_ref, {
+                "world_pois": updated_pois,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            })
+            
+            return poi_data, "success"
+        
+        # Execute transaction
+        poi_data, result = create_poi_in_transaction(transaction)
+        
+        # Handle transaction results
+        if result == "not_found":
+            logger.warning(
+                "create_poi_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "create_poi_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+        elif result == "capacity_exceeded":
+            logger.warning(
+                "create_poi_capacity_exceeded",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="POI capacity exceeded: character has 200 POIs (max 200). "
+                       "Consider archiving or removing old POIs before adding new ones.",
+            )
+        
+        # Convert to PointOfInterest model
+        created_poi = PointOfInterest(
+            id=poi_data["id"],
+            name=poi_data["name"],
+            description=poi_data["description"],
+            created_at=poi_data["created_at"],
+            tags=poi_data.get("tags"),
+        )
+        
+        logger.info(
+            "create_poi_success",
+            character_id=character_id,
+            poi_id=poi_id,
+            name=request.name,
+        )
+        
+        return CreatePOIResponse(poi=created_poi)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "create_poi_error",
+            character_id=character_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create POI: {str(e)}",
+        )
+
+
+@router.get(
+    "/{character_id}/pois/random",
+    response_model=GetRandomPOIsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get random POIs for a character",
+    description=(
+        "Retrieve N randomly sampled POIs from a character's world_pois array.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
+        "**Optional Query Parameters:**\n"
+        "- `n`: Number of POIs to sample (default: 3, min: 1, max: 20)\n\n"
+        "**Sampling Behavior:**\n"
+        "- POIs are sampled uniformly at random without replacement\n"
+        "- If fewer than N POIs exist, returns all available POIs\n"
+        "- If no POIs exist, returns empty list (not an error)\n"
+        "- Same request may return different POIs on each call (non-deterministic)\n\n"
+        "**Response:**\n"
+        "- Returns list of randomly sampled POIs\n"
+        "- Includes metadata: count, requested_n, total_available\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Invalid query parameters (n <= 0 or n > 20) or empty X-User-Id\n"
+        "- `403`: X-User-Id provided but does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def get_random_pois(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    n: int = 3,
+) -> GetRandomPOIsResponse:
+    """
+    Retrieve N randomly sampled POIs from a character's world_pois array.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates n parameter (default 3, min 1, max 20)
+    3. Optionally verifies X-User-Id matches owner_user_id
+    4. Fetches character's world_pois array
+    5. Samples up to N unique POIs uniformly at random
+    6. Returns sampled POIs with metadata
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        n: Number of POIs to sample (default 3, max 20)
+        
+    Returns:
+        GetRandomPOIsResponse with sampled POIs and metadata
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid parameters (n out of range)
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_random_pois_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate n parameter
+    if n < 1 or n > 20:
+        logger.warning(
+            "get_random_pois_invalid_n",
+            character_id=character_id,
+            n=n,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Parameter 'n' must be between 1 and 20 (got {n})",
+        )
+    
+    # Log retrieval attempt
+    logger.info(
+        "get_random_pois_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+        n=n,
+    )
+    
+    try:
+        # 1. Verify character exists
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+        
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_random_pois_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        
+        # 2. Verify ownership if X-User-Id is provided
+        char_data = char_snapshot.to_dict()
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_random_pois_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+            
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_random_pois_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+        
+        # 3. Get world_pois array
+        world_pois_data = char_data.get("world_pois", [])
+        total_available = len(world_pois_data)
+        
+        # 4. Sample POIs
+        # Determine how many to sample (min of n and total available)
+        sample_size = min(n, total_available)
+        
+        if sample_size == 0:
+            # No POIs available, return empty list
+            sampled_pois_data = []
+        elif sample_size == total_available:
+            # All POIs requested, no need to sample
+            sampled_pois_data = world_pois_data
+        else:
+            # Sample without replacement
+            sampled_pois_data = random.sample(world_pois_data, sample_size)
+        
+        # 5. Convert to PointOfInterest models
+        sampled_pois = []
+        for poi_data in sampled_pois_data:
+            # Convert Firestore timestamp to datetime if needed
+            created_at = poi_data.get("created_at")
+            if created_at is not None:
+                created_at = datetime_from_firestore(created_at)
+            
+            poi = PointOfInterest(
+                id=poi_data["id"],
+                name=poi_data["name"],
+                description=poi_data["description"],
+                created_at=created_at,
+                tags=poi_data.get("tags"),
+            )
+            sampled_pois.append(poi)
+        
+        logger.info(
+            "get_random_pois_success",
+            character_id=character_id,
+            requested_n=n,
+            returned_count=len(sampled_pois),
+            total_available=total_available,
+        )
+        
+        return GetRandomPOIsResponse(
+            pois=sampled_pois,
+            count=len(sampled_pois),
+            requested_n=n,
+            total_available=total_available,
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_random_pois_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve random POIs due to an internal error",
+        )
+
+
+@router.get(
+    "/{character_id}/pois",
+    response_model=GetPOIsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get all POIs for a character",
+    description=(
+        "Retrieve all POIs for a character sorted by created_at descending (newest first).\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
+        "**Optional Query Parameters:**\n"
+        "- `limit`: Maximum number of POIs to return (default: unlimited, max: 200)\n"
+        "- `cursor`: Pagination cursor from previous response (None for first page)\n\n"
+        "**Pagination:**\n"
+        "- Results are sorted by created_at descending (newest first)\n"
+        "- Use `limit` to control page size\n"
+        "- Use `cursor` from previous response to get next page\n"
+        "- When cursor is exhausted, response includes cursor=null\n\n"
+        "**Response:**\n"
+        "- Returns list of POIs with pagination metadata\n"
+        "- Empty list returned if character has no POIs\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Invalid query parameters (limit out of range) or empty X-User-Id\n"
+        "- `403`: X-User-Id provided but does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def get_pois(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+    limit: Optional[int] = None,
+    cursor: Optional[str] = None,
+) -> GetPOIsResponse:
+    """
+    Retrieve all POIs for a character with optional pagination.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates limit parameter (max 200)
+    3. Optionally verifies X-User-Id matches owner_user_id
+    4. Fetches character's world_pois array
+    5. Sorts by created_at descending (newest first)
+    6. Applies pagination if limit/cursor provided
+    7. Returns POIs with pagination metadata
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        limit: Optional maximum number of results to return (max 200)
+        cursor: Optional pagination cursor from previous response
+        
+    Returns:
+        GetPOIsResponse with POIs list and pagination metadata
+        
+    Raises:
+        HTTPException:
+            - 400: Invalid parameters (limit out of range)
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_pois_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Validate limit parameter
+    if limit is not None and (limit < 1 or limit > 200):
+        logger.warning(
+            "get_pois_invalid_limit",
+            character_id=character_id,
+            limit=limit,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Parameter 'limit' must be between 1 and 200 (got {limit})",
+        )
+    
+    # Log retrieval attempt
+    logger.info(
+        "get_pois_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+        limit=limit,
+        has_cursor=cursor is not None,
+    )
+    
+    try:
+        # 1. Verify character exists
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+        
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_pois_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        
+        # 2. Verify ownership if X-User-Id is provided
+        char_data = char_snapshot.to_dict()
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_pois_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+            
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_pois_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+        
+        # 3. Get world_pois array
+        world_pois_data = char_data.get("world_pois", [])
+        
+        # 4. Sort POIs by created_at descending (newest first)
+        # Handle missing created_at by using datetime.min as fallback (oldest possible)
+        def get_created_at(poi_data):
+            created_at = poi_data.get("created_at")
+            if created_at is None:
+                # Use datetime.min with UTC timezone as fallback for missing timestamps
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if isinstance(created_at, datetime):
+                return created_at
+            # Handle Firestore timestamp
+            return datetime_from_firestore(created_at)
+        
+        sorted_pois_data = sorted(
+            world_pois_data,
+            key=get_created_at,
+            reverse=True  # Descending order (newest first)
+        )
+        
+        # 5. Apply pagination
+        # Simple offset-based pagination using cursor as index
+        start_index = 0
+        if cursor:
+            try:
+                start_index = int(cursor)
+            except ValueError:
+                logger.warning(
+                    "get_pois_invalid_cursor",
+                    character_id=character_id,
+                    cursor=cursor,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid cursor format: {cursor}",
+                )
+        
+        # Determine end index based on limit
+        if limit is not None:
+            end_index = start_index + limit
+        else:
+            end_index = len(sorted_pois_data)
+        
+        # Slice the sorted POIs
+        page_pois_data = sorted_pois_data[start_index:end_index]
+        
+        # Determine next cursor
+        next_cursor = None
+        if end_index < len(sorted_pois_data):
+            next_cursor = str(end_index)
+        
+        # 6. Convert to PointOfInterest models
+        pois = []
+        for poi_data in page_pois_data:
+            # Convert Firestore timestamp to datetime if needed
+            created_at = poi_data.get("created_at")
+            if created_at is not None:
+                created_at = datetime_from_firestore(created_at)
+            
+            poi = PointOfInterest(
+                id=poi_data["id"],
+                name=poi_data["name"],
+                description=poi_data["description"],
+                created_at=created_at,
+                tags=poi_data.get("tags"),
+            )
+            pois.append(poi)
+        
+        logger.info(
+            "get_pois_success",
+            character_id=character_id,
+            returned_count=len(pois),
+            total_available=len(sorted_pois_data),
+            has_next_page=next_cursor is not None,
+        )
+        
+        return GetPOIsResponse(
+            pois=pois,
+            count=len(pois),
+            cursor=next_cursor,
+        )
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_pois_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve POIs due to an internal error",
         )
