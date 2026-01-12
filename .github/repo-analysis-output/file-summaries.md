@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 18
+Total files: 19
 
 ## app/__init__.py
 **Language:** Python  
@@ -92,8 +92,8 @@ Total files: 18
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 98.79 KB  
-**LOC:** 2136  
+**Size:** 109.81 KB  
+**LOC:** 2355  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -130,6 +130,15 @@ Total files: 18
 **Summary:** Python test file (role: test)  
 **Size:** 145.43 KB  
 **LOC:** 3098  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_combat.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 20.71 KB  
+**LOC:** 459  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py

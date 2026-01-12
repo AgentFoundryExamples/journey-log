@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 18,
+  "total_files": 19,
   "files": [
     {
       "schema_version": "2.0",
@@ -137,8 +137,8 @@
       "summary": "Python module for characters",
       "summary_text": "Python module for characters",
       "metrics": {
-        "size_bytes": 101166,
-        "loc": 2136,
+        "size_bytes": 112442,
+        "loc": 2355,
         "todo_count": 0
       }
     },
@@ -195,6 +195,20 @@
       "metrics": {
         "size_bytes": 148922,
         "loc": 3098,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_combat.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 21210,
+        "loc": 459,
         "todo_count": 0
       }
     },

@@ -233,6 +233,24 @@
       }
     },
     {
+      "id": "tests/test_combat.py",
+      "path": "tests/test_combat.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone",
+          "unittest.mock.MagicMock",
+          "unittest.mock.Mock"
+        ],
+        "third-party": [
+          "fastapi.status",
+          "fastapi.testclient.TestClient",
+          "pytest"
+        ]
+      }
+    },
+    {
       "id": "tests/test_firestore_serialization.py",
       "path": "tests/test_firestore_serialization.py",
       "type": "file",
@@ -384,6 +402,14 @@
       "target": "app/dependencies.py"
     },
     {
+      "source": "tests/test_combat.py",
+      "target": "app/main.py"
+    },
+    {
+      "source": "tests/test_combat.py",
+      "target": "app/dependencies.py"
+    },
+    {
       "source": "tests/test_firestore_serialization.py",
       "target": "app/models.py"
     },
@@ -430,6 +456,7 @@
       "typing.Literal",
       "typing.Optional",
       "typing.Union",
+      "unittest.mock.MagicMock",
       "unittest.mock.Mock",
       "unittest.mock.patch",
       "uuid"
@@ -467,7 +494,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 23,
+    "stdlib_count": 24,
     "third-party_count": 31
   }
 }
