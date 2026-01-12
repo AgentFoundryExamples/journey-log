@@ -38,7 +38,12 @@ settings = get_settings()
 # Create FastAPI application
 app = FastAPI(
     title="Journey Log API",
-    description="A service for managing journey logs and entries",
+    description=(
+        "A service for managing journey logs and character state for AI-driven narrative games.\n\n"
+        "**Director Integration:** Use the `/characters/{id}/context` endpoint to retrieve "
+        "aggregated character context for LLM-driven narrative generation. This endpoint "
+        "provides player state, quests, combat, narrative history, and world POIs in a single payload."
+    ),
     version=settings.build_version,
     docs_url="/docs",
     redoc_url="/redoc",

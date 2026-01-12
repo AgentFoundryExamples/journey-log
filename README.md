@@ -29,6 +29,11 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
 - **Combat Management**: Track combat encounters with automatic active/inactive detection
   - `PUT /characters/{id}/combat` - Set or clear combat state (max 5 enemies per combat)
   - `GET /characters/{id}/combat` - Retrieve combat state with stable active/inactive envelope
+- **Context Aggregation for Directors**: Primary LLM/Director integration endpoint
+  - `GET /characters/{id}/context` - Get aggregated character context (player state, quest, combat, narrative, POIs) for AI-driven narrative generation
+  - Supports configurable narrative window (recent_n parameter, default 20, max 100)
+  - Optional POI inclusion via include_pois flag
+  - Returns derived fields: has_active_quest, combat.active, narrative metadata
 - **Status-Based Health Tracking**: Character health is tracked through status enum ("Healthy", "Wounded", "Dead")
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support

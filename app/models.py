@@ -603,6 +603,113 @@ class CharacterDocument(BaseModel):
 
 
 # ==============================================================================
+# Context Aggregation Models
+# ==============================================================================
+
+
+class ContextCombatState(BaseModel):
+    """
+    Combat state for context aggregation with derived active flag.
+    
+    This model exposes the active boolean explicitly for Director consumption,
+    computed server-side based on enemy statuses.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    active: bool = Field(
+        description="Whether combat is currently active (true if any enemy status != Dead)"
+    )
+    state: Optional[CombatState] = Field(
+        default=None,
+        description="Full combat state details, or null if combat is inactive",
+    )
+
+
+class NarrativeContextMetadata(BaseModel):
+    """
+    Metadata for narrative turns in context aggregation.
+    
+    Provides information about the requested, returned, and maximum narrative window
+    to help Directors understand context boundaries.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    recent_turns: list[NarrativeTurn] = Field(
+        description="List of recent narrative turns ordered oldest-to-newest (chronological)"
+    )
+    requested_n: int = Field(
+        description="Number of turns requested via recent_n parameter"
+    )
+    returned_n: int = Field(
+        description="Number of turns actually returned (may be less than requested)"
+    )
+    max_n: int = Field(
+        description="Maximum number of turns that can be requested (server config limit)"
+    )
+
+
+class WorldContextState(BaseModel):
+    """
+    World state for context aggregation including optional POI sample.
+    
+    POIs can be suppressed via include_pois flag to reduce payload size.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    pois_sample: list[PointOfInterest] = Field(
+        default_factory=list,
+        description="Random sample of discovered POIs (empty if include_pois=false)",
+    )
+    include_pois: bool = Field(
+        description="Whether POIs were included in this response (reflects request parameter)"
+    )
+
+
+class CharacterContextResponse(BaseModel):
+    """
+    Aggregated character context for Director/LLM integration.
+    
+    This model provides a single JSON payload capturing all relevant character state:
+    - Identity and player state (status, level, equipment, location)
+    - Active quest with derived has_active_quest flag
+    - Combat state with derived active flag
+    - Recent narrative turns with metadata
+    - Optional world POIs sample
+    
+    This is the primary integration surface for Directors to retrieve character context
+    for AI-driven narrative generation.
+    
+    EXACT SHAPE REQUIREMENT: This model must match the exact structure specified
+    in the issue requirements for the context aggregation endpoint.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    character_id: str = Field(description="UUID character identifier")
+    player_state: PlayerState = Field(description="Current player character state")
+    quest: Optional[Quest] = Field(
+        default=None, description="Active quest or null if no active quest"
+    )
+    combat: ContextCombatState = Field(
+        description="Combat state with derived active flag"
+    )
+    narrative: NarrativeContextMetadata = Field(
+        description="Recent narrative turns with metadata"
+    )
+    world: WorldContextState = Field(
+        description="World state including optional POI sample"
+    )
+
+    # Derived fields for convenience
+    has_active_quest: bool = Field(
+        description="Derived flag: true if quest is not null, false otherwise"
+    )
+
+
+# ==============================================================================
 # Firestore Serialization Helpers
 # ==============================================================================
 
