@@ -26,6 +26,9 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
   - `PUT /characters/{id}/quest` - Set active quest (enforces single-quest invariant, returns 409 if quest exists)
   - `GET /characters/{id}/quest` - Retrieve active quest (returns null if none)
   - `DELETE /characters/{id}/quest` - Clear active quest and archive it (max 50 archived quests, FIFO)
+- **Combat Management**: Track combat encounters with automatic active/inactive detection
+  - `PUT /characters/{id}/combat` - Set or clear combat state (max 5 enemies per combat)
+  - `GET /characters/{id}/combat` - Retrieve combat state with stable active/inactive envelope
 - **Health Point (HP) Removal**: Character health is stored internally but never exposed in API responses for security
 - **Environment-based Configuration**: Uses Pydantic Settings for type-safe configuration
 - **Google Cloud Integration**: Ready for Cloud Run deployment with Firestore support
@@ -252,6 +255,113 @@ curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-44665544000
 curl -X DELETE http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/quest \
   -H "X-User-Id: user123"
 # Success: 204 No Content, quest is now archived
+```
+
+### Combat Management
+
+```bash
+# Start a combat encounter with 2 enemies
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "combat_state": {
+      "combat_id": "combat_001",
+      "started_at": "2026-01-12T10:00:00Z",
+      "turn": 1,
+      "enemies": [
+        {
+          "enemy_id": "orc_001",
+          "name": "Orc Chieftain",
+          "status": "Healthy",
+          "weapon": "Great Axe",
+          "traits": ["leader", "aggressive", "armored"]
+        },
+        {
+          "enemy_id": "goblin_001",
+          "name": "Goblin Scout",
+          "status": "Healthy",
+          "weapon": "Short Bow",
+          "traits": ["ranged", "cowardly"]
+        }
+      ],
+      "player_conditions": {
+        "status_effects": [],
+        "temporary_buffs": ["shield_of_valor"]
+      }
+    }
+  }'
+# Response: {"active": true, "state": {...}}
+
+# Update combat (mark one enemy as dead)
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "combat_state": {
+      "combat_id": "combat_001",
+      "started_at": "2026-01-12T10:00:00Z",
+      "turn": 3,
+      "enemies": [
+        {
+          "enemy_id": "orc_001",
+          "name": "Orc Chieftain",
+          "status": "Wounded",
+          "weapon": "Great Axe",
+          "traits": ["leader", "aggressive"]
+        },
+        {
+          "enemy_id": "goblin_001",
+          "name": "Goblin Scout",
+          "status": "Dead",
+          "weapon": "Short Bow",
+          "traits": []
+        }
+      ]
+    }
+  }'
+# Response: {"active": true, "state": {...}} (still active because orc is alive)
+
+# End combat (all enemies dead)
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "combat_state": {
+      "combat_id": "combat_001",
+      "started_at": "2026-01-12T10:00:00Z",
+      "turn": 5,
+      "enemies": [
+        {
+          "enemy_id": "orc_001",
+          "name": "Orc Chieftain",
+          "status": "Dead",
+          "weapon": "Great Axe",
+          "traits": []
+        },
+        {
+          "enemy_id": "goblin_001",
+          "name": "Goblin Scout",
+          "status": "Dead",
+          "weapon": "Short Bow",
+          "traits": []
+        }
+      ]
+    }
+  }'
+# Response: {"active": false, "state": {...}} (inactive because all enemies dead)
+
+# Get current combat state
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "X-User-Id: user123"
+# Response: {"active": false, "state": null} or {"active": true, "state": {...}}
+
+# Clear combat completely
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{"combat_state": null}'
+# Response: {"active": false, "state": null}
 ```
 
 ### Health Point (HP) Removal

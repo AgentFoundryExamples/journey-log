@@ -2312,6 +2312,320 @@ curl -X PUT http://localhost:8080/characters/<ID>/quest -H "X-User-Id: user123" 
 
 ---
 
+### Combat Management Endpoints
+
+Combat management endpoints allow Directors to manage combat encounters for characters. The system enforces a maximum of 5 enemies per combat and automatically computes combat active/inactive status based on enemy health.
+
+#### Update Combat State
+
+**Endpoint:** `PUT /characters/{character_id}/combat`
+
+**Description:** Set or clear the combat state for a character with full state replacement. The server automatically computes whether combat is active based on enemy statuses.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Required Headers:**
+- `X-User-Id` (string): User identifier (must match character owner for access control)
+
+**Request Body:**
+```json
+{
+  "combat_state": {
+    "combat_id": "combat_123",
+    "started_at": "2026-01-11T14:30:00Z",
+    "turn": 1,
+    "enemies": [
+      {
+        "enemy_id": "orc_001",
+        "name": "Orc Warrior",
+        "status": "Wounded",
+        "weapon": "Rusty Axe",
+        "traits": ["aggressive", "armored"]
+      },
+      {
+        "enemy_id": "goblin_002",
+        "name": "Goblin Archer",
+        "status": "Healthy",
+        "weapon": "Short Bow",
+        "traits": ["ranged", "cowardly"]
+      }
+    ],
+    "player_conditions": {
+      "status_effects": [],
+      "temporary_buffs": ["shield_of_valor"]
+    }
+  }
+}
+```
+
+**Request Fields:**
+- `combat_state` (object or null, required): CombatState object to set, or null to clear combat
+  - `combat_id` (string, required): Unique combat identifier
+  - `started_at` (string, required): ISO 8601 timestamp when combat started
+  - `turn` (integer, optional): Current combat turn (≥1, default: 1)
+  - `enemies` (array, required): List of EnemyState objects (max 5)
+    - `enemy_id` (string, required): Unique enemy identifier
+    - `name` (string, required): Enemy display name
+    - `status` (string, required): Enemy health status - "Healthy", "Wounded", or "Dead"
+    - `weapon` (string, optional): Weapon wielded by the enemy
+    - `traits` (array of strings, optional): List of enemy traits or characteristics (default: [])
+    - `metadata` (object, optional): Additional enemy metadata
+  - `player_conditions` (object, optional): Player status effects and conditions
+
+**Response Format:**
+```json
+{
+  "active": true,
+  "state": {
+    "combat_id": "combat_123",
+    "started_at": "2026-01-11T14:30:00Z",
+    "turn": 1,
+    "enemies": [
+      {
+        "enemy_id": "orc_001",
+        "name": "Orc Warrior",
+        "status": "Wounded",
+        "weapon": "Rusty Axe",
+        "traits": ["aggressive", "armored"]
+      },
+      {
+        "enemy_id": "goblin_002",
+        "name": "Goblin Archer",
+        "status": "Healthy",
+        "weapon": "Short Bow",
+        "traits": ["ranged", "cowardly"]
+      }
+    ],
+    "player_conditions": {
+      "status_effects": [],
+      "temporary_buffs": ["shield_of_valor"]
+    }
+  }
+}
+```
+
+**Response Fields:**
+- `active` (boolean): Whether combat is currently active
+  - `true` when at least one enemy has status != "Dead"
+  - `false` when all enemies are "Dead" or enemies list is empty or combat_state is null
+- `state` (object or null): Current combat state
+  - Same structure as request CombatState
+  - `null` when combat is cleared (combat_state: null in request)
+
+**Server-Side Active Status Computation:**
+The server automatically computes `active` based on enemy statuses:
+- `active=true`: At least one enemy has status != "Dead"
+- `active=false`: All enemies are "Dead" OR enemies list is empty OR combat_state is null
+
+**Validation Rules:**
+- Maximum 5 enemies per combat (enforced at model validation layer)
+- All enemy statuses must be valid enum values: "Healthy", "Wounded", or "Dead"
+- Payloads with >5 enemies are rejected with 422 error before Firestore writes
+- Empty enemies array is valid and sets active=false
+- Unknown enemy statuses cause deterministic validation errors
+
+**Atomicity:**
+Uses Firestore transaction to atomically:
+1. Verify character exists and user owns it
+2. Update combat_state field (or clear to null)
+3. Update character.updated_at timestamp
+4. Log when combat transitions from active to inactive
+
+**Storage Isolation:**
+Firestore writes to combat_state use transactions to avoid clobbering unrelated character fields. Combat state updates do not overwrite narrative, quest, or other character data.
+
+**Error Responses:**
+- `400 Bad Request`: Missing or invalid X-User-Id header
+- `403 Forbidden`: X-User-Id does not match character owner
+- `404 Not Found`: Character not found
+- `422 Unprocessable Entity`: Validation error (>5 enemies, invalid status, missing required fields, invalid UUID)
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Set combat with 2 enemies
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "combat_state": {
+      "combat_id": "combat_001",
+      "started_at": "2026-01-11T14:30:00Z",
+      "turn": 1,
+      "enemies": [
+        {
+          "enemy_id": "orc_001",
+          "name": "Orc Warrior",
+          "status": "Healthy",
+          "weapon": "Battle Axe",
+          "traits": ["aggressive"]
+        },
+        {
+          "enemy_id": "goblin_001",
+          "name": "Goblin Scout",
+          "status": "Wounded",
+          "weapon": "Dagger",
+          "traits": ["cowardly", "quick"]
+        }
+      ]
+    }
+  }'
+
+# Clear combat state
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{"combat_state": null}'
+
+# Update combat with all enemies dead (returns active=false)
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "combat_state": {
+      "combat_id": "combat_001",
+      "started_at": "2026-01-11T14:30:00Z",
+      "turn": 5,
+      "enemies": [
+        {
+          "enemy_id": "orc_001",
+          "name": "Orc Warrior",
+          "status": "Dead",
+          "weapon": "Battle Axe",
+          "traits": []
+        },
+        {
+          "enemy_id": "goblin_001",
+          "name": "Goblin Scout",
+          "status": "Dead",
+          "weapon": "Dagger",
+          "traits": []
+        }
+      ]
+    }
+  }'
+```
+
+**Edge Cases:**
+- Submitting >5 enemies returns 422 with detailed error message
+- Submitting null clears combat and returns `{"active": false, "state": null}`
+- All enemies Dead returns `{"active": false, "state": <combat_state>}` per acceptance criteria
+- Empty enemies array sets active=false: `{"active": false, "state": <combat_state with empty enemies>}`
+- Race conditions: Last writer wins without corrupting other fields (transactional writes)
+- Unknown status strings cause explicit validation errors at request boundary
+- Directors can jump directly to "Dead" status without intermediate states
+
+---
+
+#### Get Combat State
+
+**Endpoint:** `GET /characters/{character_id}/combat`
+
+**Description:** Retrieve the current combat state for a character with a predictable JSON envelope. This endpoint always returns an `active` flag and `state` field, providing a stable response format for Directors.
+
+**Path Parameters:**
+- `character_id` (string, required): UUID-formatted character identifier
+
+**Optional Headers:**
+- `X-User-Id` (string): User identifier for access control
+  - If provided but empty/whitespace-only, returns 400 error
+  - If omitted entirely, allows anonymous access without verification
+  - If provided, must match the character's owner_user_id
+
+**Response Format (active combat):**
+```json
+{
+  "active": true,
+  "state": {
+    "combat_id": "combat_123",
+    "started_at": "2026-01-11T14:30:00Z",
+    "turn": 3,
+    "enemies": [
+      {
+        "enemy_id": "orc_001",
+        "name": "Orc Warrior",
+        "status": "Wounded",
+        "weapon": "Battle Axe",
+        "traits": ["aggressive"]
+      }
+    ],
+    "player_conditions": {
+      "status_effects": ["blessed"],
+      "temporary_buffs": []
+    }
+  }
+}
+```
+
+**Response Format (inactive combat):**
+```json
+{
+  "active": false,
+  "state": null
+}
+```
+
+**Response Fields:**
+- `active` (boolean): Whether combat is currently active
+  - `true` when any enemy has status != "Dead"
+  - `false` when combat_state is null/missing, enemies list is empty, or all enemies are "Dead"
+- `state` (object or null): Current combat state
+  - Full CombatState object when combat exists and is active
+  - `null` when combat is inactive (per acceptance criteria for stable inactive response)
+
+**Inactive Response Behavior:**
+The endpoint returns `{"active": false, "state": null}` when:
+- `combat_state` field is None/missing in the character document
+- `enemies` list is empty
+- All enemies have status == "Dead"
+
+This stable inactive response format ensures Directors can reliably detect combat end conditions.
+
+**Response Consistency:**
+- Uses the same CombatState serialization as PUT responses
+- Respects the ≤5 enemies constraint (defensive filtering on read for legacy data)
+- All fields (active status, traits, weapons) stay consistent with PUT responses
+- Always returns HTTP 200 with JSON object (never 204 No Content)
+
+**Error Responses:**
+- `400 Bad Request`: X-User-Id header provided but empty/whitespace-only
+- `403 Forbidden`: X-User-Id provided but does not match character owner
+- `404 Not Found`: Character not found (NOT returned for 'no combat active' case)
+- `422 Unprocessable Entity`: Invalid UUID format for character_id
+- `500 Internal Server Error`: Firestore transient errors
+
+**Example Requests:**
+```bash
+# Get combat state (anonymous access)
+curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat
+
+# Get combat state with access control
+curl -H "X-User-Id: user123" \
+  http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat
+
+# HTTPie example
+http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/combat \
+  X-User-Id:user123
+```
+
+**Edge Cases:**
+- Character with no combat history returns `{"active": false, "state": null}` (not an error, 200 status)
+- Stored documents with >5 enemies (legacy data) trigger defensive filtering and return inactive
+- Race conditions where combat cleared between read start/finish return inactive safely
+- Malformed stored data is handled gracefully with fallback to inactive response
+- Missing `X-User-Id` allows anonymous access (useful for public character viewing)
+- Empty/whitespace-only `X-User-Id` returns 400 error (client error)
+
+**Operational Notes:**
+- Directors control combat lifecycle - server stores what it receives
+- Status transitions are unrestricted (Directors can jump directly to "Dead")
+- Payloads with zero enemies are valid and will clear combat
+- Inactive responses stay stable even if HTTP status is 200 rather than 204
+- Logging/metrics track combat transitions for operational monitoring
+
+---
+
 ## References
 
 - [Firestore Data Model](https://cloud.google.com/firestore/docs/data-model)
