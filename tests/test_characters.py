@@ -850,8 +850,9 @@ class TestGetCharacter:
                     {
                         "enemy_id": "enemy_001",
                         "name": "Goblin",
-                        "health": {"current": 20, "max": 20},
-                        "status_effects": [],
+                        "status": "Healthy",
+                        "weapon": "Dagger",
+                        "traits": ["sneaky", "cowardly"],
                     }
                 ],
             },

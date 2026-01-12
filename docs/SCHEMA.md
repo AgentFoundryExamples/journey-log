@@ -433,7 +433,8 @@ All identity fields (name, race, class) are validated to:
 #### `combat_state`
 - **Type:** Map or null
 - **Required:** Yes (can be null)
-- **Description:** Current combat state, or null if not in combat
+- **Description:** Current combat state, or null if not in combat. Maximum 5 enemies per combat.
+- **Combat Active Logic:** Combat is considered inactive when all enemies have status "Dead" or the enemies list is empty.
 - **Example Structure:**
   ```json
   {
@@ -444,8 +445,21 @@ All identity fields (name, race, class) are validated to:
       {
         "enemy_id": "orc_001",
         "name": "Orc Warrior",
-        "health": {"current": 25, "max": 50},
-        "status_effects": ["poisoned"]
+        "status": "Wounded",
+        "weapon": "Rusty Axe",
+        "traits": ["aggressive", "armored"],
+        "metadata": {
+          "difficulty": "medium",
+          "loot_table": "orc_warrior"
+        }
+      },
+      {
+        "enemy_id": "goblin_002",
+        "name": "Goblin Archer",
+        "status": "Healthy",
+        "weapon": "Short Bow",
+        "traits": ["ranged", "cowardly"],
+        "metadata": null
       }
     ],
     "player_conditions": {
@@ -454,6 +468,37 @@ All identity fields (name, race, class) are validated to:
     }
   }
   ```
+
+**EnemyState Fields:**
+- `enemy_id` (string, required): Unique identifier for the enemy
+- `name` (string, required): Enemy display name
+- `status` (string, required): Enemy health status - one of "Healthy", "Wounded", or "Dead"
+- `weapon` (string, optional): Weapon wielded by the enemy
+- `traits` (array of strings, optional): List of enemy traits or characteristics
+- `metadata` (object, optional): Additional enemy metadata
+
+**CombatState Fields:**
+- `combat_id` (string, required): Unique combat identifier
+- `started_at` (string, required): ISO 8601 timestamp when combat started
+- `turn` (integer, required): Current combat turn (≥1)
+- `enemies` (array, required): List of EnemyState objects (max 5)
+- `player_conditions` (object, optional): Player status effects and conditions
+- **Computed Property:** `is_active` (boolean): Server-computed property (NOT persisted to Firestore)
+  - Computed at runtime based on enemy statuses
+  - Returns `false` if all enemies are Dead or enemies list is empty
+  - Returns `true` if at least one enemy is not Dead
+  - This field is derived from the `enemies` array and should not be sent by clients or stored in Firestore
+
+**Validation Rules:**
+- Maximum 5 enemies per combat (enforced at model validation layer)
+- Payloads with more than 5 enemies are rejected before Firestore writes
+- Empty enemies array implies inactive combat (is_active = false)
+- All enemies Dead implies inactive combat (is_active = false)
+- Unknown enemy statuses cause deterministic validation errors
+
+**Storage Isolation:**
+- Firestore writes to combat_state use field masks or transactions to avoid clobbering unrelated character fields
+- Combat state updates do not overwrite narrative, quest, or other character data
 
 #### `additional_metadata`
 - **Type:** Map

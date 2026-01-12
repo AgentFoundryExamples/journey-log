@@ -420,9 +420,12 @@ class QuestArchiveEntry(BaseModel):
     cleared_at: datetime = Field(description="When the quest was completed/cleared")
 
 
-class Enemy(BaseModel):
+class EnemyState(BaseModel):
     """
-    An enemy in combat.
+    An enemy in combat with status, weapon, and traits.
+    
+    Represents an enemy's state during combat without numeric health tracking.
+    Status enum (Healthy/Wounded/Dead) replaces granular health points.
     
     Referenced in: docs/SCHEMA.md - Combat State
     """
@@ -430,21 +433,34 @@ class Enemy(BaseModel):
     
     enemy_id: str = Field(description="Unique enemy identifier")
     name: str = Field(description="Enemy name")
-    health: Health = Field(
-        description="Enemy health (current and max)"
+    status: Status = Field(description="Enemy status (Healthy, Wounded, Dead)")
+    weapon: Optional[str] = Field(
+        default=None,
+        description="Weapon wielded by the enemy"
     )
-    status_effects: list[str] = Field(
+    traits: list[str] = Field(
         default_factory=list,
-        description="Active status effects on the enemy"
+        description="Enemy traits or characteristics"
     )
+    metadata: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Additional enemy metadata"
+    )
+
+
+# Backward compatibility alias
+Enemy = EnemyState
 
 
 class CombatState(BaseModel):
     """
-    Current combat state.
+    Current combat state with up to 5 enemies.
     
     Represents an active combat encounter, including enemies and combat status.
     When not in combat, the combat_state field in CharacterDocument should be None.
+    
+    Combat is considered inactive when all enemies are Dead or the enemy list is empty.
+    Maximum 5 enemies per combat to prevent document bloat.
     
     Referenced in: docs/SCHEMA.md - Character Document Fields (combat_state)
     """
@@ -455,25 +471,36 @@ class CombatState(BaseModel):
         description="When combat started"
     )
     turn: int = Field(default=1, ge=1, description="Current combat turn")
-    enemies: list[Enemy] = Field(
-        description="List of enemies in combat"
+    enemies: list[EnemyState] = Field(
+        description="List of enemies in combat (max 5)"
     )
     player_conditions: Optional[dict[str, Any]] = Field(
         default=None,
         description="Player status effects and conditions during combat"
     )
     
+    @model_validator(mode='after')
+    def validate_enemy_limit(self) -> 'CombatState':
+        """Enforce maximum of 5 enemies per combat."""
+        if len(self.enemies) > 5:
+            raise ValueError(
+                f"Combat cannot have more than 5 enemies (got {len(self.enemies)}). "
+                "This limit prevents document size bloat."
+            )
+        return self
+    
     @property
     def is_active(self) -> bool:
         """
-        Helper property to determine if combat is active.
+        Determine if combat is active based on enemy statuses.
         
-        Combat is considered active if there are any enemies with current health > 0.
+        Combat is considered active if:
+        - The enemy list is not empty, AND
+        - At least one enemy has status != Dead
+        
+        Returns False if all enemies are Dead or if no enemies exist.
         """
-        return any(
-            enemy.health.current > 0
-            for enemy in self.enemies
-        )
+        return any(enemy.status != Status.DEAD for enemy in self.enemies)
 
 
 class CharacterDocument(BaseModel):
