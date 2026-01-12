@@ -2952,3 +2952,226 @@ async def update_combat(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update combat state: {str(e)}",
         )
+
+
+class GetCombatResponse(BaseModel):
+    """
+    Response model for combat state retrieval.
+    
+    Returns the active/inactive status and the current combat state.
+    This is the standard envelope for LLM-driven Directors to poll combat state.
+    """
+    model_config = {"extra": "forbid"}
+    
+    active: bool = Field(
+        description="Whether combat is currently active (any enemy not Dead)"
+    )
+    state: Optional[CombatState] = Field(
+        description="Current combat state, or null if no combat is active"
+    )
+
+
+@router.get(
+    "/{character_id}/combat",
+    response_model=GetCombatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get combat state for a character",
+    description=(
+        "Retrieve the current combat state for a character with a predictable JSON envelope.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
+        "**Response:**\n"
+        "- Always returns HTTP 200 with JSON object: {\"active\": bool, \"state\": CombatState | null}\n"
+        "- `active=true, state=<CombatState>` when any enemy has status != Dead\n"
+        "- `active=false, state=null` when combat_state is absent, empty, or all enemies are Dead\n"
+        "- Never returns 204 No Content - always provides the active/state envelope\n\n"
+        "**Combat Inactivity Detection:**\n"
+        "Combat is considered inactive when:\n"
+        "- combat_state field is None/missing in the character document\n"
+        "- enemies list is empty\n"
+        "- all enemies have status == Dead\n\n"
+        "**Response Consistency:**\n"
+        "- Uses the same CombatState serialization as PUT responses\n"
+        "- Respects the ≤5 enemies constraint (defensive filtering on read)\n"
+        "- All fields (is_active, traits, weapons) stay consistent with PUT responses\n\n"
+        "**Error Responses:**\n"
+        "- `400`: X-User-Id header provided but empty/whitespace-only\n"
+        "- `403`: X-User-Id provided but does not match character owner\n"
+        "- `404`: Character not found (NOT returned for 'no combat active' case)\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)\n\n"
+        "**Edge Cases:**\n"
+        "- Stored documents with >5 enemies (legacy data) trigger defensive filtering\n"
+        "- Race conditions where combat cleared between read start/finish return inactive\n"
+        "- Malformed stored data is handled gracefully with fallback to inactive\n"
+        "- Characters with no combat history return {\"active\": false, \"state\": null}"
+    ),
+)
+async def get_combat(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(None, description="User identifier for access control"),
+) -> GetCombatResponse:
+    """
+    Retrieve the current combat state for a character.
+    
+    This endpoint provides an idempotent read operation that always returns a
+    predictable JSON envelope describing combat status. LLM-driven Directors can
+    use this to poll combat state without special handling for 204 responses.
+    
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Fetches the character document from Firestore
+    3. Optionally verifies X-User-Id matches owner_user_id
+    4. Detects combat inactivity based on combat_state field
+    5. Returns {\"active\": bool, \"state\": CombatState | null} envelope
+    
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        
+    Returns:
+        GetCombatResponse with active flag and combat state
+        
+    Raises:
+        HTTPException:
+            - 400: Empty X-User-Id header
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_combat_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+    
+    # Log retrieval attempt
+    logger.info(
+        "get_combat_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+    )
+    
+    try:
+        # Fetch character document from Firestore
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+        
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_combat_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        
+        # Verify ownership if X-User-Id is provided
+        char_data = char_snapshot.to_dict()
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_combat_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+            
+            owner_user_id = char_data.get("owner_user_id")
+            
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_combat_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+        
+        # Get combat_state from character document
+        combat_state_data = char_data.get("combat_state")
+        
+        # Detect inactivity - combat_state is None or missing
+        if combat_state_data is None:
+            logger.info(
+                "get_combat_no_combat_state",
+                character_id=character_id,
+            )
+            return GetCombatResponse(active=False, state=None)
+        
+        # Parse combat state and determine if active
+        try:
+            # Directly parse the combat_state data into the Pydantic model
+            # This is more efficient than deserializing the entire character document
+            combat_state = CombatState(**combat_state_data)
+            
+            # Use the is_active property from the CombatState model
+            # Combat is active when any enemy has status != Dead
+            is_active = combat_state.is_active
+            
+            logger.info(
+                "get_combat_success",
+                character_id=character_id,
+                active=is_active,
+                num_enemies=len(combat_state.enemies),
+            )
+            
+            # When inactive (all enemies dead), return null state per acceptance criteria
+            # When active, return the full combat state
+            return GetCombatResponse(
+                active=is_active,
+                state=combat_state if is_active else None
+            )
+            
+        except (ValueError, TypeError, KeyError) as e:
+            # Defensive: if combat_state is malformed or has invalid data, treat as inactive
+            # This handles cases where stored data doesn't match the expected schema
+            # Note: ValidationError from Pydantic (>5 enemies) will be caught here as ValueError
+            logger.warning(
+                "get_combat_malformed_state",
+                character_id=character_id,
+                error_type=type(e).__name__,
+                error_message=str(e),
+                exc_info=True,
+            )
+            return GetCombatResponse(active=False, state=None)
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_combat_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve combat state due to an internal error",
+        )
