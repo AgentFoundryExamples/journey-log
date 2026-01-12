@@ -27,6 +27,7 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     Enemy,
+    EnemyState,
     Health,
     NarrativeTurn,
     PlayerState,
@@ -215,11 +216,12 @@ class TestCharacterDocumentSerialization:
     def test_character_to_firestore_with_combat_state(self):
         """Test serialization with combat state."""
         char = self.create_minimal_character()
-        enemy = Enemy(
+        enemy = EnemyState(
             enemy_id="enemy_001",
             name="Test Enemy",
-            health=Health(current=50, max=50),
-            status_effects=[]
+            status=Status.WOUNDED,
+            weapon="Short Sword",
+            traits=["aggressive"]
         )
         char.combat_state = CombatState(
             combat_id="combat_001",
@@ -232,6 +234,7 @@ class TestCharacterDocumentSerialization:
         assert 'combat_state' in data
         assert data['combat_state']['combat_id'] == 'combat_001'
         assert len(data['combat_state']['enemies']) == 1
+        assert data['combat_state']['enemies'][0]['status'] == 'Wounded'
     
     def test_character_from_firestore_basic(self):
         """Test basic character deserialization."""

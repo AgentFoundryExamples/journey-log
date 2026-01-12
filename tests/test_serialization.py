@@ -44,6 +44,7 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     Enemy,
+    EnemyState,
     Health,
     InventoryItem,
     NarrativeTurn,
@@ -177,25 +178,28 @@ def character_wounded_with_quest(base_player_state):
 @pytest.fixture
 def character_in_combat_multiple_enemies(base_player_state):
     """Fixture: Character in combat with multiple enemies."""
-    enemy1 = Enemy(
+    enemy1 = EnemyState(
         enemy_id="orc_001",
         name="Orc Warrior",
-        health=Health(current=25, max=50),
-        status_effects=["poisoned", "weakened"]
+        status=Status.WOUNDED,
+        weapon="Rusty Axe",
+        traits=["poisoned", "weakened"]
     )
     
-    enemy2 = Enemy(
+    enemy2 = EnemyState(
         enemy_id="orc_002",
         name="Orc Archer",
-        health=Health(current=40, max=40),
-        status_effects=[]
+        status=Status.HEALTHY,
+        weapon="Short Bow",
+        traits=["ranged"]
     )
     
-    enemy3 = Enemy(
+    enemy3 = EnemyState(
         enemy_id="orc_boss",
         name="Orc Chieftain",
-        health=Health(current=100, max=150),
-        status_effects=["enraged"]
+        status=Status.WOUNDED,
+        weapon="Great Sword",
+        traits=["enraged", "leader"]
     )
     
     combat = CombatState(

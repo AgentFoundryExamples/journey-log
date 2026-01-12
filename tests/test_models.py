@@ -27,6 +27,7 @@ from app.models import (
     CombatState,
     CombatStatus,
     Enemy,
+    EnemyState,
     Health,
     InventoryItem,
     Location,
@@ -451,12 +452,13 @@ class TestCombatState:
     """Test CombatState model."""
     
     def test_create_combat_state(self):
-        """Test creating a CombatState."""
-        enemy = Enemy(
+        """Test creating a CombatState with new EnemyState schema."""
+        enemy = EnemyState(
             enemy_id="orc_001",
             name="Orc Warrior",
-            health=Health(current=25, max=50),
-            status_effects=["poisoned"]
+            status=Status.WOUNDED,
+            weapon="Rusty Axe",
+            traits=["aggressive", "armored"]
         )
         combat = CombatState(
             combat_id="combat_123",
@@ -467,14 +469,14 @@ class TestCombatState:
         assert combat.combat_id == "combat_123"
         assert len(combat.enemies) == 1
         assert combat.turn == 3
+        assert combat.enemies[0].status == Status.WOUNDED
     
     def test_combat_is_active_property(self):
         """Test is_active property for active combat."""
-        enemy = Enemy(
+        enemy = EnemyState(
             enemy_id="orc_001",
             name="Orc Warrior",
-            health=Health(current=25, max=50),
-            status_effects=[]
+            status=Status.HEALTHY
         )
         combat = CombatState(
             combat_id="combat_123",
@@ -485,11 +487,10 @@ class TestCombatState:
     
     def test_combat_is_not_active_with_dead_enemies(self):
         """Test is_active property when all enemies are dead."""
-        enemy = Enemy(
+        enemy = EnemyState(
             enemy_id="orc_001",
             name="Orc Warrior",
-            health=Health(current=0, max=50),
-            status_effects=[]
+            status=Status.DEAD
         )
         combat = CombatState(
             combat_id="combat_123",
@@ -497,6 +498,101 @@ class TestCombatState:
             enemies=[enemy]
         )
         assert combat.is_active is False
+    
+    def test_combat_is_not_active_with_empty_enemies(self):
+        """Test is_active property when enemies list is empty."""
+        combat = CombatState(
+            combat_id="combat_123",
+            started_at="2026-01-11T14:30:00Z",
+            enemies=[]
+        )
+        assert combat.is_active is False
+    
+    def test_combat_max_5_enemies_validation(self):
+        """Test that combat validates maximum 5 enemies."""
+        enemies = [
+            EnemyState(enemy_id=f"enemy_{i}", name=f"Enemy {i}", status=Status.HEALTHY)
+            for i in range(6)
+        ]
+        with pytest.raises(ValidationError) as exc_info:
+            CombatState(
+                combat_id="combat_123",
+                started_at="2026-01-11T14:30:00Z",
+                enemies=enemies
+            )
+        assert "more than 5 enemies" in str(exc_info.value).lower()
+    
+    def test_combat_exactly_5_enemies_allowed(self):
+        """Test that exactly 5 enemies is allowed."""
+        enemies = [
+            EnemyState(enemy_id=f"enemy_{i}", name=f"Enemy {i}", status=Status.HEALTHY)
+            for i in range(5)
+        ]
+        combat = CombatState(
+            combat_id="combat_123",
+            started_at="2026-01-11T14:30:00Z",
+            enemies=enemies
+        )
+        assert len(combat.enemies) == 5
+        assert combat.is_active is True
+    
+    def test_combat_is_active_with_mixed_statuses(self):
+        """Test is_active with mixed enemy statuses."""
+        enemies = [
+            EnemyState(enemy_id="enemy_1", name="Dead Enemy", status=Status.DEAD),
+            EnemyState(enemy_id="enemy_2", name="Alive Enemy", status=Status.WOUNDED),
+        ]
+        combat = CombatState(
+            combat_id="combat_123",
+            started_at="2026-01-11T14:30:00Z",
+            enemies=enemies
+        )
+        # Should be active because at least one enemy is not dead
+        assert combat.is_active is True
+
+
+class TestEnemyState:
+    """Test EnemyState model."""
+    
+    def test_create_enemy_state_minimal(self):
+        """Test creating an EnemyState with minimal required fields."""
+        enemy = EnemyState(
+            enemy_id="goblin_001",
+            name="Goblin Scout",
+            status=Status.HEALTHY
+        )
+        assert enemy.enemy_id == "goblin_001"
+        assert enemy.name == "Goblin Scout"
+        assert enemy.status == Status.HEALTHY
+        assert enemy.weapon is None
+        assert enemy.traits == []
+        assert enemy.metadata is None
+    
+    def test_create_enemy_state_with_all_fields(self):
+        """Test creating an EnemyState with all optional fields."""
+        enemy = EnemyState(
+            enemy_id="dragon_001",
+            name="Ancient Red Dragon",
+            status=Status.WOUNDED,
+            weapon="Flame Breath",
+            traits=["flying", "fire_resist", "legendary"],
+            metadata={"difficulty": "very_hard", "loot_tier": 5}
+        )
+        assert enemy.enemy_id == "dragon_001"
+        assert enemy.name == "Ancient Red Dragon"
+        assert enemy.status == Status.WOUNDED
+        assert enemy.weapon == "Flame Breath"
+        assert len(enemy.traits) == 3
+        assert enemy.metadata["difficulty"] == "very_hard"
+    
+    def test_enemy_state_status_enum_validation(self):
+        """Test that invalid status values are rejected."""
+        with pytest.raises(ValidationError):
+            EnemyState(
+                enemy_id="test_001",
+                name="Test Enemy",
+                status="Invalid"
+            )
 
 
 class TestCharacterDocument:
@@ -605,11 +701,10 @@ class TestCharacterDocument:
             location="test"
         )
         
-        enemy = Enemy(
+        enemy = EnemyState(
             enemy_id="enemy_001",
             name="Test Enemy",
-            health=Health(current=50, max=50),
-            status_effects=[]
+            status=Status.HEALTHY
         )
         
         combat = CombatState(
