@@ -19,7 +19,7 @@ Loads environment variables and provides validated settings.
 
 from functools import lru_cache
 from typing import Literal
-from pydantic import Field, field_validator, ValidationInfo
+from pydantic import Field, field_validator, model_validator, ValidationInfo
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -142,6 +142,16 @@ class Settings(BaseSettings):
         le=20,
         description="Default number of POIs to sample for context aggregation (1-20)",
     )
+
+    @model_validator(mode="after")
+    def validate_context_defaults(self) -> "Settings":
+        """Validate that context_default_recent_n does not exceed context_max_recent_n."""
+        if self.context_default_recent_n > self.context_max_recent_n:
+            raise ValueError(
+                f"context_default_recent_n ({self.context_default_recent_n}) "
+                f"cannot exceed context_max_recent_n ({self.context_max_recent_n})"
+            )
+        return self
 
     @field_validator("gcp_project_id")
     @classmethod

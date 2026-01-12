@@ -3267,6 +3267,7 @@ async def get_character_context(
     recent_n: int = Query(
         default=settings.context_default_recent_n,
         ge=1,
+        le=settings.context_max_recent_n,
         description=f"Number of recent narrative turns to include (default: {settings.context_default_recent_n}, max: {settings.context_max_recent_n})",
     ),
     include_pois: bool = Query(
@@ -3317,19 +3318,6 @@ async def get_character_context(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
-        )
-
-    # Validate recent_n parameter
-    if recent_n < 1 or recent_n > settings.context_max_recent_n:
-        logger.warning(
-            "get_context_invalid_recent_n",
-            character_id=character_id,
-            recent_n=recent_n,
-            max_allowed=settings.context_max_recent_n,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Parameter 'recent_n' must be between 1 and {settings.context_max_recent_n} (got {recent_n})",
         )
 
     # Log retrieval attempt
@@ -3440,18 +3428,29 @@ async def get_character_context(
             if sample_size > 0:
                 sampled_data = random.sample(world_pois_data, sample_size)
                 for poi_data in sampled_data:
-                    created_at = poi_data.get("created_at")
-                    if created_at is not None:
-                        created_at = datetime_from_firestore(created_at)
+                    try:
+                        created_at = poi_data.get("created_at")
+                        if created_at is not None:
+                            created_at = datetime_from_firestore(created_at)
 
-                    poi = PointOfInterest(
-                        id=poi_data["id"],
-                        name=poi_data["name"],
-                        description=poi_data["description"],
-                        created_at=created_at,
-                        tags=poi_data.get("tags"),
-                    )
-                    pois_sample_list.append(poi)
+                        poi = PointOfInterest(
+                            id=poi_data["id"],
+                            name=poi_data["name"],
+                            description=poi_data["description"],
+                            created_at=created_at,
+                            tags=poi_data.get("tags"),
+                        )
+                        pois_sample_list.append(poi)
+                    except (KeyError, ValueError, TypeError) as e:
+                        # Skip malformed POI data and log warning
+                        logger.warning(
+                            "get_context_malformed_poi",
+                            character_id=character_id,
+                            poi_id=poi_data.get("id", "unknown"),
+                            error_type=type(e).__name__,
+                            error_message=str(e),
+                        )
+                        continue
 
         world_context = WorldContextState(
             pois_sample=pois_sample_list,
