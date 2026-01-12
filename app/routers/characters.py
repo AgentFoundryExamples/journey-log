@@ -1512,6 +1512,9 @@ async def create_poi(
     )
     
     try:
+        # Generate POI ID outside transaction to avoid race condition on retry
+        poi_id = str(uuid.uuid4()).lower()
+        
         # Create transaction
         transaction = db.transaction()
         characters_ref = db.collection(settings.firestore_characters_collection)
@@ -1519,52 +1522,24 @@ async def create_poi(
         @firestore.transactional
         def create_poi_in_transaction(transaction):
             """Atomically append POI and update character."""
-            # Generate POI ID inside transaction to avoid race condition on retry
-            poi_id = str(uuid.uuid4()).lower()
-            
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
             
             if not char_snapshot.exists:
-                logger.warning(
-                    "create_poi_character_not_found",
-                    character_id=character_id,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Character with ID '{character_id}' not found",
-                )
+                return None, "not_found"
             
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
             
             if owner_user_id != user_id:
-                logger.warning(
-                    "create_poi_access_denied",
-                    character_id=character_id,
-                    requested_user_id=user_id,
-                    owner_user_id=owner_user_id,
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied: user ID does not match character owner",
-                )
+                return None, "access_denied"
             
             # 3. Check world_pois capacity (max 200 per schema)
             existing_pois = char_data.get("world_pois", [])
             if len(existing_pois) >= 200:
-                logger.warning(
-                    "create_poi_capacity_exceeded",
-                    character_id=character_id,
-                    current_count=len(existing_pois),
-                )
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"POI capacity exceeded: character already has {len(existing_pois)} POIs (max 200). "
-                    "Consider archiving or removing old POIs before adding new ones.",
-                )
+                return None, "capacity_exceeded"
             
             # 4. Create POI data
             # Use server timestamp if not provided by client
@@ -1578,19 +1553,50 @@ async def create_poi(
                 "tags": request.tags,
             }
             
-            # 5. Append POI to world_pois array
-            existing_pois.append(poi_data)
+            # 5. Append POI to world_pois array (create new list to avoid mutation)
+            updated_pois = existing_pois + [poi_data]
             
             # 6. Update character with new POI and updated_at timestamp
             transaction.update(char_ref, {
-                "world_pois": existing_pois,
+                "world_pois": updated_pois,
                 "updated_at": firestore.SERVER_TIMESTAMP
             })
             
-            return poi_data, poi_id
+            return poi_data, "success"
         
         # Execute transaction
-        poi_data, poi_id = create_poi_in_transaction(transaction)
+        poi_data, result = create_poi_in_transaction(transaction)
+        
+        # Handle transaction results
+        if result == "not_found":
+            logger.warning(
+                "create_poi_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "create_poi_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+        elif result == "capacity_exceeded":
+            logger.warning(
+                "create_poi_capacity_exceeded",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="POI capacity exceeded: character has 200 POIs (max 200). "
+                       "Consider archiving or removing old POIs before adding new ones.",
+            )
         
         # Convert to PointOfInterest model
         created_poi = PointOfInterest(
