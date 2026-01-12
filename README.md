@@ -447,9 +447,6 @@ curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/cont
 # Get smaller payload without POIs for performance
 curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=false" \
   -H "X-User-Id: user123"
-
-# Anonymous access (if allowed by your access control policy)
-curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context
 ```
 
 **Key Features for Directors:**
