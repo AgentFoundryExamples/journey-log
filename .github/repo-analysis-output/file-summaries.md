@@ -74,8 +74,8 @@ Total files: 18
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 39.13 KB  
-**LOC:** 856  
+**Size:** 40.24 KB  
+**LOC:** 876  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -128,8 +128,8 @@ Total files: 18
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 145.39 KB  
-**LOC:** 3097  
+**Size:** 145.43 KB  
+**LOC:** 3098  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py
@@ -137,8 +137,8 @@ Total files: 18
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 22.94 KB  
-**LOC:** 488  
+**Size:** 23.04 KB  
+**LOC:** 490  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_models.py
@@ -146,8 +146,8 @@ Total files: 18
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 48.87 KB  
-**LOC:** 1129  
+**Size:** 52.32 KB  
+**LOC:** 1213  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_narrative_turns.py
@@ -164,6 +164,6 @@ Total files: 18
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 41.47 KB  
-**LOC:** 750  
+**Size:** 41.56 KB  
+**LOC:** 753  
 **TODOs/FIXMEs:** 0  
