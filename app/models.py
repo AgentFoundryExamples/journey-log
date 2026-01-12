@@ -730,10 +730,11 @@ def serialize_model_to_dict(model: BaseModel) -> dict[str, Any]:
         Dictionary with datetime objects preserved
         
     Examples:
-        >>> from app.models import Health
-        >>> health = Health(current=100, max=100)
-        >>> serialize_model_to_dict(health)
-        {'current': 100, 'max': 100}
+        >>> from app.models import Status
+        >>> from app.models import CharacterIdentity
+        >>> identity = CharacterIdentity(name="Hero", race="Human", **{"class": "Warrior"})
+        >>> serialize_model_to_dict(identity)
+        {'name': 'Hero', 'race': 'Human', 'class': 'Warrior'}
     """
     # Use model_dump with mode='python' to preserve datetime objects
     return model.model_dump(mode='python', by_alias=True)
@@ -763,10 +764,10 @@ def to_firestore_dict(
         Dictionary suitable for Firestore storage
         
     Examples:
-        >>> from app.models import Health
-        >>> health = Health(current=50, max=100)
-        >>> to_firestore_dict(health)
-        {'current': 50, 'max': 100}
+        >>> from app.models import Location
+        >>> location = Location(id="town:rivendell", display_name="Rivendell")
+        >>> to_firestore_dict(location)
+        {'id': 'town:rivendell', 'display_name': 'Rivendell'}
     """
     # Get dict with aliases
     data = model.model_dump(
@@ -844,11 +845,10 @@ def character_to_firestore(
         Dictionary ready for Firestore storage
         
     Examples:
-        >>> from app.models import CharacterDocument, PlayerState, CharacterIdentity, Health, Status
+        >>> from app.models import CharacterDocument, PlayerState, CharacterIdentity, Status
         >>> player_state = PlayerState(
         ...     identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
         ...     status=Status.HEALTHY,
-        ...     health=Health(current=100, max=100),
         ...     stats={},
         ...     location="test"
         ... )
