@@ -43,7 +43,6 @@ from app.models import (
     CharacterDocument,
     CharacterIdentity,
     CombatState,
-    Enemy,
     EnemyState,
     Health,
     InventoryItem,

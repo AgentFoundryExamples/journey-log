@@ -26,7 +26,6 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     CombatStatus,
-    Enemy,
     EnemyState,
     Health,
     InventoryItem,
