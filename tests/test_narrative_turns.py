@@ -245,6 +245,24 @@ class TestNarrativeTurnFirestoreHelpers:
         assert "turn_id" in str(exc_info.value)
     
     @patch('app.firestore.get_narrative_turns_collection')
+    def test_write_narrative_turn_missing_timestamp_no_server_timestamp(self, mock_get_collection):
+        """Test that writing a turn without timestamp when use_server_timestamp=False raises ValueError."""
+        from app.firestore import write_narrative_turn
+        
+        character_id = str(uuid.uuid4())
+        turn_id = str(uuid.uuid4())
+        turn_data = {
+            "turn_id": turn_id,
+            "player_action": "I explore",
+            "gm_response": "You see a path"
+            # Missing timestamp
+        }
+        
+        with pytest.raises(ValueError) as exc_info:
+            write_narrative_turn(character_id, turn_data, use_server_timestamp=False)
+        assert "timestamp" in str(exc_info.value)
+    
+    @patch('app.firestore.get_narrative_turns_collection')
     @patch('app.firestore.get_settings')
     def test_query_narrative_turns_default_limit(self, mock_settings, mock_get_collection):
         """Test querying narrative turns with default limit."""
@@ -261,13 +279,15 @@ class TestNarrativeTurnFirestoreHelpers:
         mock_collection.order_by.return_value = mock_query
         mock_query.limit.return_value = mock_query
         
-        # Create mock documents
-        mock_docs = [
-            Mock(to_dict=lambda: {"turn_number": 3, "player_action": "Action 3"}),
-            Mock(to_dict=lambda: {"turn_number": 2, "player_action": "Action 2"}),
-            Mock(to_dict=lambda: {"turn_number": 1, "player_action": "Action 1"}),
-        ]
-        mock_query.stream.return_value = mock_docs
+        # Create mock documents with distinct dictionaries using side_effect
+        mock_doc1 = Mock()
+        mock_doc1.to_dict.return_value = {"turn_number": 3, "player_action": "Action 3"}
+        mock_doc2 = Mock()
+        mock_doc2.to_dict.return_value = {"turn_number": 2, "player_action": "Action 2"}
+        mock_doc3 = Mock()
+        mock_doc3.to_dict.return_value = {"turn_number": 1, "player_action": "Action 1"}
+        
+        mock_query.stream.return_value = [mock_doc1, mock_doc2, mock_doc3]
         
         mock_get_collection.return_value = mock_collection
         
@@ -391,13 +411,20 @@ class TestNarrativeTurnFirestoreHelpers:
     
     @patch('app.firestore.get_narrative_turns_collection')
     def test_count_narrative_turns(self, mock_get_collection):
-        """Test counting narrative turns."""
+        """Test counting narrative turns using Firestore aggregation."""
         from app.firestore import count_narrative_turns
         
         # Setup mocks
         mock_collection = Mock()
-        mock_docs = [Mock(), Mock(), Mock(), Mock(), Mock()]
-        mock_collection.stream.return_value = mock_docs
+        mock_count_query = Mock()
+        mock_collection.count.return_value = mock_count_query
+        
+        # Mock the aggregation result structure
+        # Firestore returns [[AggregationResult]] where AggregationResult has a value attribute
+        mock_agg_result = Mock()
+        mock_agg_result.value = 5
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        
         mock_get_collection.return_value = mock_collection
         
         # Test
@@ -406,7 +433,8 @@ class TestNarrativeTurnFirestoreHelpers:
         
         # Verify
         assert result == 5
-        mock_collection.stream.assert_called_once()
+        mock_collection.count.assert_called_once()
+        mock_count_query.get.assert_called_once()
     
     @patch('app.firestore.get_narrative_turns_collection')
     def test_count_narrative_turns_empty(self, mock_get_collection):
@@ -415,7 +443,14 @@ class TestNarrativeTurnFirestoreHelpers:
         
         # Setup mocks
         mock_collection = Mock()
-        mock_collection.stream.return_value = []
+        mock_count_query = Mock()
+        mock_collection.count.return_value = mock_count_query
+        
+        # Mock the aggregation result for empty collection
+        mock_agg_result = Mock()
+        mock_agg_result.value = 0
+        mock_count_query.get.return_value = [[mock_agg_result]]
+        
         mock_get_collection.return_value = mock_collection
         
         # Test

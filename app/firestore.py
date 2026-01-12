@@ -150,7 +150,7 @@ def write_narrative_turn(
         DocumentReference to the written turn document
         
     Raises:
-        ValueError: If turn_data is missing 'turn_id'
+        ValueError: If turn_data is missing 'turn_id' or 'timestamp' (when use_server_timestamp=False)
         
     Example:
         >>> from app.models import narrative_turn_to_firestore, NarrativeTurn
@@ -167,6 +167,10 @@ def write_narrative_turn(
     if use_server_timestamp:
         turn_data = dict(turn_data)  # Make a copy to avoid mutating input
         turn_data["timestamp"] = firestore.SERVER_TIMESTAMP
+    else:
+        # When not using server timestamp, validate that timestamp exists
+        if "timestamp" not in turn_data:
+            raise ValueError("turn_data must include 'timestamp' field when use_server_timestamp=False")
     
     collection = get_narrative_turns_collection(character_id)
     doc_ref = collection.document(turn_id)
@@ -185,14 +189,17 @@ def query_narrative_turns(
     """
     Query narrative turns for a character, ordered by timestamp.
     
-    Returns turns in oldest-to-newest order (despite querying newest-first for efficiency).
-    This matches the natural reading order for narrative history.
+    Always returns turns in oldest-to-newest order (chronological reading order),
+    regardless of the query direction. When direction="DESCENDING" (default), the
+    function queries newest-first for Firestore index efficiency and then reverses
+    the results. When direction="ASCENDING", results are already in chronological order.
     
     Args:
         character_id: The UUID of the character
         limit: Maximum number of turns to retrieve (defaults to config default)
         order_by: Field to order by (default: "timestamp")
         direction: Sort direction - "ASCENDING" or "DESCENDING" (default: "DESCENDING")
+            Note: Results are always returned oldest-to-newest regardless of this parameter
         
     Returns:
         List of turn dictionaries in oldest-to-newest order
@@ -225,8 +232,8 @@ def query_narrative_turns(
     # Execute query and convert to list
     turns = [doc.to_dict() for doc in query.stream()]
     
-    # Reverse to oldest-first for natural reading order
-    # (we query newest-first for efficiency with Firestore indexes)
+    # Always return in oldest-to-newest order (chronological reading order)
+    # If we queried DESCENDING (newest-first), reverse to get oldest-first
     if direction == "DESCENDING":
         turns.reverse()
     
@@ -264,19 +271,8 @@ def count_narrative_turns(character_id: str) -> int:
     """
     Count the total number of narrative turns for a character.
     
-    WARNING: This is an expensive operation for large collections as it requires
-    streaming all documents to count them. Firestore does not provide a native
-    count operation, so this function iterates through all turns.
-    
-    Performance considerations:
-    - For large collections (>1000 turns), this can be slow and costly
-    - Consider maintaining a counter field on the character document instead
-    - Future enhancement: Use Firestore's aggregation queries when available
-    
-    Recommended alternatives:
-    - Track turn count in character document's additional_metadata
-    - Increment counter on write, decrement on delete
-    - Use turn_number field if sequential numbering is maintained
+    This function uses Firestore's count() aggregation, which is efficient
+    and incurs the cost of a single document read.
     
     Args:
         character_id: The UUID of the character
@@ -289,7 +285,8 @@ def count_narrative_turns(character_id: str) -> int:
         >>> print(f"Character has {count} narrative turns")
     """
     collection = get_narrative_turns_collection(character_id)
-    # Firestore doesn't have a native count operation, so we must iterate
-    # This is expensive for large collections
-    count = sum(1 for _ in collection.stream())
-    return count
+    # Use the efficient count() aggregation query
+    count_query = collection.count()
+    result = count_query.get()
+    # The result is an AggregationResult with a value attribute
+    return result[0][0].value
