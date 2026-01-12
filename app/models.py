@@ -48,22 +48,7 @@ class Status(str, Enum):
 CombatStatus = Status
 
 
-class Health(BaseModel):
-    """
-    Represents current and maximum health points with validation.
-    
-    Ensures current health cannot exceed maximum health.
-    """
-    model_config = ConfigDict(extra="forbid")
-    
-    current: int = Field(ge=0, description="Current health points")
-    max: int = Field(ge=0, description="Maximum health points")
-    
-    @model_validator(mode='after')
-    def check_current_le_max(self) -> 'Health':
-        if self.current > self.max:
-            raise ValueError("current health cannot be greater than max health")
-        return self
+
 
 
 class Location(BaseModel):
@@ -184,9 +169,6 @@ class PlayerState(BaseModel):
     status: Status = Field(description="Character health status")
     level: int = Field(default=1, ge=1, description="Character level")
     experience: int = Field(default=0, ge=0, description="Experience points")
-    health: Health = Field(
-        description="Health points (current and max)"
-    )
     stats: dict[str, int] = Field(
         description="Character stats (strength, dexterity, etc.)",
         examples=[{

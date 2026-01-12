@@ -27,7 +27,6 @@ from app.models import (
     CombatState,
     CombatStatus,
     EnemyState,
-    Health,
     InventoryItem,
     Location,
     NarrativeTurn,
@@ -67,48 +66,9 @@ class TestEnums:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status="InvalidStatus",
-                health=Health(current=100, max=100),
                 stats={},
                 location="test"
             )
-
-
-class TestHealth:
-    """Test Health model."""
-    
-    def test_create_valid_health(self):
-        """Test creating valid Health."""
-        health = Health(current=50, max=100)
-        assert health.current == 50
-        assert health.max == 100
-    
-    def test_health_current_equals_max(self):
-        """Test Health when current equals max."""
-        health = Health(current=100, max=100)
-        assert health.current == 100
-        assert health.max == 100
-    
-    def test_health_current_exceeds_max_raises_error(self):
-        """Test that current > max raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            Health(current=150, max=100)
-        assert "current health cannot be greater than max health" in str(exc_info.value)
-    
-    def test_health_negative_current_raises_error(self):
-        """Test that negative current raises ValidationError."""
-        with pytest.raises(ValidationError):
-            Health(current=-10, max=100)
-    
-    def test_health_negative_max_raises_error(self):
-        """Test that negative max raises ValidationError."""
-        with pytest.raises(ValidationError):
-            Health(current=50, max=-100)
-    
-    def test_health_zero_values_allowed(self):
-        """Test that zero values are allowed."""
-        health = Health(current=0, max=0)
-        assert health.current == 0
-        assert health.max == 0
 
 
 class TestCharacterIdentity:
@@ -205,7 +165,7 @@ class TestPlayerState:
             status=Status.HEALTHY,
             level=5,
             experience=1000,
-            health=Health(current=80, max=100),
+            
             stats={"strength": 10, "dexterity": 18},
             equipment=[],
             inventory=[],
@@ -221,7 +181,7 @@ class TestPlayerState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location={"world": "middle-earth", "region": "gondor", "coordinates": {"x": 100, "y": 200}}
         )
@@ -233,7 +193,7 @@ class TestPlayerState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -245,7 +205,7 @@ class TestPlayerState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test",
             additional_fields={"custom_stat": "value"}
@@ -602,7 +562,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Aragorn", race="Human", **{"class": "Ranger"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={"strength": 18},
             location="Rivendell"
         )
@@ -631,7 +591,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -660,7 +620,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -695,7 +655,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -733,7 +693,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -763,7 +723,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -788,7 +748,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -832,7 +792,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -872,7 +832,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -908,7 +868,7 @@ class TestCharacterDocument:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -969,7 +929,7 @@ class TestEdgeCases:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test",
             equipment=[]
@@ -981,7 +941,7 @@ class TestEdgeCases:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test",
             additional_fields={
@@ -1084,7 +1044,7 @@ class TestAdventurePromptValidation:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -1108,7 +1068,7 @@ class TestAdventurePromptValidation:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -1132,7 +1092,7 @@ class TestAdventurePromptValidation:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -1156,7 +1116,7 @@ class TestAdventurePromptValidation:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -1180,7 +1140,7 @@ class TestAdventurePromptValidation:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -1244,7 +1204,7 @@ class TestLocationModel:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Elf", **{"class": "Ranger"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location=location
         )
@@ -1257,7 +1217,7 @@ class TestLocationModel:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="Test Location"
         )
@@ -1269,7 +1229,7 @@ class TestLocationModel:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location=location_dict
         )
@@ -1281,7 +1241,7 @@ class TestLocationModel:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status=Status.HEALTHY,
-                health=Health(current=100, max=100),
+                
                 stats={},
                 location=""
             )
@@ -1293,7 +1253,7 @@ class TestLocationModel:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status=Status.HEALTHY,
-                health=Health(current=100, max=100),
+                
                 stats={},
                 location="   "
             )
@@ -1305,7 +1265,7 @@ class TestLocationModel:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status=Status.HEALTHY,
-                health=Health(current=100, max=100),
+                
                 stats={},
                 location={}
             )
@@ -1317,7 +1277,7 @@ class TestLocationModel:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status=Status.HEALTHY,
-                health=Health(current=100, max=100),
+                
                 stats={},
                 location={"id": "origin:nexus"}
             )
@@ -1329,7 +1289,7 @@ class TestLocationModel:
             PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status=Status.HEALTHY,
-                health=Health(current=100, max=100),
+                
                 stats={},
                 location={"display_name": "The Nexus"}
             )
@@ -1344,7 +1304,7 @@ class TestWorldState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )
@@ -1368,7 +1328,7 @@ class TestWorldState:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             location="test"
         )

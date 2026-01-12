@@ -107,7 +107,6 @@ def sample_character_data():
             "status": "Healthy",
             "level": 1,
             "experience": 0,
-            "health": {"current": 100, "max": 100},
             "stats": {},
             "equipment": [],
             "inventory": [],
@@ -164,7 +163,6 @@ class TestCreateCharacter:
                 "status": "Healthy",
                 "level": 1,
                 "experience": 0,
-                "health": {"current": 100, "max": 100},
                 "stats": {},
                 "equipment": [],
                 "inventory": [],
@@ -385,7 +383,6 @@ class TestCreateCharacter:
                 "status": "Healthy",
                 "level": 1,
                 "experience": 0,
-                "health": {"current": 100, "max": 100},
                 "stats": {},
                 "equipment": [],
                 "inventory": [],
@@ -526,7 +523,6 @@ class TestCharacterDefaultValues:
                 "status": "Healthy",
                 "level": 1,
                 "experience": 0,
-                "health": {"current": 100, "max": 100},
                 "stats": {},
                 "equipment": [],
                 "inventory": [],
@@ -579,7 +575,6 @@ class TestCharacterDefaultValues:
                 "status": "Healthy",
                 "level": 1,
                 "experience": 0,
-                "health": {"current": 100, "max": 100},
                 "stats": {},
                 "equipment": [],
                 "inventory": [],
@@ -625,7 +620,6 @@ class TestGetCharacter:
                 "status": "Healthy",
                 "level": 5,
                 "experience": 1000,
-                "health": {"current": 80, "max": 100},
                 "stats": {"strength": 18, "dexterity": 14},
                 "equipment": [],
                 "inventory": [],
@@ -817,7 +811,6 @@ class TestGetCharacter:
                 "status": "Healthy",
                 "level": 5,
                 "experience": 1000,
-                "health": {"current": 80, "max": 100},
                 "stats": {},
                 "equipment": [],
                 "inventory": [],
@@ -1410,7 +1403,6 @@ class TestAppendNarrativeTurn:
                 "status": "Healthy",
                 "level": 5,
                 "experience": 1000,
-                "health": {"current": 80, "max": 100},
                 "stats": {"strength": 18, "dexterity": 14},
                 "equipment": [],
                 "inventory": [],
@@ -1976,7 +1968,6 @@ class TestGetNarrativeTurns:
                 "status": "Healthy",
                 "level": 5,
                 "experience": 1000,
-                "health": {"current": 80, "max": 100},
                 "stats": {"strength": 18, "dexterity": 14},
                 "equipment": [],
                 "inventory": [],
@@ -3343,139 +3334,6 @@ class TestGetPOIs:
         
         # Assertions
         assert response.status_code == status.HTTP_404_NOT_FOUND
-
-
-class TestHPExclusion:
-    """Tests to verify HP/health field is excluded from all API responses."""
-    
-    @pytest.fixture
-    def sample_character_data(self):
-        """Sample character data for testing."""
-        return {
-            "character_id": "550e8400-e29b-41d4-a716-446655440000",
-            "owner_user_id": "user123",
-            "adventure_prompt": "A brave hero seeks adventure",
-            "player_state": {
-                "identity": {
-                    "name": "Test Hero",
-                    "race": "Human",
-                    "class": "Warrior",
-                },
-                "status": "Healthy",
-                "level": 5,
-                "experience": 1000,
-                "health": {"current": 80, "max": 100},
-                "stats": {"strength": 18, "dexterity": 14},
-                "equipment": [],
-                "inventory": [],
-                "location": {
-                    "id": "origin:nexus",
-                    "display_name": "The Nexus",
-                },
-                "additional_fields": {},
-            },
-            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
-            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
-            "schema_version": "1.0.0",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-    
-    def test_create_character_excludes_hp(
-        self,
-        test_client_with_mock_db,
-        mock_firestore_client,
-        valid_create_request,
-    ):
-        """Test that character creation response excludes health field."""
-        
-        # Mock Firestore operations for transaction
-        mock_query = mock_firestore_client.collection.return_value.where.return_value
-        mock_query.stream.return_value = []  # No existing character
-        
-        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
-        
-        # Mock document retrieval after creation
-        mock_doc_snapshot = Mock()
-        mock_doc_snapshot.exists = True
-        mock_doc_snapshot.to_dict.return_value = {
-            "character_id": "test-uuid",
-            "owner_user_id": "user123",
-            "adventure_prompt": valid_create_request["adventure_prompt"],
-            "player_state": {
-                "identity": {
-                    "name": valid_create_request["name"],
-                    "race": valid_create_request["race"],
-                    "class": valid_create_request["class"],
-                },
-                "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "health": {"current": 100, "max": 100},
-                "stats": {},
-                "equipment": [],
-                "inventory": [],
-                "location": {
-                    "id": "origin:nexus",
-                    "display_name": "The Nexus",
-                },
-                "additional_fields": {},
-            },
-            "world_pois_reference": "characters/test-uuid/pois",
-            "narrative_turns_reference": "characters/test-uuid/narrative_turns",
-            "schema_version": "1.0.0",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-        mock_doc_ref.get.return_value = mock_doc_snapshot
-        
-        # Make request
-        response = test_client_with_mock_db.post(
-            "/characters",
-            json=valid_create_request,
-            headers={"X-User-Id": "user123"},
-        )
-        
-        # Assertions
-        assert response.status_code == status.HTTP_201_CREATED
-        data = response.json()
-        
-        # Verify health is NOT in the response
-        assert "health" not in data["character"]["player_state"]
-        # Verify other fields are present
-        assert "level" in data["character"]["player_state"]
-        assert "experience" in data["character"]["player_state"]
-        assert "status" in data["character"]["player_state"]
-    
-    def test_get_character_excludes_hp(
-        self,
-        test_client_with_mock_db,
-        mock_firestore_client,
-        sample_character_data,
-    ):
-        """Test that character retrieval response excludes health field."""
-        
-        # Mock Firestore document retrieval
-        mock_doc_ref = mock_firestore_client.collection.return_value.document.return_value
-        mock_doc_snapshot = Mock()
-        mock_doc_snapshot.exists = True
-        mock_doc_snapshot.to_dict.return_value = sample_character_data
-        mock_doc_ref.get.return_value = mock_doc_snapshot
-        
-        # Make request
-        response = test_client_with_mock_db.get(
-            "/characters/550e8400-e29b-41d4-a716-446655440000",
-        )
-        
-        # Assertions
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        
-        # Verify health is NOT in the response
-        assert "health" not in data["character"]["player_state"]
-        # Verify other fields are present
-        assert "level" in data["character"]["player_state"]
-        assert "status" in data["character"]["player_state"]
 
 
 # ==============================================================================

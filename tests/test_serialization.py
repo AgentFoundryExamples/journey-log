@@ -44,7 +44,6 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     EnemyState,
-    Health,
     InventoryItem,
     NarrativeTurn,
     PlayerState,
@@ -80,7 +79,7 @@ def base_player_state():
         status=Status.HEALTHY,
         level=5,
         experience=1000,
-        health=Health(current=80, max=100),
+        
         stats={
             "strength": 16,
             "dexterity": 12,
@@ -133,7 +132,7 @@ def character_wounded_with_quest(base_player_state):
         status=Status.WOUNDED,
         level=base_player_state.level,
         experience=base_player_state.experience,
-        health=Health(current=30, max=100),
+        
         stats=base_player_state.stats,
         equipment=base_player_state.equipment,
         inventory=base_player_state.inventory,
@@ -232,7 +231,6 @@ def character_in_combat_multiple_enemies(base_player_state):
 def character_dead_completed_quest(base_player_state):
     """Fixture: Dead character with completed quest."""
     base_player_state.status = Status.DEAD
-    base_player_state.health = Health(current=0, max=100)
     
     quest = Quest(
         name="Retrieve the Artifact",
@@ -272,7 +270,7 @@ def character_empty_arrays():
     player_state = PlayerState(
         identity=CharacterIdentity(name="Empty", race="Elf", **{"class": "Mage"}),
         status=Status.HEALTHY,
-        health=Health(current=50, max=50),
+        
         stats={},
         equipment=[],
         inventory=[],
@@ -310,7 +308,7 @@ def character_future_schema():
     player_state = PlayerState(
         identity=CharacterIdentity(name="Future", race="Android", **{"class": "Hacker"}),
         status=Status.HEALTHY,
-        health=Health(current=100, max=100),
+        
         stats={"cyber": 20},
         location="Cyberspace"
     )
@@ -510,8 +508,6 @@ class TestCharacterDocumentRoundTrip:
         assert restored.player_state.status == character_healthy.player_state.status
         assert restored.player_state.level == character_healthy.player_state.level
         assert restored.player_state.experience == character_healthy.player_state.experience
-        assert restored.player_state.health.current == character_healthy.player_state.health.current
-        assert restored.player_state.health.max == character_healthy.player_state.health.max
         assert restored.player_state.location == character_healthy.player_state.location
         
         # Verify stats dictionary
@@ -553,7 +549,6 @@ class TestCharacterDocumentRoundTrip:
         # Verify character state
         assert restored.character_id == character_wounded_with_quest.character_id
         assert restored.player_state.status == Status.WOUNDED
-        assert restored.player_state.health.current == 30
         
         # Verify quest details
         assert restored.active_quest is not None
@@ -610,7 +605,6 @@ class TestCharacterDocumentRoundTrip:
         
         # Verify character is dead
         assert restored.player_state.status == Status.DEAD
-        assert restored.player_state.health.current == 0
         
         # Verify quest is completed
         assert restored.active_quest is not None
@@ -909,7 +903,7 @@ class TestRoundTripEdgeCases:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
-            health=Health(current=100, max=100),
+            
             stats={},
             equipment=[],  # Empty array
             inventory=[],  # Empty array
@@ -945,7 +939,7 @@ class TestRoundTripEdgeCases:
             player_state = PlayerState(
                 identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
                 status=Status.HEALTHY,
-                health=Health(current=100, max=100),
+                
                 stats={},
                 location="test"
             )

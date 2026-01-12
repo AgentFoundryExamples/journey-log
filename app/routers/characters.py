@@ -37,7 +37,6 @@ from app.models import (
     CharacterDocument,
     CharacterIdentity,
     CombatState,
-    Health,
     Location,
     NarrativeTurn,
     PlayerState,
@@ -58,20 +57,6 @@ router = APIRouter(
     prefix="/characters",
     tags=["characters"],
 )
-
-
-def exclude_health_from_character_dict(char_dict: dict) -> dict:
-    """
-    Remove health field from character dictionary for API responses.
-    
-    This helper ensures HP is never exposed in API responses per security requirements.
-    """
-    if "player_state" in char_dict and "health" in char_dict["player_state"]:
-        # Create a copy to avoid mutating the original
-        char_dict = char_dict.copy()
-        char_dict["player_state"] = char_dict["player_state"].copy()
-        del char_dict["player_state"]["health"]
-    return char_dict
 
 
 class CreateCharacterRequest(BaseModel):
@@ -138,29 +123,11 @@ class CreateCharacterRequest(BaseModel):
 class CreateCharacterResponse(BaseModel):
     """Response model for character creation."""
     character: CharacterDocument = Field(description="The created character document")
-    
-    @model_serializer(mode='wrap')
-    def _serialize(self, serializer, info):
-        """Custom serializer to exclude health field."""
-        data = serializer(self)
-        # The data structure is: {'character': {...}}
-        if 'character' in data:
-            data['character'] = exclude_health_from_character_dict(data['character'])
-        return data
 
 
 class GetCharacterResponse(BaseModel):
     """Response model for character retrieval."""
     character: CharacterDocument = Field(description="The character document")
-    
-    @model_serializer(mode='wrap')
-    def _serialize(self, serializer, info):
-        """Custom serializer to exclude health field."""
-        data = serializer(self)
-        # The data structure is: {'character': {...}}
-        if 'character' in data:
-            data['character'] = exclude_health_from_character_dict(data['character'])
-        return data
 
 
 class CharacterMetadata(BaseModel):
@@ -359,7 +326,6 @@ async def list_characters(
         "- `status`: Healthy\n"
         "- `level`: 1\n"
         "- `experience`: 0\n"
-        "- `health`: {current: 100, max: 100}\n"
         "- `stats`: Empty dictionary\n"
         "- `equipment`: Empty list (no weapons)\n"
         "- `inventory`: Empty list (no items)\n"
@@ -497,7 +463,6 @@ async def create_character(
             status=Status.HEALTHY,
             level=1,
             experience=0,
-            health=Health(current=100, max=100),
             stats={},
             equipment=[],
             inventory=[],
