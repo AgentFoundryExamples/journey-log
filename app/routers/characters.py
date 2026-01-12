@@ -965,9 +965,20 @@ async def append_narrative_turn(
         
         # Convert to NarrativeTurn model
         turn_dict = turn_snapshot.to_dict()
+        
         # Convert Firestore timestamp to datetime
+        # Timestamp should always be present since we write it in the transaction,
+        # but handle defensively
         if "timestamp" in turn_dict:
             turn_dict["timestamp"] = datetime_from_firestore(turn_dict["timestamp"])
+        else:
+            # This should never happen, but provide defensive fallback
+            logger.error(
+                "append_narrative_missing_timestamp_after_creation",
+                character_id=character_id,
+                turn_id=turn_id,
+            )
+            turn_dict["timestamp"] = datetime.now(timezone.utc)
         
         # Create NarrativeTurn object (using aliases for conversion)
         # Use direct access for required fields that were written in the transaction
