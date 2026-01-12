@@ -2763,7 +2763,7 @@ The context aggregation endpoint provides a single comprehensive payload contain
   - `returned_n` (integer): Actual number of turns returned (may be less if fewer exist)
   - `max_n` (integer): Server-configured maximum (from `CONTEXT_MAX_RECENT_N` setting)
 - `world` (object): World state including optional POI sample
-  - `pois_sample` (array): Random sample of discovered POIs (default: 3 POIs, empty if include_pois=false)
+  - `pois_sample` (array): Random sample of POIs from world_pois array (default: 3 POIs from configured sample size, empty if include_pois=false)
   - `include_pois` (boolean): Whether POIs were included (reflects request parameter)
 - `has_active_quest` (boolean): Derived field - true if quest is not null
 
@@ -2777,7 +2777,7 @@ The response includes several derived fields computed server-side for Director c
 **Default Values:**
 - `recent_n`: Default 20 turns (configurable via `CONTEXT_DEFAULT_RECENT_N` environment variable)
 - Maximum `recent_n`: 100 turns (configurable via `CONTEXT_MAX_RECENT_N` environment variable)
-- POI sample size: 3 POIs (fixed for context aggregation, use dedicated POI endpoints for more control)
+- POI sample size: 3 POIs by default (configurable via `CONTEXT_DEFAULT_POI_SAMPLE_SIZE`, use dedicated POI endpoints for more control)
 
 **Performance Notes:**
 - **Character document**: Single Firestore read (all embedded state loaded at once)

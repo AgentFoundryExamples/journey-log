@@ -136,6 +136,12 @@ class Settings(BaseSettings):
             "This limit ensures context payloads remain manageable for LLM/Director consumption."
         ),
     )
+    context_default_poi_sample_size: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Default number of POIs to sample for context aggregation (1-20)",
+    )
 
     @field_validator("gcp_project_id")
     @classmethod

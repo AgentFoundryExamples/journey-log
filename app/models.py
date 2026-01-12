@@ -708,13 +708,6 @@ class CharacterContextResponse(BaseModel):
         description="Derived flag: true if quest is not null, false otherwise"
     )
 
-    @model_validator(mode="after")
-    def compute_derived_fields(self) -> "CharacterContextResponse":
-        """Compute derived fields based on core state."""
-        # Ensure has_active_quest matches quest presence
-        self.has_active_quest = self.quest is not None
-        return self
-
 
 # ==============================================================================
 # Firestore Serialization Helpers

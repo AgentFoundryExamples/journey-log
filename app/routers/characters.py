@@ -22,7 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Header, status
+from fastapi import APIRouter, HTTPException, Header, Query, status
 from google.cloud import firestore  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, model_validator
 
@@ -3264,8 +3264,15 @@ async def get_character_context(
     x_user_id: Optional[str] = Header(
         None, description="User identifier for access control"
     ),
-    recent_n: int = settings.context_default_recent_n,
-    include_pois: bool = True,
+    recent_n: int = Query(
+        default=settings.context_default_recent_n,
+        ge=1,
+        description=f"Number of recent narrative turns to include (default: {settings.context_default_recent_n}, max: {settings.context_max_recent_n})",
+    ),
+    include_pois: bool = Query(
+        default=True,
+        description="Whether to include POI sample in world state (default: true)",
+    ),
 ) -> CharacterContextResponse:
     """
     Retrieve aggregated character context for Director/LLM integration.
@@ -3428,8 +3435,8 @@ async def get_character_context(
         pois_sample_list = []
         if include_pois:
             world_pois_data = char_data.get("world_pois", [])
-            # Sample up to 3 POIs randomly (default Director sample size)
-            sample_size = min(3, len(world_pois_data))
+            # Sample POIs randomly using configured sample size
+            sample_size = min(settings.context_default_poi_sample_size, len(world_pois_data))
             if sample_size > 0:
                 sampled_data = random.sample(world_pois_data, sample_size)
                 for poi_data in sampled_data:
