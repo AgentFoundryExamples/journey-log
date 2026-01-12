@@ -3520,7 +3520,6 @@ class TestSetQuest:
         """Test successful quest creation."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True
@@ -3559,7 +3558,6 @@ class TestSetQuest:
         """Test that setting a quest when one already exists returns 409."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True
@@ -3610,7 +3608,6 @@ class TestSetQuest:
         """Test that non-existent character returns 404."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = False
@@ -3634,7 +3631,6 @@ class TestSetQuest:
         """Test that mismatched user ID returns 403."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True
@@ -3871,7 +3867,6 @@ class TestDeleteQuest:
         """Test successful quest deletion and archival."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True
@@ -3896,7 +3891,6 @@ class TestDeleteQuest:
         """Test that deleting when no quest exists still returns 204."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True
@@ -3924,7 +3918,6 @@ class TestDeleteQuest:
         """Test that non-existent character returns 404."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = False
@@ -3963,7 +3956,6 @@ class TestDeleteQuest:
         """Test that mismatched user ID returns 403."""
         
         # Setup mock transaction
-        mock_transaction = mock_firestore_client.transaction.return_value
         mock_char_ref = mock_firestore_client.collection.return_value.document.return_value
         mock_char_snapshot = Mock()
         mock_char_snapshot.exists = True

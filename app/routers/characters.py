@@ -42,7 +42,6 @@ from app.models import (
     PlayerState,
     PointOfInterest,
     Quest,
-    QuestArchiveEntry,
     Status,
     character_to_firestore,
     character_from_firestore,
