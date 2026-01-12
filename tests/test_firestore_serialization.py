@@ -32,7 +32,9 @@ from app.models import (
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
+    PointOfInterestSubcollection,
     Quest,
+    QuestRewards,
     Status,
     # Serialization helpers
     character_from_firestore,
@@ -198,18 +200,19 @@ class TestCharacterDocumentSerialization:
         """Test serialization with optional fields populated."""
         char = self.create_minimal_character()
         char.active_quest = Quest(
-            quest_id="quest_001",
-            title="Test Quest",
+            name="Test Quest",
             description="A test quest",
-            completion_state=CompletionState.IN_PROGRESS,
-            started_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc)
+            requirements=["Complete objective"],
+            rewards=QuestRewards(items=[], currency={"gold": 100}),
+            completion_state="in_progress",
+            updated_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc)
         )
         
         data = character_to_firestore(char)
         
         assert 'active_quest' in data
-        assert data['active_quest']['quest_id'] == 'quest_001'
-        assert data['active_quest']['completion_state'] == 'InProgress'
+        assert data['active_quest']['name'] == 'Test Quest'
+        assert data['active_quest']['completion_state'] == 'in_progress'
     
     def test_character_to_firestore_with_combat_state(self):
         """Test serialization with combat state."""
@@ -429,11 +432,11 @@ class TestNarrativeTurnSerialization:
 
 
 class TestPointOfInterestSerialization:
-    """Test PointOfInterest serialization helpers."""
+    """Test PointOfInterestSubcollection serialization helpers."""
     
     def test_poi_to_firestore_basic(self):
         """Test basic POI serialization."""
-        poi = PointOfInterest(
+        poi = PointOfInterestSubcollection(
             poi_id="poi_123",
             name="Hidden Temple",
             description="An ancient temple"
@@ -447,7 +450,7 @@ class TestPointOfInterestSerialization:
     
     def test_poi_to_firestore_with_optional_fields(self):
         """Test POI serialization with optional fields."""
-        poi = PointOfInterest(
+        poi = PointOfInterestSubcollection(
             poi_id="poi_124",
             name="Dragon's Lair",
             description="A dangerous cave",
@@ -468,7 +471,7 @@ class TestPointOfInterestSerialization:
     
     def test_poi_to_firestore_excludes_none(self):
         """Test that None optional fields are excluded."""
-        poi = PointOfInterest(
+        poi = PointOfInterestSubcollection(
             poi_id="poi_125",
             name="Unknown Location",
             description="Not yet visited"
@@ -525,7 +528,7 @@ class TestPointOfInterestSerialization:
     
     def test_poi_roundtrip(self):
         """Test POI serialization round-trip."""
-        original = PointOfInterest(
+        original = PointOfInterestSubcollection(
             poi_id="poi_126",
             name="Test Location",
             description="Test description",
