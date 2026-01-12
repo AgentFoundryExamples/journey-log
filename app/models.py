@@ -267,12 +267,14 @@ class NarrativeTurn(BaseModel):
     turn_id: str = Field(description="Unique turn identifier (UUIDv4)")
     turn_number: Optional[int] = Field(default=None, description="Sequential turn counter")
     user_action: str = Field(
+        min_length=1,
         max_length=8000,
         alias="player_action",
         serialization_alias="player_action",
         description="Player's action or input (max 8000 characters)"
     )
     ai_response: str = Field(
+        min_length=1,
         max_length=32000,
         alias="gm_response",
         serialization_alias="gm_response",
