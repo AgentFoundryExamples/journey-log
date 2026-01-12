@@ -26,7 +26,6 @@ from app.models import (
     CharacterIdentity,
     CombatState,
     CombatStatus,
-    CompletionState,
     Enemy,
     Health,
     InventoryItem,
@@ -34,9 +33,10 @@ from app.models import (
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
+    PointOfInterestSubcollection,
     Quest,
-    QuestRequirement,
-    QuestReward,
+    QuestArchiveEntry,
+    QuestRewards,
     Status,
     Weapon,
 )
@@ -60,12 +60,6 @@ class TestEnums:
     def test_combat_status_is_alias(self):
         """Test that CombatStatus is an alias for Status."""
         assert CombatStatus is Status
-    
-    def test_completion_state_enum_values(self):
-        """Test CompletionState enum has correct values."""
-        assert CompletionState.NOT_STARTED.value == "NotStarted"
-        assert CompletionState.IN_PROGRESS.value == "InProgress"
-        assert CompletionState.COMPLETED.value == "Completed"
     
     def test_invalid_status_raises_error(self):
         """Test that invalid status values raise ValidationError."""
@@ -288,11 +282,42 @@ class TestNarrativeTurn:
 
 
 class TestPointOfInterest:
-    """Test PointOfInterest model."""
+    """Test PointOfInterest model (embedded in character documents)."""
     
-    def test_create_poi(self):
-        """Test creating a PointOfInterest."""
+    def test_create_poi_minimal(self):
+        """Test creating a minimal PointOfInterest."""
         poi = PointOfInterest(
+            id="poi_123",
+            name="Hidden Temple",
+            description="An ancient temple"
+        )
+        assert poi.id == "poi_123"
+        assert poi.name == "Hidden Temple"
+        assert poi.description == "An ancient temple"
+        assert poi.created_at is None
+        assert poi.tags is None
+    
+    def test_poi_with_all_fields(self):
+        """Test POI with all fields populated."""
+        created_time = datetime.now(timezone.utc)
+        poi = PointOfInterest(
+            id="poi_124",
+            name="Dragon's Lair",
+            description="A dangerous cave",
+            created_at=created_time,
+            tags=["dungeon", "dangerous", "treasure"]
+        )
+        assert poi.created_at == created_time
+        assert len(poi.tags) == 3
+        assert "dungeon" in poi.tags
+
+
+class TestPointOfInterestSubcollection:
+    """Test PointOfInterestSubcollection model (stored in subcollections)."""
+    
+    def test_create_poi_subcollection(self):
+        """Test creating a PointOfInterestSubcollection."""
+        poi = PointOfInterestSubcollection(
             poi_id="poi_123",
             name="Hidden Temple",
             description="An ancient temple"
@@ -300,9 +325,9 @@ class TestPointOfInterest:
         assert poi.poi_id == "poi_123"
         assert poi.name == "Hidden Temple"
     
-    def test_poi_with_optional_timestamps(self):
-        """Test POI with optional timestamp fields."""
-        poi = PointOfInterest(
+    def test_poi_subcollection_with_optional_timestamps(self):
+        """Test POI subcollection with optional timestamp fields."""
+        poi = PointOfInterestSubcollection(
             poi_id="poi_124",
             name="Dragon's Lair",
             description="A dangerous cave",
@@ -318,53 +343,108 @@ class TestPointOfInterest:
 class TestQuestModels:
     """Test Quest-related models."""
     
-    def test_quest_requirement_with_string_details(self):
-        """Test QuestRequirement with string details."""
-        req = QuestRequirement(
-            type="kill",
-            details="Defeat 10 orcs"
+    def test_quest_rewards_with_items(self):
+        """Test QuestRewards with items."""
+        rewards = QuestRewards(
+            items=["Magic Sword", "Health Potion"],
+            currency={"gold": 100},
+            experience=500
         )
-        assert req.type == "kill"
-        assert req.details == "Defeat 10 orcs"
+        assert len(rewards.items) == 2
+        assert rewards.currency["gold"] == 100
+        assert rewards.experience == 500
     
-    def test_quest_requirement_with_dict_details(self):
-        """Test QuestRequirement with dict details."""
-        req = QuestRequirement(
-            type="collect",
-            details={"item": "Ancient Artifact", "quantity": 1}
+    def test_quest_rewards_empty_arrays_allowed(self):
+        """Test that QuestRewards allows empty arrays."""
+        rewards = QuestRewards(
+            items=[],
+            currency={},
+            experience=None
         )
-        assert isinstance(req.details, dict)
+        assert rewards.items == []
+        assert rewards.currency == {}
+        assert rewards.experience is None
     
-    def test_quest_reward_with_dict_details(self):
-        """Test QuestReward with dict details."""
-        reward = QuestReward(
-            type="item",
-            details={"name": "Magic Sword", "rarity": "legendary"}
-        )
-        assert reward.type == "item"
-        assert isinstance(reward.details, dict)
+    def test_quest_rewards_negative_experience_rejected(self):
+        """Test that negative experience is rejected."""
+        with pytest.raises(ValidationError):
+            QuestRewards(
+                items=[],
+                currency={},
+                experience=-100
+            )
+    
+    def test_quest_rewards_negative_currency_rejected(self):
+        """Test that negative currency values are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            QuestRewards(
+                items=[],
+                currency={"gold": -50},
+                experience=0
+            )
+        assert "cannot be negative" in str(exc_info.value)
+    
+    def test_quest_rewards_empty_currency_key_rejected(self):
+        """Test that empty currency keys are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            QuestRewards(
+                items=[],
+                currency={"": 100},
+                experience=0
+            )
+        assert "cannot be empty" in str(exc_info.value)
     
     def test_create_quest(self):
         """Test creating a complete Quest."""
+        from datetime import datetime, timezone
         quest = Quest(
-            quest_id="quest_001",
-            title="Destroy the Ring",
+            name="Destroy the Ring",
             description="Take the Ring to Mount Doom",
-            completion_state=CompletionState.IN_PROGRESS,
-            objectives=[
-                {"id": "obj_001", "description": "Reach Rivendell", "completed": True}
-            ],
-            requirements=[
-                QuestRequirement(type="visit", details="Mount Doom")
-            ],
-            rewards=[
-                QuestReward(type="experience", details="1000 XP")
-            ],
-            started_at="2026-01-11T12:00:00Z"
+            requirements=["Reach Rivendell", "Form Fellowship", "Reach Mordor"],
+            rewards=QuestRewards(
+                items=["Ring of Power"],
+                currency={"gold": 1000},
+                experience=5000
+            ),
+            completion_state="in_progress",
+            updated_at=datetime.now(timezone.utc)
         )
-        assert quest.quest_id == "quest_001"
-        assert quest.completion_state == CompletionState.IN_PROGRESS
-        assert len(quest.objectives) == 1
+        assert quest.name == "Destroy the Ring"
+        assert quest.completion_state == "in_progress"
+        assert len(quest.requirements) == 3
+    
+    def test_quest_completion_state_validation(self):
+        """Test that invalid completion states are rejected."""
+        from datetime import datetime, timezone
+        with pytest.raises(ValidationError) as exc_info:
+            Quest(
+                name="Test Quest",
+                description="Test",
+                requirements=[],
+                rewards=QuestRewards(items=[], currency={}),
+                completion_state="invalid_state",
+                updated_at=datetime.now(timezone.utc)
+            )
+        # Check for Literal validation error message
+        error_str = str(exc_info.value)
+        assert "completion_state" in error_str
+        assert ("not_started" in error_str or "in_progress" in error_str or "completed" in error_str)
+    
+    def test_quest_archive_entry(self):
+        """Test creating a QuestArchiveEntry."""
+        from datetime import datetime, timezone
+        quest = Quest(
+            name="Completed Quest",
+            description="A quest that was completed",
+            requirements=["Do something"],
+            rewards=QuestRewards(items=[], currency={"gold": 50}),
+            completion_state="completed",
+            updated_at=datetime.now(timezone.utc)
+        )
+        cleared_time = datetime.now(timezone.utc)
+        entry = QuestArchiveEntry(quest=quest, cleared_at=cleared_time)
+        assert entry.quest.name == "Completed Quest"
+        assert entry.cleared_at == cleared_time
 
 
 class TestCombatState:
@@ -481,6 +561,7 @@ class TestCharacterDocument:
     
     def test_character_document_with_active_quest(self):
         """Test CharacterDocument with active quest."""
+        from datetime import datetime, timezone
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.HEALTHY,
@@ -490,10 +571,12 @@ class TestCharacterDocument:
         )
         
         quest = Quest(
-            quest_id="quest_001",
-            title="Test Quest",
+            name="Test Quest",
             description="A test quest",
-            completion_state=CompletionState.IN_PROGRESS
+            requirements=["Kill 10 orcs"],
+            rewards=QuestRewards(items=[], currency={"gold": 100}),
+            completion_state="in_progress",
+            updated_at=datetime.now(timezone.utc)
         )
         
         doc = CharacterDocument(
@@ -510,7 +593,7 @@ class TestCharacterDocument:
         )
         
         assert doc.active_quest is not None
-        assert doc.active_quest.quest_id == "quest_001"
+        assert doc.active_quest.name == "Test Quest"
     
     def test_character_document_with_combat_state(self):
         """Test CharacterDocument with active combat."""
@@ -604,19 +687,184 @@ class TestCharacterDocument:
                 updated_at="2026-01-11T12:00:00Z",
                 extra_forbidden_field="should fail"
             )
+    
+    def test_character_document_with_world_pois(self):
+        """Test CharacterDocument with embedded world_pois."""
+        from datetime import datetime, timezone
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        pois = [
+            PointOfInterest(
+                id="poi_001",
+                name="Hidden Cave",
+                description="A mysterious cave",
+                created_at=datetime.now(timezone.utc),
+                tags=["dungeon", "secret"]
+            ),
+            PointOfInterest(
+                id="poi_002",
+                name="Ancient Ruins",
+                description="Old ruins",
+                tags=["landmark"]
+            )
+        ]
+        
+        doc = CharacterDocument(
+            character_id="test-id",
+            owner_user_id="user_123",
+            adventure_prompt="Explore the world",
+            player_state=player_state,
+            world_pois=pois,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at="2026-01-11T12:00:00Z",
+            updated_at="2026-01-11T12:00:00Z"
+        )
+        
+        assert len(doc.world_pois) == 2
+        assert doc.world_pois[0].name == "Hidden Cave"
+        assert len(doc.world_pois[0].tags) == 2
+    
+    def test_character_document_with_archived_quests(self):
+        """Test CharacterDocument with archived quests."""
+        from datetime import datetime, timezone
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        archived = [
+            QuestArchiveEntry(
+                quest=Quest(
+                    name="Old Quest",
+                    description="Completed quest",
+                    requirements=["Defeat boss"],
+                    rewards=QuestRewards(items=["Legendary Sword"], currency={"gold": 500}),
+                    completion_state="completed",
+                    updated_at=datetime.now(timezone.utc)
+                ),
+                cleared_at=datetime.now(timezone.utc)
+            )
+        ]
+        
+        doc = CharacterDocument(
+            character_id="test-id",
+            owner_user_id="user_123",
+            adventure_prompt="Complete many quests",
+            player_state=player_state,
+            archived_quests=archived,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at="2026-01-11T12:00:00Z",
+            updated_at="2026-01-11T12:00:00Z"
+        )
+        
+        assert len(doc.archived_quests) == 1
+        assert doc.archived_quests[0].quest.name == "Old Quest"
+    
+    def test_character_document_world_pois_cap_validation(self):
+        """Test that world_pois cap (200) is enforced."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        # Create 201 POIs to exceed the cap
+        pois = [
+            PointOfInterest(
+                id=f"poi_{i:03d}",
+                name=f"POI {i}",
+                description=f"Description {i}"
+            )
+            for i in range(201)
+        ]
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterDocument(
+                character_id="test-id",
+                owner_user_id="user_123",
+                adventure_prompt="Too many POIs",
+                player_state=player_state,
+                world_pois=pois,
+                world_pois_reference="world",
+                narrative_turns_reference="narrative_turns",
+                schema_version="1.0.0",
+                created_at="2026-01-11T12:00:00Z",
+                updated_at="2026-01-11T12:00:00Z"
+            )
+        assert "world_pois cannot exceed 200" in str(exc_info.value)
+    
+    def test_character_document_archived_quests_cap_validation(self):
+        """Test that archived_quests cap (50) is enforced."""
+        from datetime import datetime, timezone
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            health=Health(current=100, max=100),
+            stats={},
+            location="test"
+        )
+        
+        # Create 51 archived quests to exceed the cap
+        archived = [
+            QuestArchiveEntry(
+                quest=Quest(
+                    name=f"Quest {i}",
+                    description=f"Quest {i} description",
+                    requirements=[],
+                    rewards=QuestRewards(items=[], currency={}),
+                    completion_state="completed",
+                    updated_at=datetime.now(timezone.utc)
+                ),
+                cleared_at=datetime.now(timezone.utc)
+            )
+            for i in range(51)
+        ]
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CharacterDocument(
+                character_id="test-id",
+                owner_user_id="user_123",
+                adventure_prompt="Too many archived quests",
+                player_state=player_state,
+                archived_quests=archived,
+                world_pois_reference="world",
+                narrative_turns_reference="narrative_turns",
+                schema_version="1.0.0",
+                created_at="2026-01-11T12:00:00Z",
+                updated_at="2026-01-11T12:00:00Z"
+            )
+        assert "archived_quests cannot exceed 50" in str(exc_info.value)
 
 
 class TestEdgeCases:
     """Test edge cases and validation errors."""
     
     def test_enum_validation_clear_error(self):
-        """Test that invalid enum values produce clear errors."""
+        """Test that invalid completion state values produce clear errors."""
+        from datetime import datetime, timezone
         with pytest.raises(ValidationError) as exc_info:
             Quest(
-                quest_id="test",
-                title="Test",
+                name="Test",
                 description="Test",
-                completion_state="InvalidState"
+                requirements=[],
+                rewards=QuestRewards(items=[], currency={}),
+                completion_state="InvalidState",
+                updated_at=datetime.now(timezone.utc)
             )
         
         # Verify the error message mentions the invalid value

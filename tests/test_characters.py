@@ -791,13 +791,16 @@ class TestGetCharacter:
             "updated_at": datetime.now(timezone.utc),
             "world_state": {"region": "north"},
             "active_quest": {
-                "quest_id": "quest_001",
-                "title": "Find the Sword",
+                "name": "Find the Sword",
                 "description": "Locate the legendary sword",
-                "completion_state": "InProgress",
-                "objectives": [],
-                "requirements": [],
-                "rewards": [],
+                "requirements": ["Search the ancient ruins"],
+                "rewards": {
+                    "items": ["Legendary Sword"],
+                    "currency": {"gold": 500},
+                    "experience": 1000
+                },
+                "completion_state": "in_progress",
+                "updated_at": datetime.now(timezone.utc),
             },
             "combat_state": {
                 "combat_id": "combat_001",
@@ -833,7 +836,7 @@ class TestGetCharacter:
         
         # Verify optional fields are present
         assert character["world_state"] == {"region": "north"}
-        assert character["active_quest"]["quest_id"] == "quest_001"
+        assert character["active_quest"]["name"] == "Find the Sword"
         assert character["combat_state"]["combat_id"] == "combat_001"
     
     def test_get_character_firestore_error_returns_500(

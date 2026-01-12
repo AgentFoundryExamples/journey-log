@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 import uuid
 import pytest
 from pydantic import ValidationError
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 from app.models import NarrativeTurn, narrative_turn_to_firestore
 from app.config import Settings

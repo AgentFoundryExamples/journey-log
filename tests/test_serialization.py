@@ -43,16 +43,14 @@ from app.models import (
     CharacterDocument,
     CharacterIdentity,
     CombatState,
-    CompletionState,
     Enemy,
     Health,
     InventoryItem,
     NarrativeTurn,
     PlayerState,
-    PointOfInterest,
+    PointOfInterestSubcollection,
     Quest,
-    QuestRequirement,
-    QuestReward,
+    QuestRewards,
     Status,
     Weapon,
     # Serialization helpers
@@ -144,24 +142,20 @@ def character_wounded_with_quest(base_player_state):
     )
     
     quest = Quest(
-        quest_id="quest_001",
-        title="Defeat the Dragon",
+        name="Defeat the Dragon",
         description="Slay the dragon terrorizing the village",
-        completion_state=CompletionState.IN_PROGRESS,
-        objectives=[
-            {"id": "obj_001", "description": "Find the dragon's lair", "completed": True},
-            {"id": "obj_002", "description": "Defeat the dragon", "completed": False}
-        ],
         requirements=[
-            QuestRequirement(type="kill", details="Dragon"),
-            QuestRequirement(type="collect", details={"item": "Dragon Scale", "quantity": 1})
+            "Find the dragon's lair",
+            "Defeat the dragon",
+            "Collect dragon scale"
         ],
-        rewards=[
-            QuestReward(type="experience", details="1000 XP"),
-            QuestReward(type="gold", details="500 gold"),
-            QuestReward(type="item", details={"name": "Dragon Slayer Sword", "rarity": "legendary"})
-        ],
-        started_at=datetime(2026, 1, 10, 14, 0, 0, tzinfo=timezone.utc)
+        rewards=QuestRewards(
+            items=["Dragon Slayer Sword"],
+            currency={"gold": 500},
+            experience=1000
+        ),
+        completion_state="in_progress",
+        updated_at=datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc)
     )
     
     return CharacterDocument(
@@ -238,22 +232,19 @@ def character_dead_completed_quest(base_player_state):
     base_player_state.health = Health(current=0, max=100)
     
     quest = Quest(
-        quest_id="quest_002",
-        title="Retrieve the Artifact",
+        name="Retrieve the Artifact",
         description="Find the ancient artifact in the ruins",
-        completion_state=CompletionState.COMPLETED,
-        objectives=[
-            {"id": "obj_003", "description": "Enter the ruins", "completed": True},
-            {"id": "obj_004", "description": "Find the artifact", "completed": True}
-        ],
         requirements=[
-            QuestRequirement(type="visit", details="Ancient Ruins"),
-            QuestRequirement(type="collect", details="Ancient Artifact")
+            "Visit Ancient Ruins",
+            "Find the artifact"
         ],
-        rewards=[
-            QuestReward(type="experience", details="500 XP")
-        ],
-        started_at=datetime(2026, 1, 9, 10, 0, 0, tzinfo=timezone.utc)
+        rewards=QuestRewards(
+            items=["Ancient Artifact"],
+            currency={},
+            experience=500
+        ),
+        completion_state="completed",
+        updated_at=datetime(2026, 1, 11, 18, 0, 0, tzinfo=timezone.utc)
     )
     
     return CharacterDocument(
@@ -286,13 +277,12 @@ def character_empty_arrays():
     )
     
     quest = Quest(
-        quest_id="quest_empty",
-        title="Empty Quest",
-        description="A quest with no objectives",
-        completion_state=CompletionState.NOT_STARTED,
-        objectives=[],
+        name="Empty Quest",
+        description="A quest with no requirements",
         requirements=[],
-        rewards=[]
+        rewards=QuestRewards(items=[], currency={}, experience=None),
+        completion_state="not_started",
+        updated_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc)
     )
     
     return CharacterDocument(
@@ -414,7 +404,7 @@ def narrative_turn_different_timezone():
 @pytest.fixture
 def poi_minimal():
     """Fixture: Minimal POI with required fields only."""
-    return PointOfInterest(
+    return PointOfInterestSubcollection(
         poi_id="poi_001",
         name="Hidden Cave",
         description="A dark cave entrance behind a waterfall"
@@ -424,7 +414,7 @@ def poi_minimal():
 @pytest.fixture
 def poi_full_details():
     """Fixture: POI with all optional fields populated."""
-    return PointOfInterest(
+    return PointOfInterestSubcollection(
         poi_id="poi_002",
         name="Dragon's Lair",
         description="A massive cave system filled with treasure and danger",
@@ -451,7 +441,7 @@ def poi_full_details():
 @pytest.fixture
 def poi_discovered_not_visited():
     """Fixture: POI that has been discovered but not yet visited."""
-    return PointOfInterest(
+    return PointOfInterestSubcollection(
         poi_id="poi_003",
         name="Ancient Ruins",
         description="Crumbling stone structures from a lost civilization",
@@ -465,7 +455,7 @@ def poi_discovered_not_visited():
 @pytest.fixture
 def poi_visited_no_discovery_time():
     """Fixture: POI marked as visited but no discovery timestamp (edge case)."""
-    return PointOfInterest(
+    return PointOfInterestSubcollection(
         poi_id="poi_004",
         name="Village Inn",
         description="A cozy inn with warm beds and hot meals",
@@ -551,8 +541,8 @@ class TestCharacterDocumentRoundTrip:
         
         # Verify quest is included
         assert 'active_quest' in data
-        assert data['active_quest']['quest_id'] == 'quest_001'
-        assert data['active_quest']['completion_state'] == 'InProgress'
+        assert data['active_quest']['name'] == 'Defeat the Dragon'
+        assert data['active_quest']['completion_state'] == 'in_progress'
         
         # Deserialize
         restored = character_from_firestore(data)
@@ -564,15 +554,13 @@ class TestCharacterDocumentRoundTrip:
         
         # Verify quest details
         assert restored.active_quest is not None
-        assert restored.active_quest.quest_id == character_wounded_with_quest.active_quest.quest_id
-        assert restored.active_quest.title == character_wounded_with_quest.active_quest.title
-        assert restored.active_quest.completion_state == CompletionState.IN_PROGRESS
-        assert len(restored.active_quest.objectives) == 2
-        assert len(restored.active_quest.requirements) == 2
-        assert len(restored.active_quest.rewards) == 3
+        assert restored.active_quest.name == character_wounded_with_quest.active_quest.name
+        assert restored.active_quest.completion_state == "in_progress"
+        assert len(restored.active_quest.requirements) == 3
+        assert len(restored.active_quest.rewards.items) == 1
         
         # Verify quest timestamp
-        assert restored.active_quest.started_at == character_wounded_with_quest.active_quest.started_at
+        assert restored.active_quest.updated_at == character_wounded_with_quest.active_quest.updated_at
     
     def test_character_in_combat_multiple_enemies_roundtrip(self, character_in_combat_multiple_enemies):
         """Test round-trip for character in combat with multiple enemies."""
@@ -623,8 +611,7 @@ class TestCharacterDocumentRoundTrip:
         
         # Verify quest is completed
         assert restored.active_quest is not None
-        assert restored.active_quest.completion_state == CompletionState.COMPLETED
-        assert all(obj['completed'] for obj in restored.active_quest.objectives)
+        assert restored.active_quest.completion_state == "completed"
     
     def test_character_empty_arrays_roundtrip(self, character_empty_arrays):
         """Test round-trip for character with empty arrays."""
@@ -645,9 +632,9 @@ class TestCharacterDocumentRoundTrip:
         assert restored.player_state.equipment == []
         assert restored.player_state.inventory == []
         assert restored.active_quest is not None
-        assert restored.active_quest.objectives == []
         assert restored.active_quest.requirements == []
-        assert restored.active_quest.rewards == []
+        assert restored.active_quest.rewards.items == []
+        assert restored.active_quest.rewards.currency == {}
     
     def test_character_future_schema_version_roundtrip(self, character_future_schema):
         """Test round-trip for character with future schema version."""
