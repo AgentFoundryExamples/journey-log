@@ -907,7 +907,6 @@ def character_from_firestore(
         ...     'player_state': {
         ...         'identity': {'name': 'Test', 'race': 'Human', 'class': 'Warrior'},
         ...         'status': 'Healthy',
-        ...         'health': {'current': 100, 'max': 100},
         ...         'stats': {},
         ...         'location': 'test'
         ...     },
@@ -927,6 +926,10 @@ def character_from_firestore(
     # Use provided character_id if given
     if character_id:
         data["character_id"] = character_id
+
+    # For backward compatibility, remove the old 'health' field from player_state if it exists
+    if "player_state" in data and isinstance(data["player_state"], dict):
+        data["player_state"].pop("health", None)
 
     # Convert timestamps
     for field in ["created_at", "updated_at"]:

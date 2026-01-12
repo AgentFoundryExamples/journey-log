@@ -214,6 +214,36 @@ class TestPlayerState:
         )
         assert player_state.additional_fields["custom_stat"] == "value"
 
+    def test_player_state_rejects_health_field(self):
+        """Test that PlayerState rejects health field (removed in favor of status)."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status=Status.HEALTHY,
+                health={"current": 100, "max": 100},
+                stats={},
+                location="test",
+            )
+        assert "health" in str(exc_info.value).lower()
+        assert "extra" in str(exc_info.value).lower() or "forbidden" in str(
+            exc_info.value
+        ).lower()
+
+    def test_status_is_sole_health_indicator(self):
+        """Test that status field is the only health indicator in PlayerState."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.WOUNDED,
+            stats={},
+            location="test",
+        )
+        # Verify status is present
+        assert player_state.status == Status.WOUNDED
+        # Verify health field does not exist
+        assert not hasattr(player_state, "health")
+
 
 class TestNarrativeTurn:
     """Test NarrativeTurn model."""

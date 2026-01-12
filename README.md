@@ -374,8 +374,15 @@ Character health is tracked using a status enum field with three possible values
 - `Wounded`: Character is injured and may have reduced capabilities
 - `Dead`: Character is deceased and cannot perform actions
 
+**Status Transitions:**
+Game mechanics should transition character status based on damage or healing:
+- `Healthy` → `Wounded`: When character takes damage in combat
+- `Wounded` → `Dead`: When character takes critical damage or is defeated
+- `Wounded` → `Healthy`: When character is healed or rests
+- `Dead` → `Healthy`: Through resurrection mechanics (if applicable)
+
 **Usage in Combat:**
-Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than "Dead".
+Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than "Dead". Directors and game logic should update status fields rather than tracking numerical HP values.
 
 Example character with status:
 ```json

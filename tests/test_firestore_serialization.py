@@ -262,6 +262,34 @@ class TestCharacterDocumentSerialization:
         assert isinstance(char.created_at, datetime)
         assert isinstance(char.updated_at, datetime)
 
+    def test_character_from_firestore_removes_legacy_health_field(self):
+        """Test that legacy health field is removed for backward compatibility."""
+        data = {
+            "character_id": "test-char-id",
+            "owner_user_id": "user_123",
+            "adventure_prompt": "Legacy data test",
+            "player_state": {
+                "identity": {"name": "Test", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",
+                "health": {"current": 75, "max": 100},  # Legacy field
+                "stats": {},
+                "location": "test",
+            },
+            "world_pois_reference": "world-v1",
+            "narrative_turns_reference": "narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": "2026-01-11T12:00:00Z",
+            "updated_at": "2026-01-11T12:00:00Z",
+        }
+
+        # Should successfully deserialize by removing health field
+        char = character_from_firestore(data)
+
+        assert char.character_id == "test-char-id"
+        assert char.player_state.status == Status.HEALTHY
+        # Verify health field was removed and doesn't exist
+        assert not hasattr(char.player_state, "health")
+
     def test_character_from_firestore_with_character_id_override(self):
         """Test deserialization with character_id override."""
         data = {
