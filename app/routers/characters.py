@@ -3450,7 +3450,6 @@ async def get_character_context(
                             error_type=type(e).__name__,
                             error_message=str(e),
                         )
-                        continue
 
         world_context = WorldContextState(
             pois_sample=pois_sample_list,
