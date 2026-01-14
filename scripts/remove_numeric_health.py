@@ -47,11 +47,13 @@ Environment Variables:
 
 import argparse
 import os
+import re
 import sys
 import time
 from typing import List, Optional, Set, Tuple
 
 from google.cloud import firestore  # type: ignore[import-untyped]
+from google.cloud.exceptions import GoogleCloudError  # type: ignore[import-untyped]
 
 
 # Deprecated fields to remove from player_state
@@ -65,6 +67,25 @@ DEPRECATED_FIELDS = [
     "max_health",
     "health",
 ]
+
+# Valid status enum values
+VALID_STATUS_VALUES = ["Healthy", "Wounded", "Dead"]
+
+
+def validate_project_id(project_id: str) -> bool:
+    """
+    Validate GCP project ID format.
+
+    Args:
+        project_id: The project ID to validate
+
+    Returns:
+        True if valid, False otherwise
+    """
+    # GCP project IDs must be 6-30 characters, lowercase letters, digits, hyphens
+    # Must start with a lowercase letter
+    pattern = r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$"
+    return bool(re.match(pattern, project_id))
 
 
 def get_firestore_client(project_id: str) -> firestore.Client:
@@ -107,13 +128,20 @@ def get_documents_to_process(
     characters_ref = db.collection(collection_name)
 
     if character_ids:
-        # Fetch specific documents
+        # Fetch specific documents using 'in' query for efficiency
+        # Firestore 'in' queries are limited to 30 values per query
         documents = []
+        for i in range(0, len(character_ids), 30):
+            chunk = character_ids[i : i + 30]
+            docs_stream = characters_ref.where(
+                firestore.FieldPath.document_id(), "in", chunk
+            ).stream()
+            documents.extend(list(docs_stream))
+
+        # Check for missing documents
+        found_ids = {doc.id for doc in documents}
         for char_id in character_ids:
-            doc = characters_ref.document(char_id).get()
-            if doc.exists:
-                documents.append(doc)
-            else:
+            if char_id not in found_ids:
                 print(f"WARNING: Character {char_id} not found")
         return documents
     else:
@@ -139,7 +167,7 @@ def find_legacy_fields(player_state: dict) -> List[str]:
 
 def remove_legacy_fields_from_document(
     db: firestore.Client,
-    doc_ref: firestore.DocumentReference,
+    doc: firestore.DocumentSnapshot,
     dry_run: bool = False,
 ) -> Tuple[bool, List[str]]:
     """
@@ -147,7 +175,7 @@ def remove_legacy_fields_from_document(
 
     Args:
         db: Firestore client
-        doc_ref: Document reference
+        doc: Document snapshot
         dry_run: If True, only log what would be done without modifying
 
     Returns:
@@ -155,7 +183,6 @@ def remove_legacy_fields_from_document(
         - modified: True if document had legacy fields (or would have been modified)
         - fields_removed: List of field names that were (or would be) removed
     """
-    doc = doc_ref.get()
     if not doc.exists:
         return False, []
 
@@ -171,12 +198,21 @@ def remove_legacy_fields_from_document(
     if not legacy_fields:
         return False, []
 
-    # Check if status field exists (log warning if missing but don't fail)
-    if "status" not in player_state:
+    # Check if status field exists and is valid
+    status = player_state.get("status")
+    if not status:
         print(
-            f"WARNING: Document {doc_ref.id} has legacy fields {legacy_fields} but is missing required 'status' field. "
+            f"WARNING: Document {doc.id} has legacy fields {legacy_fields} but is missing required 'status' field. "
             f"This document may be corrupted or from an old schema version. Skipping to avoid potential data issues. "
             f"Manual review recommended."
+        )
+        return False, []
+
+    if status not in VALID_STATUS_VALUES:
+        print(
+            f"WARNING: Document {doc.id} has invalid status value '{status}'. "
+            f"Valid values are: {', '.join(VALID_STATUS_VALUES)}. "
+            f"Skipping to maintain data integrity. Manual review recommended."
         )
         return False, []
 
@@ -187,9 +223,12 @@ def remove_legacy_fields_from_document(
             f"player_state.{field}": firestore.DELETE_FIELD for field in legacy_fields
         }
         try:
-            doc_ref.update(updates)
+            doc.reference.update(updates)
+        except GoogleCloudError as e:
+            print(f"ERROR: Failed to update document {doc.id} (Firestore error): {e}")
+            return False, []
         except Exception as e:
-            print(f"ERROR: Failed to update document {doc_ref.id}: {e}")
+            print(f"ERROR: Failed to update document {doc.id} (unexpected error): {e}")
             return False, []
 
     return True, legacy_fields
@@ -236,10 +275,9 @@ def process_documents(
 
     for i, doc in enumerate(documents):
         total_processed += 1
-        doc_ref = db.collection(collection_name).document(doc.id)
 
         modified, fields_removed = remove_legacy_fields_from_document(
-            db, doc_ref, dry_run=dry_run
+            db, doc, dry_run=dry_run
         )
 
         if modified:
@@ -305,6 +343,15 @@ def main():
         print("ERROR: GCP_PROJECT_ID environment variable is required")
         sys.exit(1)
 
+    # Validate project ID format
+    if not validate_project_id(project_id):
+        print(
+            f"ERROR: Invalid GCP_PROJECT_ID format: '{project_id}'. "
+            f"Project IDs must be 6-30 characters, start with a lowercase letter, "
+            f"and contain only lowercase letters, digits, and hyphens."
+        )
+        sys.exit(1)
+
     collection_name = os.getenv("FIRESTORE_CHARACTERS_COLLECTION", "characters")
 
     # Print configuration
@@ -326,16 +373,25 @@ def main():
         print("INFO: Dry run mode enabled - no changes will be made")
     else:
         print("WARNING: This will modify documents in Firestore!")
-        response = input("Continue? (yes/no): ")
-        if response.lower() != "yes":
-            print("Aborted by user")
-            sys.exit(0)
+        try:
+            response = input("Continue? (yes/no): ")
+            if response.lower() != "yes":
+                print("Aborted by user")
+                sys.exit(0)
+        except (EOFError, KeyboardInterrupt):
+            print(
+                "\nAborted: Non-interactive environment detected or user interrupted."
+            )
+            sys.exit(1)
 
     # Initialize Firestore client
     try:
         db = get_firestore_client(project_id)
+    except GoogleCloudError as e:
+        print(f"ERROR: Failed to initialize Firestore client (GCP error): {e}")
+        sys.exit(1)
     except Exception as e:
-        print(f"ERROR: Failed to initialize Firestore client: {e}")
+        print(f"ERROR: Failed to initialize Firestore client (unexpected error): {e}")
         sys.exit(1)
 
     # Process documents
@@ -361,8 +417,14 @@ def main():
         if args.dry_run and documents_cleaned > 0:
             print("\nTo apply these changes, run the script without --dry-run")
 
+    except GoogleCloudError as e:
+        print(f"ERROR: Script failed (GCP error): {e}")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
     except Exception as e:
-        print(f"ERROR: Script failed: {e}")
+        print(f"ERROR: Script failed (unexpected error): {e}")
         import traceback
 
         traceback.print_exc()

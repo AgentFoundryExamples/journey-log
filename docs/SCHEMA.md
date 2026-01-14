@@ -1250,9 +1250,9 @@ for character_doc in characters_ref.limit(10).stream():
 **Edge Cases Handled:**
 
 1. **Missing status field:** Script logs warning and skips the document (does not crash)
-2. **Partial legacy fields:** Removes only the fields present (e.g., only `level` if others don't exist)
-3. **Documents already clean:** Skips without error (idempotent)
-4. **Combat state enemies:** Also scans and cleans legacy fields in `combat_state.enemies[].status` if needed
+2. **Invalid status values:** Script validates status enum and skips documents with invalid values
+3. **Partial legacy fields:** Removes only the fields present (e.g., only `level` if others don't exist)
+4. **Documents already clean:** Skips without error (idempotent)
 5. **Concurrent modifications:** Uses Firestore's atomic field deletes (safe for concurrent access)
 
 ---
