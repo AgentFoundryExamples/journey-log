@@ -42,6 +42,7 @@
   ├── test_legacy_fields.py
   ├── test_models.py
   ├── test_narrative_turns.py
+  ├── test_openapi_schema.py
   ├── test_serialization.py
   └── test_status_validation.py
 ├── .env.example

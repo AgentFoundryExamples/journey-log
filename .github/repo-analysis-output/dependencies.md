@@ -8,16 +8,16 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 ## Statistics
 
-- **Total files**: 22
-- **Intra-repo dependencies**: 35
-- **External stdlib dependencies**: 25
+- **Total files**: 23
+- **Intra-repo dependencies**: 36
+- **External stdlib dependencies**: 26
 - **External third-party dependencies**: 31
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 25 unique modules
+Total: 26 unique modules
 
 - `contextvars.ContextVar`
 - `copy`
@@ -30,6 +30,7 @@ Total: 25 unique modules
 - `logging`
 - `os`
 - `random`
+- `re`
 - `sys`
 - `threading`
 - `time`
@@ -38,8 +39,7 @@ Total: 25 unique modules
 - `typing.Callable`
 - `typing.List`
 - `typing.Literal`
-- `typing.Optional`
-- ... and 5 more (see JSON for full list)
+- ... and 6 more (see JSON for full list)
 
 ### Third-Party Packages
 
@@ -73,7 +73,7 @@ Total: 31 unique packages
 - `app/config.py` (7 dependents)
 - `app/logging.py` (5 dependents)
 - `app/dependencies.py` (5 dependents)
-- `app/main.py` (4 dependents)
+- `app/main.py` (5 dependents)
 - `app/firestore.py` (2 dependents)
 - `app/routers/firestore_test.py` (1 dependents)
 - `app/routers/characters.py` (1 dependents)

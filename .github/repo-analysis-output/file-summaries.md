@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 22
+Total files: 23
 
 ## app/__init__.py
 **Language:** Python  
@@ -92,8 +92,8 @@ Total files: 22
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 128.49 KB  
-**LOC:** 2796  
+**Size:** 128.40 KB  
+**LOC:** 2793  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -137,8 +137,8 @@ Total files: 22
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 35.53 KB  
-**LOC:** 804  
+**Size:** 48.51 KB  
+**LOC:** 1109  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_context_aggregation.py
@@ -146,8 +146,8 @@ Total files: 22
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 25.85 KB  
-**LOC:** 548  
+**Size:** 25.70 KB  
+**LOC:** 544  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py
@@ -173,8 +173,8 @@ Total files: 22
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 50.98 KB  
-**LOC:** 1183  
+**Size:** 58.47 KB  
+**LOC:** 1346  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_narrative_turns.py
@@ -186,13 +186,22 @@ Total files: 22
 **LOC:** 390  
 **TODOs/FIXMEs:** 0  
 
+## tests/test_openapi_schema.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 11.76 KB  
+**LOC:** 164  
+**TODOs/FIXMEs:** 0  
+
 ## tests/test_serialization.py
 **Language:** Python  
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 39.98 KB  
-**LOC:** 772  
+**Size:** 46.52 KB  
+**LOC:** 899  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_status_validation.py

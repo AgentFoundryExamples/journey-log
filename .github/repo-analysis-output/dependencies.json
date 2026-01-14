@@ -334,6 +334,19 @@
       }
     },
     {
+      "id": "tests/test_openapi_schema.py",
+      "path": "tests/test_openapi_schema.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "re"
+        ],
+        "third-party": [
+          "pytest"
+        ]
+      }
+    },
+    {
       "id": "tests/test_serialization.py",
       "path": "tests/test_serialization.py",
       "type": "file",
@@ -498,6 +511,10 @@
       "target": "app/firestore.py"
     },
     {
+      "source": "tests/test_openapi_schema.py",
+      "target": "app/main.py"
+    },
+    {
       "source": "tests/test_serialization.py",
       "target": "app/models.py"
     },
@@ -523,6 +540,7 @@
       "logging",
       "os",
       "random",
+      "re",
       "sys",
       "threading",
       "time",
@@ -571,7 +589,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 25,
+    "stdlib_count": 26,
     "third-party_count": 31
   }
 }

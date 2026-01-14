@@ -188,6 +188,10 @@
         },
         {
           "type": "file",
+          "name": "test_openapi_schema.py"
+        },
+        {
+          "type": "file",
           "name": "test_serialization.py"
         },
         {
