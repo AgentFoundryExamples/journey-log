@@ -1515,16 +1515,12 @@ class TestInvalidStatusValidation:
 
     def test_combat_state_rejects_invalid_enemy_status(self):
         """Test that CombatState rejects enemies with invalid status."""
+        # EnemyState creation with invalid status should raise ValidationError immediately
         with pytest.raises(ValidationError):
-            enemy = EnemyState(
+            EnemyState(
                 enemy_id="enemy_001",
                 name="Goblin",
                 status="Bleeding",  # Invalid status
-            )
-            CombatState(
-                combat_id="combat_001",
-                started_at="2026-01-11T14:00:00Z",
-                enemies=[enemy],
             )
 
     def test_status_enum_accepts_valid_values(self):

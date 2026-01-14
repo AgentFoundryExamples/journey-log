@@ -1366,7 +1366,11 @@ class TestStatusTransitions:
         test_client_with_mock_db,
         mock_firestore_client,
     ):
-        """Verify status transitions happen without numeric HP/damage calculations."""
+        """Verify status transitions happen without numeric HP/damage calculations.
+        
+        This test ensures that the combat system uses only status-based health
+        (Healthy/Wounded/Dead) without any numeric HP, level, or stats fields.
+        """
         character_id = "550e8400-e29b-41d4-a716-446655440000"
 
         character_data = {
@@ -1375,7 +1379,7 @@ class TestStatusTransitions:
             "adventure_prompt": "Test status-only combat",
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
-                "status": "Healthy",
+                "status": "Healthy",  # Status-only health, no numeric HP/level/stats
                 "equipment": [],
                 "inventory": [],
                 "location": "Arena",
