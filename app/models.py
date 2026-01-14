@@ -944,7 +944,6 @@ def character_to_firestore(
         >>> player_state = PlayerState(
         ...     identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
         ...     status=Status.HEALTHY,
-        ...     stats={},
         ...     location="test"
         ... )
         >>> char = CharacterDocument(

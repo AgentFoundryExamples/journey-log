@@ -237,7 +237,7 @@ class TestLegacyFieldBackwardCompatibility:
     def test_legacy_fields_not_repersisted_after_roundtrip(self):
         """Test that stripped legacy fields are never persisted back to storage."""
         from app.models import character_to_firestore
-        
+
         # Simulate a Firestore document with legacy fields
         legacy_data = {
             "character_id": "test-char-roundtrip",
@@ -278,7 +278,7 @@ class TestLegacyFieldBackwardCompatibility:
         # Verify legacy fields are NOT present in the serialized output
         assert "player_state" in serialized_data
         player_state = serialized_data["player_state"]
-        
+
         # Assert that none of the legacy numeric fields are in the output
         assert "level" not in player_state, "level field should not be persisted"
         assert "experience" not in player_state, "experience field should not be persisted"
@@ -288,7 +288,7 @@ class TestLegacyFieldBackwardCompatibility:
         assert "current_health" not in player_state, "current_health field should not be persisted"
         assert "max_health" not in player_state, "max_health field should not be persisted"
         assert "health" not in player_state, "health field should not be persisted"
-        
+
         # Verify that current fields are still present
         assert "identity" in player_state
         assert "status" in player_state
