@@ -793,6 +793,296 @@ POI behavior is configurable via environment variables (see `.env.example`):
 - **Migration:** Atomic transaction ensures consistency
 - **Pagination:** Cursor-based pagination supported for large POI collections
 
+### POI Migration Guide
+
+#### Migration Timeline and Deprecation
+
+**Current Status (as of commit c9df9ae):**
+- **Active:** POI subcollections are the authoritative storage
+- **Deprecated:** Embedded `world_pois` arrays are read-only
+- **Planned:** Embedded `world_pois` field will be removed after migration completion
+
+**Migration Window:**
+1. **Phase 1 (Current):** Both storage formats coexist
+   - New writes go to subcollection only
+   - Reads check subcollection first, fall back to embedded array
+   - Migration script available for bulk migration
+2. **Phase 2 (Target: TBD):** Embedded arrays removed
+   - All characters migrated to subcollection
+   - `world_pois` field removed from character documents
+   - Read fallback logic removed from codebase
+
+**Timeline Guidance:**
+- Operators should migrate all characters using `scripts/migrate_character_pois.py` before Phase 2
+- Monitor migration progress using the script's dry-run mode
+- Plan migration during low-traffic windows for large character collections
+
+#### Running the Migration Script
+
+**Prerequisites:**
+- Python 3.14+ environment with dependencies installed
+- Firestore credentials configured (ADC or service account)
+- `GCP_PROJECT_ID` environment variable set
+- Firestore permissions: `roles/datastore.user` or higher
+
+**Script Location:** `scripts/migrate_character_pois.py`
+
+**Basic Usage:**
+
+```bash
+# 1. Preview migration (dry run - always start here)
+python scripts/migrate_character_pois.py --dry-run
+
+# Sample output:
+# INFO: Scanning all characters for migration...
+# INFO: Found 500 characters to scan
+# INFO: Character abc-123 needs migration (25 embedded POIs)
+# INFO: [DRY RUN] Would migrate 25 POIs for character abc-123
+# INFO: Migration Complete
+# INFO: total_characters_scanned: 500
+# INFO: total_characters_migrated: 150 (would migrate in dry run)
+
+# 2. Migrate all characters
+python scripts/migrate_character_pois.py
+
+# 3. Migrate specific character by ID
+python scripts/migrate_character_pois.py --character-id 550e8400-e29b-41d4-a716-446655440000
+
+# 4. Migrate with progress limit (test on subset)
+python scripts/migrate_character_pois.py --limit 100
+
+# 5. Resume migration (skip already migrated characters)
+python scripts/migrate_character_pois.py --resume
+```
+
+**Script Features:**
+- **Dry-run mode:** Preview changes without modifying Firestore
+- **Resume capability:** Skip characters that have already been migrated
+- **Progress logging:** Reports every 10 characters processed
+- **Error handling:** Continues processing other characters if one fails
+- **Transaction safety:** Uses Firestore transactions to prevent race conditions
+- **Deduplication:** Automatically skips POIs that already exist in subcollection
+- **Statistics reporting:** Summarizes migration results at completion
+
+**Script Options:**
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--dry-run` | Preview migration without making changes | `False` |
+| `--character-id` | Migrate only specific character (UUID format) | `None` (all) |
+| `--resume` | Skip characters without embedded POIs | `False` |
+| `--limit` | Process at most N characters | `None` (all) |
+| `--verbose` | Enable debug logging | `False` |
+
+**Environment Variables:**
+```bash
+# Required
+export GCP_PROJECT_ID="your-project-id"
+
+# Optional - for Firestore emulator
+export FIRESTORE_EMULATOR_HOST="localhost:8080"
+
+# Optional - custom collection name
+export FIRESTORE_CHARACTERS_COLLECTION="characters"  # default
+```
+
+**Rollout Strategy:**
+
+1. **Staging Environment:**
+   ```bash
+   # Test on staging first
+   export GCP_PROJECT_ID="your-staging-project"
+   python scripts/migrate_character_pois.py --dry-run
+   python scripts/migrate_character_pois.py --limit 10  # Test subset
+   python scripts/migrate_character_pois.py  # Full migration
+   ```
+
+2. **Production Environment:**
+   ```bash
+   # Run during low-traffic window
+   export GCP_PROJECT_ID="your-production-project"
+   
+   # Dry run to estimate scope
+   python scripts/migrate_character_pois.py --dry-run
+   
+   # Migrate in batches if collection is large
+   python scripts/migrate_character_pois.py --limit 1000
+   # Check results, then continue...
+   python scripts/migrate_character_pois.py --resume
+   ```
+
+3. **Verification:**
+   ```bash
+   # Run dry-run again - should find no characters needing migration
+   python scripts/migrate_character_pois.py --dry-run
+   # Expected: "total_characters_migrated: 0"
+   ```
+
+**Monitoring Migration Progress:**
+
+Query Firestore to check migration status:
+
+```python
+from google.cloud import firestore
+db = firestore.Client()
+
+# Count characters with embedded POIs (still need migration)
+legacy_chars = db.collection("characters").where("world_pois", "!=", None).stream()
+legacy_count = sum(1 for _ in legacy_chars)
+print(f"Characters with embedded POIs: {legacy_count}")
+
+# Count characters with subcollection POIs (migrated)
+# Note: Requires iterating all characters and checking subcollections
+```
+
+**Migration Script Output:**
+
+```json
+{
+  "total_characters_scanned": 500,
+  "total_characters_migrated": 150,
+  "total_characters_skipped": 340,
+  "total_characters_failed": 10,
+  "total_pois_migrated": 3750,
+  "total_pois_skipped": 120,
+  "total_errors": 5,
+  "failed_character_ids": ["abc-123", "def-456"],
+  "duration_seconds": 245.6
+}
+```
+
+**Error Handling:**
+
+If migration fails for specific characters:
+1. Script logs detailed error with character ID
+2. Other characters continue processing
+3. Failed character IDs included in final report
+4. Script exits with code 1 if any failures occurred
+
+Common errors:
+- **Permission denied:** Ensure service account has `roles/datastore.user`
+- **Character not found:** Character may have been deleted during migration
+- **Transaction conflict:** Retry failed characters manually
+
+**IAM Requirements:**
+
+The migration script requires:
+```bash
+# For service account
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/datastore.user"
+
+# For user account (local development)
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="user:YOUR_EMAIL" \
+  --role="roles/datastore.user"
+```
+
+#### Firestore Indexing for Subcollections
+
+**Required Indexes:**
+
+POI subcollections use Firestore composite indexes for efficient queries:
+
+1. **Default Index (timestamp ordering):**
+   - Collection: `pois` (subcollection)
+   - Fields: `timestamp_discovered` (descending)
+   - Auto-created by Firestore on first query
+
+2. **Count Aggregation:**
+   - No additional index required
+   - Uses built-in Firestore count aggregation
+
+**Index Creation:**
+
+Firestore creates indexes automatically when queries are executed. No manual index creation needed for standard POI operations.
+
+**Verifying Indexes:**
+
+```bash
+# List all indexes in project
+gcloud firestore indexes composite list --project=PROJECT_ID
+
+# Expected output should include:
+# - Collection group: pois
+# - Fields: timestamp_discovered (DESCENDING)
+# - Query scope: Collection group
+```
+
+**Index Management:**
+
+If custom query patterns are needed, create indexes using:
+
+```bash
+# Example: Custom index for type + timestamp queries
+gcloud firestore indexes composite create \
+  --collection-group=pois \
+  --field-config field-path=type,order=ascending \
+  --field-config field-path=timestamp_discovered,order=descending \
+  --project=PROJECT_ID
+```
+
+#### Operational Toggles and Environment Variables
+
+**Migration Control:**
+
+```bash
+# Enable/disable automatic copy-on-write migration
+POI_MIGRATION_ENABLED=true  # default: true
+
+# Enable/disable fallback to embedded array during reads
+POI_EMBEDDED_READ_FALLBACK=true  # default: true
+```
+
+**Toggle Behavior:**
+
+- `POI_MIGRATION_ENABLED=false`: Disables automatic migration on writes (not recommended)
+- `POI_EMBEDDED_READ_FALLBACK=false`: Reads only from subcollection (post-migration)
+
+**Recommended Settings:**
+
+| Environment | MIGRATION_ENABLED | READ_FALLBACK | Rationale |
+|-------------|-------------------|---------------|-----------|
+| **Development** | `true` | `true` | Full compatibility during testing |
+| **Staging** | `true` | `true` | Test migration with fallback |
+| **Production (pre-migration)** | `true` | `true` | Gradual migration with safety net |
+| **Production (post-migration)** | `false` | `false` | Clean state after migration complete |
+
+#### Verifying Migration Completion
+
+**Checklist:**
+
+1. ✅ Run migration script: `python scripts/migrate_character_pois.py`
+2. ✅ Verify dry-run shows zero characters needing migration
+3. ✅ Check Firestore console: No characters have `world_pois` field
+4. ✅ Test API endpoints: GET/POST/PUT/DELETE POIs work correctly
+5. ✅ Monitor logs: No fallback warnings in application logs
+6. ✅ Update environment: Set `POI_EMBEDDED_READ_FALLBACK=false`
+
+**API Testing:**
+
+```bash
+# Test POI creation
+curl -X POST http://localhost:8080/characters/{id}/pois -d '{"name":"Test","description":"Test POI"}' -H "X-User-Id: test"
+
+# Test POI retrieval with pagination
+curl "http://localhost:8080/characters/{id}/pois?limit=10"
+
+# Test POI count
+curl "http://localhost:8080/characters/{id}/pois/summary"
+
+# Test POI update
+curl -X PUT http://localhost:8080/characters/{id}/pois/{poi_id} -d '{"visited":true}' -H "X-User-Id: test"
+
+# Test POI deletion
+curl -X DELETE http://localhost:8080/characters/{id}/pois/{poi_id} -H "X-User-Id: test"
+```
+
+**Expected Results:**
+- All operations succeed without errors
+- No fallback warnings in logs
+- POIs read from subcollection only
+
 ---
 
 ## Embedded vs Subcollection Rationale
