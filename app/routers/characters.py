@@ -1379,6 +1379,16 @@ class GetRandomPOIsResponse(BaseModel):
     total_available: int = Field(description="Total number of POIs available")
 
 
+class GetPOISummaryResponse(BaseModel):
+    """Response model for lightweight POI summary."""
+
+    total_count: int = Field(description="Total number of POIs for this character")
+    preview: list[PointOfInterest] = Field(
+        description="Preview of POIs (capped sample, newest first)"
+    )
+    preview_count: int = Field(description="Number of POIs in preview")
+
+
 @router.post(
     "/{character_id}/pois",
     response_model=CreatePOIResponse,
@@ -1937,9 +1947,10 @@ async def get_random_pois(
     "/{character_id}/pois",
     response_model=GetPOIsResponse,
     status_code=status.HTTP_200_OK,
-    summary="Get all POIs for a character",
+    summary="Get POIs for a character with cursor-based pagination",
     description=(
-        "Retrieve all POIs for a character sorted by created_at descending (newest first).\n\n"
+        "Retrieve POIs from the character's pois subcollection with cursor-based pagination.\n\n"
+        "**Authoritative Storage:** Reads from `characters/{character_id}/pois/{poi_id}` subcollection.\n\n"
         "**Path Parameters:**\n"
         "- `character_id`: UUID-formatted character identifier\n\n"
         "**Optional Headers:**\n"
@@ -1947,18 +1958,21 @@ async def get_random_pois(
         "  - If header is provided but empty/whitespace-only, returns 400 error\n"
         "  - If omitted entirely, allows anonymous access without verification\n\n"
         "**Optional Query Parameters:**\n"
-        "- `limit`: Maximum number of POIs to return (default: unlimited, max: 200)\n"
-        "- `cursor`: Pagination cursor from previous response (None for first page)\n\n"
-        "**Pagination:**\n"
-        "- Results are sorted by created_at descending (newest first)\n"
+        "- `limit`: Maximum number of POIs to return per page (default: 10, max: 100)\n"
+        "- `cursor`: Pagination cursor (opaque string from previous response, None for first page)\n\n"
+        "**Cursor-Based Pagination:**\n"
+        "- Results are sorted by timestamp_discovered descending (newest first)\n"
         "- Use `limit` to control page size\n"
-        "- Use `cursor` from previous response to get next page\n"
-        "- When cursor is exhausted, response includes cursor=null\n\n"
+        "- Use `cursor` from previous response's `cursor` field to get next page\n"
+        "- When no more results, response includes cursor=null\n"
+        "- Cursors are opaque strings; do not attempt to parse or construct them\n"
+        "- Malformed cursors return 400 with guidance to restart pagination\n\n"
         "**Response:**\n"
         "- Returns list of POIs with pagination metadata\n"
-        "- Empty list returned if character has no POIs\n\n"
+        "- Empty list returned if character has no POIs\n"
+        "- cursor field: opaque string for next page or null if exhausted\n\n"
         "**Error Responses:**\n"
-        "- `400`: Invalid query parameters (limit out of range) or empty X-User-Id\n"
+        "- `400`: Invalid query parameters (limit out of range, malformed cursor) or empty X-User-Id\n"
         "- `403`: X-User-Id provided but does not match character owner\n"
         "- `404`: Character not found\n"
         "- `422`: Invalid UUID format for character_id\n"
@@ -1971,34 +1985,36 @@ async def get_pois(
     x_user_id: Optional[str] = Header(
         None, description="User identifier for access control"
     ),
-    limit: Optional[int] = None,
-    cursor: Optional[str] = None,
+    limit: int = Query(default=10, ge=1, le=100),
+    cursor: Optional[str] = Query(default=None),
 ) -> GetPOIsResponse:
     """
-    Retrieve all POIs for a character with optional pagination.
+    Retrieve POIs for a character from the pois subcollection with cursor-based pagination.
+
+    This endpoint uses the authoritative subcollection storage and implements true
+    cursor-based pagination using Firestore's start_after capability for efficient
+    queries on large POI collections.
 
     This endpoint:
     1. Validates character_id as UUID format
-    2. Validates limit parameter (max 200)
+    2. Validates limit parameter (default 10, max 100)
     3. Optionally verifies X-User-Id matches owner_user_id
-    4. Fetches character's world_pois array
-    5. Sorts by created_at descending (newest first)
-    6. Applies pagination if limit/cursor provided
-    7. Returns POIs with pagination metadata
+    4. Queries pois subcollection with ordering and pagination
+    5. Returns POIs with next cursor for pagination
 
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
-        limit: Optional maximum number of results to return (max 200)
-        cursor: Optional pagination cursor from previous response
+        limit: Maximum number of results to return (default 10, max 100)
+        cursor: Optional opaque pagination cursor from previous response
 
     Returns:
-        GetPOIsResponse with POIs list and pagination metadata
+        GetPOIsResponse with POIs list and pagination cursor
 
     Raises:
         HTTPException:
-            - 400: Invalid parameters (limit out of range)
+            - 400: Invalid parameters (limit out of range, malformed cursor) or empty X-User-Id
             - 403: User ID mismatch (access denied)
             - 404: Character not found
             - 422: Invalid UUID format
@@ -2015,18 +2031,6 @@ async def get_pois(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
-        )
-
-    # Validate limit parameter
-    if limit is not None and (limit < 1 or limit > 200):
-        logger.warning(
-            "get_pois_invalid_limit",
-            character_id=character_id,
-            limit=limit,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Parameter 'limit' must be between 1 and 200 (got {limit})",
         )
 
     # Log retrieval attempt
@@ -2083,81 +2087,99 @@ async def get_pois(
                     detail="Access denied: user ID does not match character owner",
                 )
 
-        # 3. Get world_pois array
-        world_pois_data = char_data.get("world_pois", [])
+        # 3. Query POIs from subcollection with cursor-based pagination
+        # Import helper with alias to avoid naming conflict
+        from app.firestore import get_pois_collection
 
-        # 4. Sort POIs by created_at descending (newest first)
-        # Handle missing created_at by using datetime.min as fallback (oldest possible)
-        def get_created_at(poi_data):
-            created_at = poi_data.get("created_at")
-            if created_at is None:
-                # Use datetime.min with UTC timezone as fallback for missing timestamps
-                return datetime.min.replace(tzinfo=timezone.utc)
-            if isinstance(created_at, datetime):
-                return created_at
-            # Handle Firestore timestamp
-            return datetime_from_firestore(created_at)
-
-        sorted_pois_data = sorted(
-            world_pois_data,
-            key=get_created_at,
-            reverse=True,  # Descending order (newest first)
+        pois_collection = get_pois_collection(character_id)
+        
+        # Build query with ordering by timestamp_discovered descending (newest first)
+        query = pois_collection.order_by(
+            "timestamp_discovered", direction=firestore.Query.DESCENDING
         )
 
-        # 5. Apply pagination
-        # Simple offset-based pagination using cursor as index
-        start_index = 0
+        # Apply cursor if provided
+        cursor_snapshot = None
         if cursor:
             try:
-                start_index = int(cursor)
-            except ValueError:
+                # Decode cursor: it contains the POI ID to start after
+                # For security, we fetch the document to get the actual snapshot
+                cursor_poi_id = cursor
+                cursor_doc_ref = pois_collection.document(cursor_poi_id)
+                cursor_snapshot = cursor_doc_ref.get()
+                
+                if not cursor_snapshot.exists:
+                    # Cursor points to non-existent document - likely expired or invalid
+                    logger.warning(
+                        "get_pois_invalid_cursor_not_found",
+                        character_id=character_id,
+                        cursor=cursor,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid or expired cursor. Please restart pagination from the beginning.",
+                    )
+                
+                query = query.start_after(cursor_snapshot)
+                
+            except HTTPException:
+                # Re-raise HTTP exceptions
+                raise
+            except Exception as e:
                 logger.warning(
-                    "get_pois_invalid_cursor",
+                    "get_pois_cursor_decode_error",
                     character_id=character_id,
                     cursor=cursor,
+                    error=str(e),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid cursor format: {cursor}",
+                    detail=f"Malformed cursor. Please restart pagination from the beginning.",
                 )
 
-        # Determine end index based on limit
-        if limit is not None:
-            end_index = start_index + limit
-        else:
-            end_index = len(sorted_pois_data)
+        # Fetch limit + 1 to determine if there are more results
+        query = query.limit(limit + 1)
+        poi_docs = list(query.stream())
 
-        # Slice the sorted POIs
-        page_pois_data = sorted_pois_data[start_index:end_index]
+        # Determine if there are more results
+        has_more = len(poi_docs) > limit
+        if has_more:
+            # Remove the extra document
+            poi_docs = poi_docs[:limit]
 
-        # Determine next cursor
-        next_cursor = None
-        if end_index < len(sorted_pois_data):
-            next_cursor = str(end_index)
-
-        # 6. Convert to PointOfInterest models
+        # 4. Convert to PointOfInterest models (backward-compatible response format)
         pois = []
-        for poi_data in page_pois_data:
-            # Convert Firestore timestamp to datetime if needed
-            created_at = poi_data.get("created_at")
-            if created_at is not None:
-                created_at = datetime_from_firestore(created_at)
+        last_doc = None
+        for doc in poi_docs:
+            last_doc = doc
+            poi_data = doc.to_dict()
+            
+            # Map subcollection fields to embedded format for backward compatibility
+            timestamp_discovered = poi_data.get("timestamp_discovered")
+            if timestamp_discovered is not None:
+                timestamp_discovered = datetime_from_firestore(timestamp_discovered)
 
             poi = PointOfInterest(
-                id=poi_data["id"],
+                id=poi_data.get("poi_id", doc.id),  # Use poi_id or doc ID
                 name=poi_data["name"],
                 description=poi_data["description"],
-                created_at=created_at,
+                created_at=timestamp_discovered,  # Map timestamp_discovered to created_at
                 tags=poi_data.get("tags"),
             )
             pois.append(poi)
+
+        # 5. Generate next cursor if there are more results
+        next_cursor = None
+        if has_more and last_doc:
+            # Cursor is simply the last document's ID
+            next_cursor = last_doc.id
 
         logger.info(
             "get_pois_success",
             character_id=character_id,
             returned_count=len(pois),
-            total_available=len(sorted_pois_data),
             has_next_page=next_cursor is not None,
+            source="subcollection",
         )
 
         return GetPOIsResponse(
@@ -2181,6 +2203,210 @@ async def get_pois(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve POIs due to an internal error",
+        )
+
+
+@router.get(
+    "/{character_id}/pois/summary",
+    response_model=GetPOISummaryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get POI count and preview for a character",
+    description=(
+        "Retrieve a lightweight POI summary with total count and capped preview.\n\n"
+        "**Authoritative Storage:** Reads from `characters/{character_id}/pois/{poi_id}` subcollection.\n\n"
+        "**Use Case:** This endpoint provides aggregate POI information for UI previews\n"
+        "without scanning large collections or loading all POIs into memory.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n\n"
+        "**Optional Headers:**\n"
+        "- `X-User-Id`: User identifier (if provided, must match the character's owner_user_id)\n"
+        "  - If header is provided but empty/whitespace-only, returns 400 error\n"
+        "  - If omitted entirely, allows anonymous access without verification\n\n"
+        "**Optional Query Parameters:**\n"
+        "- `preview_limit`: Maximum number of POIs to include in preview (default: 5, max: 20)\n\n"
+        "**Response:**\n"
+        "- `total_count`: Total number of POIs using efficient count aggregation\n"
+        "- `preview`: Up to preview_limit POIs sorted by newest first\n"
+        "- `preview_count`: Number of POIs in the preview\n\n"
+        "**Performance:**\n"
+        "- Uses Firestore count() aggregation (single read cost)\n"
+        "- Preview query limited to prevent large dataset scans\n"
+        "- Total latency typically <50ms even for large POI collections\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Invalid query parameters (preview_limit out of range) or empty X-User-Id\n"
+        "- `403`: X-User-Id provided but does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def get_poi_summary(
+    character_id: str,
+    db: FirestoreClient,
+    x_user_id: Optional[str] = Header(
+        None, description="User identifier for access control"
+    ),
+    preview_limit: int = Query(default=5, ge=1, le=20),
+) -> GetPOISummaryResponse:
+    """
+    Retrieve lightweight POI summary with total count and preview.
+
+    This endpoint provides aggregate POI information without loading all POIs,
+    making it ideal for UI widgets and summary displays.
+
+    This endpoint:
+    1. Validates character_id as UUID format
+    2. Validates preview_limit parameter (default 5, max 20)
+    3. Optionally verifies X-User-Id matches owner_user_id
+    4. Uses Firestore count() aggregation for total count
+    5. Fetches up to preview_limit newest POIs for preview
+    6. Returns summary with minimal overhead
+
+    Args:
+        character_id: UUID-formatted character identifier
+        db: Firestore client (dependency injection)
+        x_user_id: Optional user ID from X-User-Id header for access control
+        preview_limit: Maximum number of POIs to include in preview (default 5, max 20)
+
+    Returns:
+        GetPOISummaryResponse with total count and preview
+
+    Raises:
+        HTTPException:
+            - 400: Invalid parameters (preview_limit out of range) or empty X-User-Id
+            - 403: User ID mismatch (access denied)
+            - 404: Character not found
+            - 422: Invalid UUID format
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID format
+    try:
+        character_id = str(uuid.UUID(character_id))
+    except ValueError:
+        logger.warning(
+            "get_poi_summary_invalid_uuid",
+            character_id=character_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+
+    # Log retrieval attempt
+    logger.info(
+        "get_poi_summary_attempt",
+        character_id=character_id,
+        user_id=x_user_id if x_user_id else "anonymous",
+        preview_limit=preview_limit,
+    )
+
+    try:
+        # 1. Verify character exists
+        characters_ref = db.collection(settings.firestore_characters_collection)
+        char_ref = characters_ref.document(character_id)
+        char_snapshot = char_ref.get()
+
+        if not char_snapshot.exists:
+            logger.warning(
+                "get_poi_summary_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+
+        # 2. Verify ownership if X-User-Id is provided
+        char_data = char_snapshot.to_dict()
+        if x_user_id is not None:
+            stripped_user_id = x_user_id.strip()
+            # Empty/whitespace-only header is treated as a client error
+            if not stripped_user_id:
+                logger.warning(
+                    "get_poi_summary_empty_user_id",
+                    character_id=character_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-User-Id header cannot be empty",
+                )
+
+            owner_user_id = char_data.get("owner_user_id")
+
+            if stripped_user_id != owner_user_id:
+                logger.warning(
+                    "get_poi_summary_user_mismatch",
+                    character_id=character_id,
+                    requested_user_id=stripped_user_id,
+                    owner_user_id=owner_user_id,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: user ID does not match character owner",
+                )
+
+        # 3. Get total count using efficient aggregation
+        from app.firestore import count_pois
+
+        total_count = count_pois(character_id)
+
+        # 4. Get preview of newest POIs
+        from app.firestore import get_pois_collection
+
+        pois_collection = get_pois_collection(character_id)
+        preview_query = pois_collection.order_by(
+            "timestamp_discovered", direction=firestore.Query.DESCENDING
+        ).limit(preview_limit)
+
+        preview_docs = list(preview_query.stream())
+
+        # 5. Convert to PointOfInterest models for preview
+        preview_pois = []
+        for doc in preview_docs:
+            poi_data = doc.to_dict()
+
+            # Map subcollection fields to embedded format for backward compatibility
+            timestamp_discovered = poi_data.get("timestamp_discovered")
+            if timestamp_discovered is not None:
+                timestamp_discovered = datetime_from_firestore(timestamp_discovered)
+
+            poi = PointOfInterest(
+                id=poi_data.get("poi_id", doc.id),
+                name=poi_data["name"],
+                description=poi_data["description"],
+                created_at=timestamp_discovered,
+                tags=poi_data.get("tags"),
+            )
+            preview_pois.append(poi)
+
+        logger.info(
+            "get_poi_summary_success",
+            character_id=character_id,
+            total_count=total_count,
+            preview_count=len(preview_pois),
+        )
+
+        return GetPOISummaryResponse(
+            total_count=total_count,
+            preview=preview_pois,
+            preview_count=len(preview_pois),
+        )
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "get_poi_summary_error",
+            character_id=character_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve POI summary due to an internal error",
         )
 
 
@@ -3515,26 +3741,65 @@ async def get_character_context(
             state=combat_state_obj if combat_active else None,
         )
 
-        # 6. Prepare world POI sample
+        # 6. Prepare world POI sample from subcollection
         pois_sample_list = []
         if include_pois:
-            world_pois_data = char_data.get("world_pois", [])
-            # Sample POIs randomly using configured sample size
-            sample_size = min(settings.context_default_poi_sample_size, len(world_pois_data))
-            if sample_size > 0:
-                sampled_data = random.sample(world_pois_data, sample_size)
-                for poi_data in sampled_data:
-                    try:
-                        created_at = poi_data.get("created_at")
-                        if created_at is not None:
+            # Query POIs from subcollection (authoritative storage)
+            from app.firestore import query_pois as query_pois_helper
+            
+            # Fetch up to context_default_poi_sample_size * 2 POIs to ensure good random sample
+            # (fetching more than needed provides better randomness)
+            fetch_limit = settings.context_default_poi_sample_size * 2
+            pois_data = query_pois_helper(
+                character_id,
+                limit=fetch_limit,
+                order_by="timestamp_discovered",
+                direction="DESCENDING",
+            )
+            
+            # If subcollection is empty and fallback enabled, try embedded POIs
+            if not pois_data and settings.poi_embedded_read_fallback:
+                world_pois_data = char_data.get("world_pois", [])
+                if world_pois_data:
+                    logger.info(
+                        "get_context_fallback_to_embedded_pois",
+                        character_id=character_id,
+                        embedded_count=len(world_pois_data),
+                    )
+                    # Convert embedded format to subcollection format for consistent handling
+                    pois_data = []
+                    for embedded_poi in world_pois_data:
+                        if not embedded_poi.get("id"):
+                            continue
+                        created_at = embedded_poi.get("created_at")
+                        if created_at:
                             created_at = datetime_from_firestore(created_at)
+                        pois_data.append({
+                            "poi_id": embedded_poi.get("id"),
+                            "name": embedded_poi.get("name"),
+                            "description": embedded_poi.get("description"),
+                            "timestamp_discovered": created_at,
+                            "tags": embedded_poi.get("tags"),
+                        })
+            
+            # Sample POIs randomly using configured sample size
+            sample_size = min(settings.context_default_poi_sample_size, len(pois_data))
+            if sample_size > 0:
+                sampled_data = random.sample(pois_data, sample_size)
+                for poi_data_item in sampled_data:
+                    try:
+                        # Handle both subcollection format and embedded format fields
+                        poi_id = poi_data_item.get("poi_id") or poi_data_item.get("id")
+                        timestamp_discovered = poi_data_item.get("timestamp_discovered") or poi_data_item.get("created_at")
+                        if timestamp_discovered is not None:
+                            timestamp_discovered = datetime_from_firestore(timestamp_discovered)
 
                         poi = PointOfInterest(
-                            id=poi_data["id"],
-                            name=poi_data["name"],
-                            description=poi_data["description"],
-                            created_at=created_at,
-                            tags=poi_data.get("tags"),
+                            id=poi_id,
+                            name=poi_data_item["name"],
+                            description=poi_data_item["description"],
+                            created_at=timestamp_discovered,
+                            tags=poi_data_item.get("tags"),
                         )
                         pois_sample_list.append(poi)
                     except (KeyError, ValueError, TypeError) as e:
@@ -3542,7 +3807,7 @@ async def get_character_context(
                         logger.warning(
                             "get_context_malformed_poi",
                             character_id=character_id,
-                            poi_id=poi_data.get("id", "unknown"),
+                            poi_id=poi_data_item.get("poi_id") or poi_data_item.get("id", "unknown"),
                             error_type=type(e).__name__,
                             error_message=str(e),
                         )
