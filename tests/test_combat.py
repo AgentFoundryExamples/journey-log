@@ -1053,16 +1053,16 @@ class TestGetCombat:
 class TestStatusTransitions:
     """Test status transitions through combat sequences (Healthy → Wounded → Dead)."""
 
-    def test_combat_sequence_healthy_to_wounded(
+    def test_get_character_when_healthy(
         self,
         test_client_with_mock_db,
         mock_firestore_client,
     ):
-        """Test combat sequence transitioning player from Healthy to Wounded."""
+        """Test GET /character/{id} correctly retrieves a Healthy character."""
         character_id = "550e8400-e29b-41d4-a716-446655440000"
 
-        # Initial character state - Healthy
-        initial_character = {
+        # Character state - Healthy
+        healthy_character = {
             "character_id": character_id,
             "owner_user_id": "user123",
             "adventure_prompt": "Test",
@@ -1086,44 +1086,29 @@ class TestStatusTransitions:
         # Setup mock
         mock_snapshot = Mock()
         mock_snapshot.exists = True
-        mock_snapshot.to_dict.return_value = initial_character
+        mock_snapshot.to_dict.return_value = healthy_character
 
         mock_doc_ref = (
             mock_firestore_client.collection.return_value.document.return_value
         )
         mock_doc_ref.get.return_value = mock_snapshot
 
-        # Get initial status
+        # Get status
         response = test_client_with_mock_db.get(
             f"/characters/{character_id}", headers={"X-User-Id": "user123"}
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["character"]["player_state"]["status"] == "Healthy"
 
-        # Simulate transition to Wounded after combat damage
-        wounded_character = initial_character.copy()
-        wounded_character["player_state"] = {
-            **initial_character["player_state"],
-            "status": "Wounded",
-        }
-        mock_snapshot.to_dict.return_value = wounded_character
-
-        # Verify character is now wounded
-        response = test_client_with_mock_db.get(
-            f"/characters/{character_id}", headers={"X-User-Id": "user123"}
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["character"]["player_state"]["status"] == "Wounded"
-
-    def test_combat_sequence_wounded_to_dead(
+    def test_get_character_when_wounded(
         self,
         test_client_with_mock_db,
         mock_firestore_client,
     ):
-        """Test combat sequence transitioning player from Wounded to Dead."""
+        """Test GET /character/{id} correctly retrieves a Wounded character."""
         character_id = "550e8400-e29b-41d4-a716-446655440000"
 
-        # Character starts Wounded
+        # Character state - Wounded
         wounded_character = {
             "character_id": character_id,
             "owner_user_id": "user123",
@@ -1174,21 +1159,6 @@ class TestStatusTransitions:
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["character"]["player_state"]["status"] == "Wounded"
-
-        # Simulate fatal blow - transition to Dead
-        dead_character = wounded_character.copy()
-        dead_character["player_state"] = {
-            **wounded_character["player_state"],
-            "status": "Dead",
-        }
-        mock_snapshot.to_dict.return_value = dead_character
-
-        # Verify character is now dead
-        response = test_client_with_mock_db.get(
-            f"/characters/{character_id}", headers={"X-User-Id": "user123"}
-        )
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["character"]["player_state"]["status"] == "Dead"
 
     def test_enemy_status_transitions_in_combat(
         self,
@@ -1431,10 +1401,21 @@ class TestStatusTransitions:
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["state"]["enemies"][0]["status"] == "Wounded"
         
-        # Verify no numeric fields in response
+        # Verify no numeric fields in enemy response
         enemy_data = response.json()["state"]["enemies"][0]
         assert "hp" not in enemy_data
         assert "health" not in enemy_data
         assert "current_hp" not in enemy_data
         assert "max_hp" not in enemy_data
         assert "damage" not in enemy_data
+        
+        # Verify no numeric fields in player_state (from character data)
+        # Note: The combat endpoint doesn't return full character data,
+        # but we can verify the input character_data didn't have numeric fields
+        player_state = character_data["player_state"]
+        assert "level" not in player_state
+        assert "experience" not in player_state
+        assert "stats" not in player_state
+        assert "health" not in player_state
+        assert "current_hp" not in player_state
+        assert "max_hp" not in player_state

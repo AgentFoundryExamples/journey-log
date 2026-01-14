@@ -1465,6 +1465,7 @@ class TestInvalidStatusValidation:
 
     def test_player_state_rejects_case_incorrect_status(self):
         """Test that PlayerState is case-sensitive for status values."""
+        # Test lowercase variations
         with pytest.raises(ValidationError):
             PlayerState(
                 identity=CharacterIdentity(
@@ -1479,7 +1480,44 @@ class TestInvalidStatusValidation:
                 identity=CharacterIdentity(
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
+                status="wounded",  # Lowercase - should be "Wounded"
+                location="test",
+            )
+        
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="dead",  # Lowercase - should be "Dead"
+                location="test",
+            )
+        
+        # Test uppercase variations
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="HEALTHY",  # Uppercase - should be "Healthy"
+                location="test",
+            )
+        
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
                 status="WOUNDED",  # Uppercase - should be "Wounded"
+                location="test",
+            )
+        
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="DEAD",  # Uppercase - should be "Dead"
                 location="test",
             )
 

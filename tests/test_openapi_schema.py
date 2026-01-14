@@ -36,8 +36,8 @@ class TestOpenAPISchemaHealthModel:
         "/characters/{character_id}/combat",
     ]
     
-    # Pre-compiled regex for standalone "xp" detection
-    XP_PATTERN = re.compile(r'\bxp\b')
+    # Pre-compiled regex for standalone "xp" detection (case-insensitive)
+    XP_PATTERN = re.compile(r'\bxp\b', re.IGNORECASE)
 
     def test_openapi_schema_player_state_has_status_field(self):
         """Test that PlayerState schema includes status field."""
