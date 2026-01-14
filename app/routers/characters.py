@@ -44,6 +44,7 @@ from app.models import (
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
+    PointOfInterestSubcollection,
     Quest,
     Status,
     WorldContextState,
@@ -52,6 +53,15 @@ from app.models import (
     datetime_from_firestore,
     datetime_to_firestore,
     narrative_turn_from_firestore,
+    poi_subcollection_to_firestore,
+    poi_subcollection_from_firestore,
+)
+from app.firestore import (
+    get_pois_collection,
+    create_poi,
+    query_pois,
+    should_migrate_pois,
+    migrate_embedded_pois_to_subcollection,
 )
 
 logger = get_logger(__name__)
@@ -1379,7 +1389,9 @@ class GetRandomPOIsResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
     summary="Add a POI to a character",
     description=(
-        "Create and append a new Point of Interest to a character's world_pois array.\n\n"
+        "Create a new Point of Interest in a character's pois subcollection.\n\n"
+        "**Authoritative Storage:** POIs are stored in `characters/{character_id}/pois/{poi_id}` subcollection.\n\n"
+        "**Copy-on-Write Migration:** On first POI write, embedded POIs (if any) are automatically migrated to the subcollection.\n\n"
         "**Path Parameters:**\n"
         "- `character_id`: UUID-formatted character identifier\n\n"
         "**Required Headers:**\n"
@@ -1397,8 +1409,8 @@ class GetRandomPOIsResponse(BaseModel):
         "**Atomicity:**\n"
         "Uses Firestore transaction to atomically:\n"
         "1. Verify character exists and user owns it\n"
-        "2. Check world_pois array is not at capacity (200 max)\n"
-        "3. Append POI with generated id and timestamp\n"
+        "2. Migrate embedded POIs to subcollection (if migration enabled and needed)\n"
+        "3. Create POI in subcollection with generated id and timestamp\n"
         "4. Update character.updated_at timestamp\n\n"
         "**Response:**\n"
         "- Returns the stored PointOfInterest (with server-generated id and created_at)\n\n"
@@ -1417,15 +1429,18 @@ async def create_poi(
     x_user_id: str = Header(..., description="User identifier for ownership"),
 ) -> CreatePOIResponse:
     """
-    Create and append a POI to a character's world_pois array.
+    Create and append a POI to a character's pois subcollection.
 
-    This endpoint:
+    This endpoint implements copy-on-write POI migration:
     1. Validates character_id as UUID format
     2. Validates X-User-Id matches character owner
     3. Validates payload (name, description, optional timestamp, optional tags)
-    4. Generates POI id and assigns server timestamp if not provided
-    5. Uses Firestore transaction to atomically append POI and update character
-    6. Returns stored POI with generated id and timestamp
+    4. Checks if migration is needed (embedded world_pois exist)
+    5. If migration enabled, migrates embedded POIs to subcollection
+    6. Creates POI in subcollection (authoritative storage)
+    7. Returns stored POI with generated id and timestamp
+
+    The authoritative POI storage is: characters/{character_id}/pois/{poi_id}
 
     Args:
         character_id: UUID-formatted character identifier
@@ -1438,7 +1453,7 @@ async def create_poi(
 
     Raises:
         HTTPException:
-            - 400: Invalid X-User-Id or POI capacity exceeded
+            - 400: Invalid X-User-Id
             - 403: Access denied (user not owner)
             - 404: Character not found
             - 422: Validation error
@@ -1504,51 +1519,78 @@ async def create_poi(
 
         @firestore.transactional
         def create_poi_in_transaction(transaction):
-            """Atomically append POI and update character."""
+            """Atomically create POI in subcollection and handle migration."""
             # 1. Fetch character document to verify existence and ownership
             char_ref = characters_ref.document(character_id)
             char_snapshot = char_ref.get(transaction=transaction)
 
             if not char_snapshot.exists:
-                return None, "not_found"
+                return None, None, "not_found"
 
             # 2. Verify ownership
             char_data = char_snapshot.to_dict()
             owner_user_id = char_data.get("owner_user_id")
 
             if owner_user_id != user_id:
-                return None, "access_denied"
+                return None, None, "access_denied"
 
-            # 3. Check world_pois capacity (max 200 per schema)
-            existing_pois = char_data.get("world_pois", [])
-            if len(existing_pois) >= 200:
-                return None, "capacity_exceeded"
+            # 3. Check if migration is needed (copy-on-write)
+            migration_stats = None
+            if settings.poi_migration_enabled and should_migrate_pois(char_data):
+                logger.info(
+                    "create_poi_migrating_embedded_pois",
+                    character_id=character_id,
+                    embedded_count=len(char_data.get("world_pois", [])),
+                )
+                migration_stats = migrate_embedded_pois_to_subcollection(
+                    character_id, transaction
+                )
+                logger.info(
+                    "create_poi_migration_completed",
+                    character_id=character_id,
+                    **migration_stats,
+                )
 
-            # 4. Create POI data
+            # 4. Create POI data for subcollection
             # Use server timestamp if not provided by client
-            created_at = poi_timestamp if poi_timestamp else datetime.now(timezone.utc)
+            timestamp_discovered = (
+                poi_timestamp if poi_timestamp else datetime.now(timezone.utc)
+            )
 
-            poi_data = {
+            # Create subcollection POI model
+            poi_subcollection = PointOfInterestSubcollection(
+                poi_id=poi_id,
+                name=request.name,
+                description=request.description,
+                timestamp_discovered=timestamp_discovered,
+                tags=request.tags,
+                visited=False,  # Default for new POIs
+            )
+
+            # Convert to Firestore dict
+            poi_data = poi_subcollection_to_firestore(poi_subcollection)
+
+            # 5. Create POI in subcollection
+            from app.firestore import create_poi as create_poi_helper
+
+            create_poi_helper(character_id, poi_data, transaction=transaction)
+
+            # 6. Update character updated_at timestamp
+            transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
+
+            # Convert timestamp for response
+            response_poi_data = {
                 "id": poi_id,
                 "name": request.name,
                 "description": request.description,
-                "created_at": created_at,
+                "created_at": timestamp_discovered,
                 "tags": request.tags,
             }
 
-            # 5. Append POI to world_pois array (create new list to avoid mutation)
-            updated_pois = existing_pois + [poi_data]
-
-            # 6. Update character with new POI and updated_at timestamp
-            transaction.update(
-                char_ref,
-                {"world_pois": updated_pois, "updated_at": firestore.SERVER_TIMESTAMP},
-            )
-
-            return poi_data, "success"
+            return response_poi_data, migration_stats, "success"
 
         # Execute transaction
-        poi_data, result = create_poi_in_transaction(transaction)
+        poi_data, migration_stats, result = create_poi_in_transaction(transaction)
 
         # Handle transaction results
         if result == "not_found":
@@ -1570,18 +1612,8 @@ async def create_poi(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: user ID does not match character owner",
             )
-        elif result == "capacity_exceeded":
-            logger.warning(
-                "create_poi_capacity_exceeded",
-                character_id=character_id,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="POI capacity exceeded: character has 200 POIs (max 200). "
-                "Consider archiving or removing old POIs before adding new ones.",
-            )
 
-        # Convert to PointOfInterest model
+        # Convert to PointOfInterest model for response (backward compatibility)
         created_poi = PointOfInterest(
             id=poi_data["id"],
             name=poi_data["name"],
@@ -1595,6 +1627,7 @@ async def create_poi(
             character_id=character_id,
             poi_id=poi_id,
             name=request.name,
+            migration_performed=migration_stats is not None,
         )
 
         return CreatePOIResponse(poi=created_poi)
@@ -1624,7 +1657,9 @@ async def create_poi(
     status_code=status.HTTP_200_OK,
     summary="Get random POIs for a character",
     description=(
-        "Retrieve N randomly sampled POIs from a character's world_pois array.\n\n"
+        "Retrieve N randomly sampled POIs from a character's pois subcollection.\n\n"
+        "**Authoritative Storage:** Reads from `characters/{character_id}/pois/{poi_id}` subcollection.\n"
+        "**Backward Compatibility:** Falls back to embedded world_pois array if subcollection is empty (configurable via POI_EMBEDDED_READ_FALLBACK).\n\n"
         "**Path Parameters:**\n"
         "- `character_id`: UUID-formatted character identifier\n\n"
         "**Optional Headers:**\n"
@@ -1658,13 +1693,16 @@ async def get_random_pois(
     n: int = 3,
 ) -> GetRandomPOIsResponse:
     """
-    Retrieve N randomly sampled POIs from a character's world_pois array.
+    Retrieve N randomly sampled POIs from a character's pois subcollection.
+
+    This endpoint reads from the authoritative subcollection with optional fallback
+    to embedded POIs for backward compatibility during migration.
 
     This endpoint:
     1. Validates character_id as UUID format
     2. Validates n parameter (default 3, min 1, max 20)
     3. Optionally verifies X-User-Id matches owner_user_id
-    4. Fetches character's world_pois array
+    4. Fetches POIs from subcollection (or fallback to embedded if configured)
     5. Samples up to N unique POIs uniformly at random
     6. Returns sampled POIs with metadata
 
@@ -1763,9 +1801,32 @@ async def get_random_pois(
                     detail="Access denied: user ID does not match character owner",
                 )
 
-        # 3. Get world_pois array
-        world_pois_data = char_data.get("world_pois", [])
-        total_available = len(world_pois_data)
+        # 3. Get POIs from subcollection (authoritative) with fallback to embedded
+        from app.firestore import query_pois as query_pois_helper
+
+        pois_data = query_pois_helper(character_id, limit=None)  # Get all POIs
+        
+        # Fallback to embedded POIs if subcollection is empty and fallback enabled
+        if not pois_data and settings.poi_embedded_read_fallback:
+            embedded_pois = char_data.get("world_pois", [])
+            if embedded_pois:
+                logger.info(
+                    "get_random_pois_fallback_to_embedded",
+                    character_id=character_id,
+                    embedded_count=len(embedded_pois),
+                )
+                # Convert embedded format to subcollection format
+                pois_data = []
+                for embedded_poi in embedded_pois:
+                    pois_data.append({
+                        "poi_id": embedded_poi.get("id"),
+                        "name": embedded_poi.get("name"),
+                        "description": embedded_poi.get("description"),
+                        "timestamp_discovered": embedded_poi.get("created_at"),
+                        "tags": embedded_poi.get("tags"),
+                    })
+
+        total_available = len(pois_data)
 
         # 4. Sample POIs
         # Determine how many to sample (min of n and total available)
@@ -1776,21 +1837,21 @@ async def get_random_pois(
             sampled_pois_data = []
         elif sample_size == total_available:
             # All POIs requested, no need to sample
-            sampled_pois_data = world_pois_data
+            sampled_pois_data = pois_data
         else:
             # Sample without replacement
-            sampled_pois_data = random.sample(world_pois_data, sample_size)
+            sampled_pois_data = random.sample(pois_data, sample_size)
 
-        # 5. Convert to PointOfInterest models
+        # 5. Convert to PointOfInterest models (response format)
         sampled_pois = []
         for poi_data in sampled_pois_data:
-            # Convert Firestore timestamp to datetime if needed
-            created_at = poi_data.get("created_at")
+            # Map subcollection fields to embedded format for response
+            created_at = poi_data.get("timestamp_discovered")
             if created_at is not None:
                 created_at = datetime_from_firestore(created_at)
 
             poi = PointOfInterest(
-                id=poi_data["id"],
+                id=poi_data.get("poi_id", poi_data.get("id")),  # Handle both formats
                 name=poi_data["name"],
                 description=poi_data["description"],
                 created_at=created_at,
