@@ -233,3 +233,66 @@ class TestLegacyFieldBackwardCompatibility:
                 "updated_at": "2026-01-11T12:00:00Z",
             }
             character_from_firestore(legacy_data)
+
+    def test_legacy_fields_not_repersisted_after_roundtrip(self):
+        """Test that stripped legacy fields are never persisted back to storage."""
+        from app.models import character_to_firestore
+        
+        # Simulate a Firestore document with legacy fields
+        legacy_data = {
+            "character_id": "test-char-roundtrip",
+            "owner_user_id": "user_roundtrip",
+            "adventure_prompt": "Roundtrip test",
+            "player_state": {
+                "identity": {
+                    "name": "Roundtrip Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                # Legacy fields that should NOT be in output
+                "level": 10,
+                "experience": 5000,
+                "stats": {"strength": 18},
+                "current_hp": 100,
+                "max_hp": 100,
+                # Current fields
+                "equipment": [],
+                "inventory": [],
+                "location": "Test Town",
+                "additional_fields": {},
+            },
+            "world_pois_reference": "world-v1",
+            "narrative_turns_reference": "narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": "2026-01-11T12:00:00Z",
+            "updated_at": "2026-01-11T12:00:00Z",
+        }
+
+        # Deserialize the document (strips legacy fields)
+        character = character_from_firestore(legacy_data)
+
+        # Re-serialize the document
+        serialized_data = character_to_firestore(character)
+
+        # Verify legacy fields are NOT present in the serialized output
+        assert "player_state" in serialized_data
+        player_state = serialized_data["player_state"]
+        
+        # Assert that none of the legacy numeric fields are in the output
+        assert "level" not in player_state, "level field should not be persisted"
+        assert "experience" not in player_state, "experience field should not be persisted"
+        assert "stats" not in player_state, "stats field should not be persisted"
+        assert "current_hp" not in player_state, "current_hp field should not be persisted"
+        assert "max_hp" not in player_state, "max_hp field should not be persisted"
+        assert "current_health" not in player_state, "current_health field should not be persisted"
+        assert "max_health" not in player_state, "max_health field should not be persisted"
+        assert "health" not in player_state, "health field should not be persisted"
+        
+        # Verify that current fields are still present
+        assert "identity" in player_state
+        assert "status" in player_state
+        assert player_state["status"] == "Healthy"
+        assert "equipment" in player_state
+        assert "inventory" in player_state
+        assert "location" in player_state

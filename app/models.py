@@ -31,6 +31,10 @@ from typing import Any, Literal, Optional, Union
 from google.cloud import firestore  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class Status(str, Enum):
     """
@@ -204,13 +208,8 @@ class PlayerState(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_status_and_location(self) -> "PlayerState":
-        """Validate required fields: status must be valid enum, location must be meaningful."""
-        # Status field is required and enforced by Pydantic Field, but ensure it's a valid Status enum
-        if not isinstance(self.status, Status):
-            raise ValueError(f"status must be a valid Status enum value (Healthy, Wounded, Dead), got {self.status}")
-        
-        # Validate location field ensures meaningful data regardless of format
+    def validate_location(self) -> "PlayerState":
+        """Validate location field ensures meaningful data regardless of format."""
         if isinstance(self.location, str):
             # String locations must be non-empty
             if not self.location or not self.location.strip():
@@ -1031,6 +1030,21 @@ def character_from_firestore(
     # For backward compatibility, remove legacy numeric health/stat fields from player_state
     if "player_state" in data and isinstance(data["player_state"], dict):
         player_data = data["player_state"]
+        # Track which deprecated fields are present for logging
+        deprecated_fields = [
+            "health", "level", "experience", "stats",
+            "current_hp", "max_hp", "current_health", "max_health"
+        ]
+        found_fields = [field for field in deprecated_fields if field in player_data]
+        
+        if found_fields:
+            char_id = data.get("character_id", "unknown")
+            logger.info(
+                "Stripping legacy numeric fields from player_state during deserialization",
+                character_id=char_id,
+                stripped_fields=found_fields,
+            )
+        
         # Remove deprecated numeric fields - they are ignored and never persisted back
         player_data.pop("health", None)  # Old health field
         player_data.pop("level", None)  # Numeric level (use status enum instead)
