@@ -1644,11 +1644,10 @@ async def create_poi(
             # Convert to Firestore dict
             poi_data = poi_subcollection_to_firestore(poi_subcollection)
 
-            # 5. Create POI in subcollection
-            # Import helper with alias to avoid naming conflict with endpoint function
-            from app.firestore import create_poi as create_poi_helper
-
-            create_poi_helper(character_id, poi_data, transaction=transaction)
+            # 5. Create POI in subcollection directly (avoid helper to support mocking)
+            pois_collection = char_ref.collection("pois")
+            poi_ref = pois_collection.document(poi_id)
+            transaction.set(poi_ref, poi_data)
 
             # 6. Update character updated_at timestamp
             transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
