@@ -8,16 +8,16 @@ Includes classification of external dependencies as stdlib vs third-party.
 
 ## Statistics
 
-- **Total files**: 24
-- **Intra-repo dependencies**: 38
-- **External stdlib dependencies**: 30
+- **Total files**: 25
+- **Intra-repo dependencies**: 40
+- **External stdlib dependencies**: 32
 - **External third-party dependencies**: 32
 
 ## External Dependencies
 
 ### Standard Library / Core Modules
 
-Total: 30 unique modules
+Total: 32 unique modules
 
 - `argparse`
 - `contextvars.ContextVar`
@@ -30,6 +30,7 @@ Total: 30 unique modules
 - `json`
 - `logging`
 - `os`
+- `pathlib.Path`
 - `random`
 - `re`
 - `sys`
@@ -38,8 +39,7 @@ Total: 30 unique modules
 - `traceback`
 - `typing.Annotated`
 - `typing.Any`
-- `typing.Callable`
-- ... and 10 more (see JSON for full list)
+- ... and 12 more (see JSON for full list)
 
 ### Third-Party Packages
 
@@ -70,11 +70,11 @@ Total: 32 unique packages
 ## Most Depended Upon Files (Intra-Repo)
 
 - `app/models.py` (8 dependents)
-- `app/config.py` (7 dependents)
+- `app/config.py` (8 dependents)
 - `app/logging.py` (6 dependents)
 - `app/dependencies.py` (5 dependents)
 - `app/main.py` (5 dependents)
-- `app/firestore.py` (3 dependents)
+- `app/firestore.py` (4 dependents)
 - `app/routers/firestore_test.py` (1 dependents)
 - `app/routers/characters.py` (1 dependents)
 - `app/middleware.py` (1 dependents)
@@ -88,7 +88,7 @@ Total: 32 unique packages
 - `tests/test_narrative_turns.py` (3 dependencies)
 - `app/firestore.py` (2 dependencies)
 - `app/middleware.py` (2 dependencies)
+- `scripts/migrate_character_pois.py` (2 dependencies)
 - `tests/test_characters.py` (2 dependencies)
 - `tests/test_combat.py` (2 dependencies)
 - `tests/test_context_aggregation.py` (2 dependencies)
-- `tests/test_status_validation.py` (2 dependencies)

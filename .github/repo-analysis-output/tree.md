@@ -33,6 +33,7 @@
   └── SCHEMA.md
 ├── scripts
   ├── deploy_cloud_run.sh
+  ├── migrate_character_pois.py
   └── remove_numeric_health.py
 ├── tests
   ├── __init__.py

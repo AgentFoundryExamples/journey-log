@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 24
+Total files: 25
 
 ## app/__init__.py
 **Language:** Python  
@@ -114,6 +114,15 @@ Total files: 24
 **LOC:** 415  
 **TODOs/FIXMEs:** 0  
 
+## scripts/migrate_character_pois.py
+**Language:** Python  
+**Role:** script  
+**Role Justification:** located in 'scripts' directory  
+**Summary:** Python utility script (role: script)  
+**Size:** 12.72 KB  
+**LOC:** 288  
+**TODOs/FIXMEs:** 0  
+
 ## scripts/remove_numeric_health.py
 **Language:** Python  
 **Role:** script  
@@ -137,8 +146,8 @@ Total files: 24
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 137.57 KB  
-**LOC:** 3147  
+**Size:** 147.01 KB  
+**LOC:** 3317  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_combat.py
@@ -155,8 +164,8 @@ Total files: 24
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 25.70 KB  
-**LOC:** 544  
+**Size:** 31.42 KB  
+**LOC:** 666  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_firestore_serialization.py

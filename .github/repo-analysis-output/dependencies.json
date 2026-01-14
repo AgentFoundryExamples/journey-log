@@ -207,6 +207,28 @@
       }
     },
     {
+      "id": "scripts/migrate_character_pois.py",
+      "path": "scripts/migrate_character_pois.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "argparse",
+          "datetime.datetime",
+          "datetime.timezone",
+          "json",
+          "logging",
+          "pathlib.Path",
+          "sys",
+          "typing.Dict",
+          "typing.List",
+          "typing.Optional"
+        ],
+        "third-party": [
+          "google.cloud.firestore"
+        ]
+      }
+    },
+    {
       "id": "scripts/remove_numeric_health.py",
       "path": "scripts/remove_numeric_health.py",
       "type": "file",
@@ -247,7 +269,8 @@
           "datetime.datetime",
           "datetime.timedelta",
           "datetime.timezone",
-          "unittest.mock.Mock"
+          "unittest.mock.Mock",
+          "unittest.mock.patch"
         ],
         "third-party": [
           "fastapi.status",
@@ -494,6 +517,14 @@
       "target": "app/__init__.py"
     },
     {
+      "source": "scripts/migrate_character_pois.py",
+      "target": "app/config.py"
+    },
+    {
+      "source": "scripts/migrate_character_pois.py",
+      "target": "app/firestore.py"
+    },
+    {
       "source": "tests/test_characters.py",
       "target": "app/main.py"
     },
@@ -571,6 +602,7 @@
       "json",
       "logging",
       "os",
+      "pathlib.Path",
       "random",
       "re",
       "sys",
@@ -580,6 +612,7 @@
       "typing.Annotated",
       "typing.Any",
       "typing.Callable",
+      "typing.Dict",
       "typing.List",
       "typing.Literal",
       "typing.Optional",
@@ -625,7 +658,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 30,
+    "stdlib_count": 32,
     "third-party_count": 32
   }
 }

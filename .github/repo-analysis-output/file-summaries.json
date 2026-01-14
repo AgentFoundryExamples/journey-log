@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 24,
+  "total_files": 25,
   "files": [
     {
       "schema_version": "2.0",
@@ -172,6 +172,20 @@
     },
     {
       "schema_version": "2.0",
+      "path": "scripts/migrate_character_pois.py",
+      "language": "Python",
+      "role": "script",
+      "role_justification": "located in 'scripts' directory",
+      "summary": "Python utility script (role: script)",
+      "summary_text": "Python utility script (role: script)",
+      "metrics": {
+        "size_bytes": 13024,
+        "loc": 288,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
       "path": "scripts/remove_numeric_health.py",
       "language": "Python",
       "role": "script",
@@ -207,8 +221,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 140867,
-        "loc": 3147,
+        "size_bytes": 150539,
+        "loc": 3317,
         "todo_count": 0
       }
     },
@@ -235,8 +249,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 26318,
-        "loc": 544,
+        "size_bytes": 32177,
+        "loc": 666,
         "todo_count": 0
       }
     },

@@ -150,6 +150,10 @@
         },
         {
           "type": "file",
+          "name": "migrate_character_pois.py"
+        },
+        {
+          "type": "file",
           "name": "remove_numeric_health.py"
         }
       ]
