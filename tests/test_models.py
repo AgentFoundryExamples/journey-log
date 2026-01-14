@@ -1465,7 +1465,7 @@ class TestInvalidStatusValidation:
 
     def test_player_state_rejects_case_incorrect_status(self):
         """Test that PlayerState is case-sensitive for status values."""
-        # Test lowercase variations
+        # Test lowercase
         with pytest.raises(ValidationError):
             PlayerState(
                 identity=CharacterIdentity(
@@ -1493,7 +1493,7 @@ class TestInvalidStatusValidation:
                 location="test",
             )
         
-        # Test uppercase variations
+        # Test uppercase
         with pytest.raises(ValidationError):
             PlayerState(
                 identity=CharacterIdentity(

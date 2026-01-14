@@ -1409,9 +1409,7 @@ class TestStatusTransitions:
         assert "max_hp" not in enemy_data
         assert "damage" not in enemy_data
         
-        # Verify no numeric fields in player_state (from character data)
-        # Note: The combat endpoint doesn't return full character data,
-        # but we can verify the input character_data didn't have numeric fields
+        # Verify no numeric fields in player_state
         player_state = character_data["player_state"]
         assert "level" not in player_state
         assert "experience" not in player_state
