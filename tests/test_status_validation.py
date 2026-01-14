@@ -36,7 +36,6 @@ from app.models import Status
 def test_client_with_mock_db():
     """Create a test client with mocked Firestore for validation tests."""
     mock_db = MagicMock()
-    
     with patch("app.dependencies.get_firestore_client", return_value=mock_db):
         client = TestClient(app)
         yield client, mock_db
@@ -122,7 +121,7 @@ class TestStatusValidationInCombatEndpoints:
             headers={"X-User-Id": "user123"},
         )
         
-        # Should return 422 for first validation error encountered
+        # Should return 422 with validation errors (may include multiple errors)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         data = response.json()
         assert "errors" in data or "detail" in data

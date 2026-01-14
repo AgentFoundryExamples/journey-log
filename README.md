@@ -614,8 +614,9 @@ When a route raises an `HTTPException`, the response includes:
 
 ### Validation Errors
 
-Request validation errors return:
+Request validation errors return detailed information including field location, error message, and expected values.
 
+**General validation error:**
 ```json
 {
   "error": "validation_error",
@@ -630,6 +631,31 @@ Request validation errors return:
   "request_id": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
+
+**Invalid status enum validation:**
+```json
+{
+  "error": "validation_error",
+  "message": "Request validation failed",
+  "errors": [
+    {
+      "loc": ["body", "combat_state", "enemies", 0, "status"],
+      "msg": "Input should be 'Healthy', 'Wounded' or 'Dead'",
+      "type": "enum",
+      "ctx": {
+        "expected": "'Healthy', 'Wounded' or 'Dead'"
+      }
+    }
+  ],
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+All validation errors:
+- Return HTTP 422 (Unprocessable Entity)
+- Include precise field location in the `loc` array
+- Provide clear error messages with expected values
+- Include context information for enum and other constrained fields
 
 ### Unhandled Exceptions
 
