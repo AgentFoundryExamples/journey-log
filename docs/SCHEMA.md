@@ -267,15 +267,48 @@ class CharacterDocument(BaseModel):
   - `additional_fields` (map): Extensible fields for game-specific data
 
 **Deprecated Fields (Ignored During Deserialization):**
-The following numeric health/stat fields are **deprecated** and will be ignored if encountered in Firestore documents:
-- `level` (integer) - Removed in favor of status enum
-- `experience` (integer) - Removed in favor of status enum
-- `stats` (map) - Removed in favor of status enum
-- `current_hp` / `max_hp` - Removed in favor of status enum
-- `current_health` / `max_health` - Removed in favor of status enum
-- `health` (any numeric or complex format) - Removed in favor of status enum
 
-When reading legacy documents containing these fields, they are silently dropped and never persisted back to storage. The system relies exclusively on the `status` enum for character state.
+The following numeric health/stat fields are **deprecated** and will be **automatically stripped** if encountered in Firestore documents:
+
+| Field Name | Type | Replacement |
+|------------|------|-------------|
+| `level` | integer | Use `status` enum exclusively |
+| `experience` | integer | Use `status` enum exclusively |
+| `stats` | map (e.g., `{strength: 18}`) | Use `status` enum exclusively |
+| `current_hp` | integer | Use `status` enum exclusively |
+| `max_hp` | integer | Use `status` enum exclusively |
+| `current_health` | integer | Use `status` enum exclusively |
+| `max_health` | integer | Use `status` enum exclusively |
+| `health` | any format (numeric, map, etc.) | Use `status` enum exclusively |
+
+**Backward Compatibility Behavior:**
+
+1. **Read Operations:** When reading legacy documents containing these fields, the application automatically strips them during deserialization (in `character_from_firestore()`)
+2. **Write Operations:** Stripped fields are never persisted back to storage, ensuring clean data migration
+3. **Logging:** Field stripping is logged at INFO level with character_id and list of stripped fields for audit purposes
+4. **API Validation:** The `status` field is always required; missing status results in validation errors
+5. **Idempotent Cleanup:** The system's automatic stripping behavior is idempotent - repeated reads never reintroduce numeric fields
+
+**Manual Cleanup:**
+
+For operators who want to proactively remove legacy fields from stored documents (rather than relying on automatic stripping during reads), a cleanup utility is provided:
+
+```bash
+# See docs/deployment.md for usage instructions
+python scripts/remove_numeric_health.py --dry-run  # Preview changes
+python scripts/remove_numeric_health.py            # Apply changes
+```
+
+The cleanup script:
+- Scans all character documents in the configured Firestore collection
+- Identifies documents containing deprecated numeric health fields
+- Removes deprecated fields using atomic Firestore updates
+- Logs all actions with document IDs and removed field names
+- Supports dry-run mode for safe preview before applying changes
+- Handles missing status fields gracefully (logs warning, does not crash)
+- Can be run repeatedly without negative effects (idempotent)
+
+See **Edge Cases and Migration** section below for additional migration guidance.
 
 **Location Structure:**
 
@@ -1102,6 +1135,125 @@ def check_schema_compatibility(character_doc):
 - Major version changes = breaking changes (require migration)
 - Minor version changes = backward-compatible additions
 - Patch version changes = fixes (no schema change)
+
+### 5. Legacy Numeric Health Fields Migration
+
+**Scenario:** Existing character documents contain deprecated numeric health/stat fields (`level`, `experience`, `stats`, `current_hp`, `max_hp`, `current_health`, `max_health`, `health`).
+
+**Automatic Cleanup on Read:**
+
+The application automatically strips legacy numeric fields during deserialization:
+- When `character_from_firestore()` is called, deprecated fields are removed from `player_state`
+- Stripped fields are logged at INFO level for audit purposes
+- The cleaned document is used in-memory, but **original Firestore document is not modified**
+- Subsequent writes (if any) will persist the cleaned version without legacy fields
+
+```python
+# Example: Automatic stripping during read
+character_doc = character_ref.get().to_dict()
+# Document may contain: player_state.level, player_state.current_hp, etc.
+
+character = character_from_firestore(character_doc)
+# character.player_state no longer has level, current_hp, etc.
+# Only the status field remains for health tracking
+```
+
+**Manual Cleanup Script:**
+
+For proactive cleanup of stored documents, use the provided script:
+
+```bash
+# Set required environment variables (see .env.example)
+export GCP_PROJECT_ID="your-project-id"
+export FIRESTORE_CHARACTERS_COLLECTION="characters"  # Optional, defaults to "characters"
+
+# Preview changes without modifying Firestore (recommended first step)
+python scripts/remove_numeric_health.py --dry-run
+
+# Apply changes to all documents
+python scripts/remove_numeric_health.py
+
+# Process specific documents by ID
+python scripts/remove_numeric_health.py --character-ids char_001 char_002
+
+# Limit processing to first N documents
+python scripts/remove_numeric_health.py --limit 100
+```
+
+**Script Features:**
+- **Dry-run mode:** Preview changes without modifying Firestore
+- **Atomic updates:** Uses Firestore field delete operations (atomic per-document)
+- **Batch processing:** Processes documents in batches to avoid rate limits
+- **Progress logging:** Reports progress every 10 documents
+- **Error handling:** Continues processing if individual documents fail
+- **Audit trail:** Logs all removed fields with document IDs
+- **Idempotent:** Safe to run multiple times (skips documents without legacy fields)
+- **Graceful handling:** Documents missing status field are logged as warnings but not modified
+
+**Permissions Required:**
+
+The cleanup script requires:
+- **Firestore Data User** (`roles/datastore.user`) or **Firestore Data Owner** (`roles/datastore.owner`)
+- Read and write access to the character collection
+
+```bash
+# Grant permissions to service account
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/datastore.user"
+
+# Or grant to your user for local execution
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="user:YOUR_EMAIL" \
+  --role="roles/datastore.user"
+```
+
+**Rate Limits and Performance:**
+
+- Default batch size: 10 documents per batch
+- Default delay between batches: 0.5 seconds
+- Estimated throughput: ~1000 documents per minute
+- Adjust `--batch-size` and `--batch-delay` flags to tune for your workload
+
+```bash
+# Higher throughput (use carefully to avoid quota exhaustion)
+python scripts/remove_numeric_health.py --batch-size 50 --batch-delay 0.1
+
+# Conservative (for heavily rate-limited projects)
+python scripts/remove_numeric_health.py --batch-size 5 --batch-delay 2.0
+```
+
+**Validation After Cleanup:**
+
+After running the script, verify cleanup success:
+
+```python
+from google.cloud import firestore
+
+db = firestore.Client()
+characters_ref = db.collection("characters")
+
+deprecated_fields = ["level", "experience", "stats", "current_hp", "max_hp", 
+                     "current_health", "max_health", "health"]
+
+for character_doc in characters_ref.limit(10).stream():
+    character_data = character_doc.to_dict()
+    player_state = character_data.get("player_state", {})
+    
+    found_fields = [f for f in deprecated_fields if f in player_state]
+    if found_fields:
+        print(f"Character {character_doc.id} still has legacy fields: {found_fields}")
+    else:
+        print(f"Character {character_doc.id} is clean")
+```
+
+**Edge Cases Handled:**
+
+1. **Missing status field:** Script logs warning and skips the document (does not crash)
+2. **Partial legacy fields:** Removes only the fields present (e.g., only `level` if others don't exist)
+3. **Documents already clean:** Skips without error (idempotent)
+4. **Combat state enemies:** Also scans and cleans legacy fields in `combat_state.enemies[].status` if needed
+5. **Concurrent modifications:** Uses Firestore's atomic field deletes (safe for concurrent access)
 
 ---
 

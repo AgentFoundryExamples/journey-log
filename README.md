@@ -465,35 +465,88 @@ curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/cont
 
 ### Status-Based Health Tracking
 
-Character health is tracked using a status enum field with three possible values: "Healthy", "Wounded", and "Dead". This provides a simplified health model that focuses on game state transitions rather than numerical health tracking.
+Character health is tracked using a **status enum field** with three possible values: `"Healthy"`, `"Wounded"`, and `"Dead"`. This provides a simplified health model that focuses on game state transitions rather than numerical health tracking.
 
-**Status Values:**
+#### Status Values
+
 - `Healthy`: Character is in good health and can perform all actions
 - `Wounded`: Character is injured and may have reduced capabilities
 - `Dead`: Character is deceased and cannot perform actions
 
-**Status Transitions:**
+#### Status Transitions
+
 Game mechanics should transition character status based on damage or healing:
 - `Healthy` → `Wounded`: When character takes damage in combat
 - `Wounded` → `Dead`: When character takes critical damage or is defeated
 - `Wounded` → `Healthy`: When character is healed or rests
 - `Dead` → `Healthy`: Through resurrection mechanics (if applicable)
 
-**Usage in Combat:**
-Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than "Dead". Directors and game logic should update status fields rather than tracking numerical HP values. This ensures consistency with the status-based health model across all game mechanics.
+#### No Numeric Health Fields
 
-Example character with status:
+The system **does not use or store numeric health fields**. The following fields are **deprecated and ignored**:
+- `level`, `experience`, `stats` - Numeric progression fields
+- `current_hp`, `max_hp` - HP-style health tracking
+- `current_health`, `max_health` - Alternative health tracking
+- `health` (any numeric or nested format) - Any health objects
+
+**Backward Compatibility:** If legacy documents containing these fields are read from Firestore, the numeric fields are automatically stripped during deserialization and never persisted back to storage. This ensures a clean migration to the status-only model.
+
+#### Validation Rules
+
+- The `status` field is **required** on all character and enemy states
+- Only the three enum values (`"Healthy"`, `"Wounded"`, `"Dead"`) are accepted
+- Invalid status values are rejected with HTTP 422 validation errors
+- API requests with numeric health fields in the payload are processed normally, but numeric fields are ignored
+
+#### Usage in Combat
+
+Combat state transitions are managed through status changes, with combat being considered active when any enemy has a status other than `"Dead"`. Directors and game logic should update status fields rather than tracking numerical HP values. This ensures consistency with the status-based health model across all game mechanics.
+
+#### Example Character State
+
 ```json
 {
-  "character": {
-    "player_state": {
-      "status": "Healthy",
-      "level": 5,
-      "experience": 1000
-    }
+  "player_state": {
+    "identity": {
+      "name": "Aragorn",
+      "race": "Human",
+      "class": "Ranger"
+    },
+    "status": "Healthy",
+    "equipment": [
+      {
+        "name": "Anduril",
+        "damage": "2d6",
+        "special_effects": "Glows blue near enemies"
+      }
+    ],
+    "inventory": [
+      {
+        "name": "Healing Potion",
+        "quantity": 3,
+        "effect": "Restores wounds"
+      }
+    ],
+    "location": {
+      "id": "town:rivendell",
+      "display_name": "Rivendell"
+    },
+    "additional_fields": {}
   }
 }
 ```
+
+#### Cleanup Script
+
+For operators who need to remove legacy numeric health fields from existing Firestore documents, a cleanup utility is provided at `scripts/remove_numeric_health.py`. This script:
+
+- Scans character documents in Firestore for legacy numeric health fields
+- Removes deprecated fields (`level`, `experience`, `stats`, `current_hp`, `max_hp`, etc.)
+- Supports dry-run mode to preview changes before applying them
+- Logs all actions for audit purposes
+- Handles documents missing status fields without crashing
+
+See the [Deployment Guide](docs/deployment.md#cleanup-script) for usage instructions and required environment variables.
 
 ## Environment Variables
 
