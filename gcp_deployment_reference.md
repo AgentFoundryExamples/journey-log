@@ -109,7 +109,7 @@ gcloud firestore indexes composite create \
 |----------|-----------------|-------|
 | `GET /pois?limit=20` | 21 reads | Fetches limit+1 to determine next page |
 | `GET /pois/summary` | ~1 read | Count aggregation (efficient) |
-| `GET /pois/random?n=5` | 1 read + 5 in-memory samples | Reads from parent document embedded array (legacy) or subcollection |
+| `GET /pois/random?n=5` | Varies by migration state | **Phase 1:** Reads subcollection (preferred) or falls back to embedded array if subcollection empty. **Phase 2:** Subcollection only. Performance: ~1 read for count + N reads for sampling |
 | `POST /pois` | 1 read + 1 write | Verify character + write POI |
 | `PUT /pois/{id}` | 1 read + 1 write | Read existing + update |
 | `DELETE /pois/{id}` | 1 write | Delete POI document |

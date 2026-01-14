@@ -807,12 +807,23 @@ POI behavior is configurable via environment variables (see `.env.example`):
    - New writes go to subcollection only
    - Reads check subcollection first, fall back to embedded array
    - Migration script available for bulk migration
-2. **Phase 2 (Target: TBD):** Embedded arrays removed
-   - All characters migrated to subcollection
-   - `world_pois` field removed from character documents
-   - Read fallback logic removed from codebase
+2. **Phase 2 (Target: After all production characters migrated):** Embedded arrays removed
+   - **Trigger condition:** 100% of production characters migrated to subcollection
+   - **Verification:** `python scripts/migrate_character_pois.py --dry-run` reports 0 characters needing migration
+   - **Timeline:** Minimum 30 days after Phase 1 deployment to allow migration window
+   - **Actions:** 
+     - `world_pois` field removed from character documents
+     - Read fallback logic removed from codebase
+     - Environment variables `POI_MIGRATION_ENABLED` and `POI_EMBEDDED_READ_FALLBACK` removed
 
 **Timeline Guidance:**
+- **Phase 1 Deployment:** Immediate (current state as of commit c9df9ae)
+- **Migration Period:** 30-90 days recommended for large installations
+- **Phase 2 Conditions:** 
+  1. All production characters migrated (verified by dry-run showing 0 characters)
+  2. No embedded `world_pois` writes observed in logs for 14+ days
+  3. All downstream systems updated to use subcollection APIs
+- **Phase 2 Execution:** Planned after conditions met, with advance notice to operators
 - Operators should migrate all characters using `scripts/migrate_character_pois.py` before Phase 2
 - Monitor migration progress using the script's dry-run mode
 - Plan migration during low-traffic windows for large character collections

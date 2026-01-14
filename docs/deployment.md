@@ -730,6 +730,9 @@ curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
 export GCP_PROJECT_ID="your-production-project-id"
 export SERVICE_ENVIRONMENT="prod"
 
+# Enable pipefail to catch script failures in pipelines
+set -o pipefail
+
 # Step 1: Estimate scope (dry run)
 python scripts/migrate_character_pois.py --dry-run | tee migration-dry-run.log
 # Output shows: total characters, total POIs to migrate
@@ -744,6 +747,9 @@ python scripts/migrate_character_pois.py --resume 2>&1 | tee migration-batch2.lo
 # Step 4: Verify completion (dry run should show 0 characters)
 python scripts/migrate_character_pois.py --dry-run
 # Expected: total_characters_migrated: 0
+
+# Disable pipefail after migration
+set +o pipefail
 ```
 
 ### Monitoring Migration

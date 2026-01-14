@@ -258,8 +258,13 @@ curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois
 # Response: {"pois": [...], "count": 20, "cursor": "eyJwb2lfaWQiOiJhYmMxMjMifQ=="}
 
 # Get next page using cursor from previous response
+# Cursor format: Opaque base64-encoded string containing Firestore document reference
+# - DO NOT parse, decode, or construct cursors manually
+# - Cursors are tied to the query (order, filters) that generated them
+# - Invalid/expired cursors return 400 error with message to restart pagination
 curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=20&cursor=eyJwb2lfaWQiOiJhYmMxMjMifQ==" \
   -H "X-User-Id: user123"
+# Response: {"pois": [...], "count": 20, "cursor": "eyJwb2lfaWQiOiJ4eXo3ODkifQ=="} or {"cursor": null} if no more pages
 
 # Update an existing POI
 curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/abc-123 \
