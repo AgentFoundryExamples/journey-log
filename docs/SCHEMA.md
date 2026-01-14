@@ -684,22 +684,30 @@ for turn in recent_turns:
 
 **Path:** `characters/{character_id}/pois/{poi_id}`
 
-**Purpose:** Stores discovered or player-specific points of interest.
+**Purpose:** Stores discovered or player-specific points of interest. This is the **AUTHORITATIVE** POI storage location.
+
+**Storage Contract:**
+- **Authoritative Source:** The subcollection at `characters/{character_id}/pois/{poi_id}` is the single source of truth for POIs
+- **Legacy Embedded POIs:** The `world_pois` array in the character document is **DEPRECATED** for writes
+- **Read Compatibility:** During migration, the embedded `world_pois` array is read-only and surfaced on GET for backward compatibility
+- **Write Behavior:** All new POI writes go to the subcollection only
+- **Migration Strategy:** Copy-on-write migration copies embedded POIs to subcollection on first write, then removes embedded field
 
 **Document Structure:**
 ```json
 {
   "poi_id": "poi_123",
   "name": "Hidden Temple",
+  "description": "An ancient temple in the forest",
   "type": "dungeon",
   "location": {
     "world": "middle-earth",
     "region": "mirkwood",
     "coordinates": {"x": 250, "y": 300}
   },
-  "discovered_at": "2026-01-10T15:30:00Z",
+  "timestamp_discovered": "2026-01-10T15:30:00Z",
   "visited": true,
-  "visited_at": "2026-01-10T16:00:00Z",
+  "last_visited": "2026-01-10T16:00:00Z",
   "notes": "Found a magical artifact here.",
   "metadata": {
     "difficulty": "hard",
@@ -711,17 +719,79 @@ for turn in recent_turns:
 ```
 
 **Key Fields:**
-- `poi_id`: Unique identifier for the POI (UUIDv4)
-- `name`: Display name of the POI
-- `type`: Category (dungeon, town, landmark, etc.)
-- `location`: Where the POI is located
-- `discovered_at`: When the player discovered it (Firestore Timestamp)
-- `visited`: Whether the player has visited
-- `visited_at`: When the player visited (Firestore Timestamp)
-- `notes`: Player-specific notes
-- `metadata`: Additional POI metadata
+- `poi_id`: Unique identifier for the POI (UUIDv4, required)
+- `name`: Display name of the POI (required)
+- `description`: POI description (required)
+- `type`: Category (dungeon, town, landmark, etc., optional)
+- `location`: Where the POI is located (optional)
+- `timestamp_discovered`: When the player discovered it (Firestore Timestamp, optional)
+- `visited`: Whether the player has visited (boolean, optional, default: false)
+- `last_visited`: When the player last visited (Firestore Timestamp, optional)
+- `notes`: Player-specific notes (optional)
+- `metadata`: Additional POI metadata (optional)
 
-**Note:** POIs can be either world-global (referenced from `world_pois_reference`) or character-specific (stored in this subcollection). Character-specific POIs allow for personalized discoveries and notes.
+**POI Reference Formats:**
+
+The `world_pois_reference` field supports two formats:
+
+1. **Firestore Collection Path:**
+   - Format: `"characters/{character_id}/pois"` or `"worlds/{world_id}/pois"`
+   - Use for character-specific or world-global POI collections
+   - Validated to have odd number of path segments (collection/doc/subcollection)
+
+2. **Configuration Key:**
+   - Format: `"world-v1"`, `"middle-earth-pois"`, etc.
+   - Use for named world configurations or shared POI sets
+   - Must contain only alphanumeric characters, hyphens, and underscores
+
+**Resolution Behavior:**
+- Invalid `world_pois_reference` strings fail fast with actionable error messages
+- Empty or whitespace-only references are rejected
+- Malformed collection paths (even number of segments) are rejected
+
+**Migration Notes:**
+
+Characters may have POIs in three states during migration:
+1. **Legacy Only:** POIs only in embedded `world_pois` array (pre-migration)
+2. **Mixed State:** POIs in both embedded array and subcollection (mid-migration)
+3. **Migrated:** POIs only in subcollection, embedded field removed (post-migration)
+
+**Deduplication:** The migration utility detects existing POIs in the subcollection by ID and skips duplicates to prevent double-migration.
+
+**Helper Functions:**
+
+The following helper functions are provided in `app/firestore.py`:
+- `get_pois_collection(character_id)`: Get subcollection reference
+- `create_poi(character_id, poi_data, transaction)`: Create POI in subcollection
+- `get_poi(character_id, poi_id)`: Get a specific POI
+- `query_pois(character_id, limit, order_by, direction, cursor_start_after)`: Query POIs with pagination
+- `update_poi(character_id, poi_id, poi_data, transaction)`: Update POI
+- `delete_poi(character_id, poi_id, transaction)`: Delete POI
+- `count_pois(character_id)`: Count total POIs (efficient aggregation)
+- `resolve_world_pois_reference(reference)`: Validate reference format
+- `migrate_embedded_pois_to_subcollection(character_id, transaction)`: Migrate embedded POIs
+- `should_migrate_pois(char_data)`: Check if migration is needed
+
+**Configuration:**
+
+POI behavior is configurable via environment variables (see `.env.example`):
+- `POI_MIGRATION_ENABLED`: Enable automatic copy-on-write migration (default: true)
+- `POI_EMBEDDED_READ_FALLBACK`: Enable reading from embedded array as fallback (default: true)
+
+**Edge Cases:**
+
+- **Empty Subcollection:** Characters without any POIs return empty results without error
+- **Mixed Documents:** Migration detects existing subcollection POIs and skips duplicates
+- **Invalid References:** Malformed `world_pois_reference` formats fail fast with detailed error messages
+- **Concurrent Writes:** Transaction-based migration prevents race conditions during copy-on-write
+- **Legacy Data:** Embedded POIs remain readable until migration completes
+
+**Performance:**
+
+- **Subcollection Queries:** Use Firestore indexes for efficient ordering and pagination
+- **Count Operations:** Use aggregation query (single document read cost)
+- **Migration:** Atomic transaction ensures consistency
+- **Pagination:** Cursor-based pagination supported for large POI collections
 
 ---
 

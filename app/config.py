@@ -143,6 +143,24 @@ class Settings(BaseSettings):
         description="Default number of POIs to sample for context aggregation (1-20)",
     )
 
+    # POI Storage Configuration
+    poi_migration_enabled: bool = Field(
+        default=True,
+        description=(
+            "Enable automatic copy-on-write POI migration from embedded array to subcollection. "
+            "When true, the first POI write triggers migration of embedded POIs. "
+            "Set to false to disable automatic migration (manual migration only)."
+        ),
+    )
+    poi_embedded_read_fallback: bool = Field(
+        default=True,
+        description=(
+            "Enable reading from embedded world_pois array as fallback when subcollection is empty. "
+            "This ensures backward compatibility during migration. "
+            "Set to false to only read from subcollection (post-migration)."
+        ),
+    )
+
     @model_validator(mode="after")
     def validate_context_defaults(self) -> "Settings":
         """Validate that context_default_recent_n does not exceed context_max_recent_n."""
