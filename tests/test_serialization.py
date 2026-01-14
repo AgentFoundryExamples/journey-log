@@ -1019,6 +1019,174 @@ class TestRoundTripEdgeCases:
         assert restored_offset.timestamp.tzinfo == timezone.utc
         assert restored_utc.timestamp == restored_offset.timestamp
 
+
+class TestNumericFieldSerializationExclusion:
+    """Test that numeric health/stat fields are never emitted during serialization."""
+
+    def _assert_no_numeric_health_fields(self, player_state_data: dict):
+        """Helper to assert that player_state_data contains no numeric health fields."""
+        assert "level" not in player_state_data
+        assert "experience" not in player_state_data
+        assert "stats" not in player_state_data
+        assert "health" not in player_state_data
+        assert "current_hp" not in player_state_data
+        assert "max_hp" not in player_state_data
+        assert "current_health" not in player_state_data
+        assert "max_health" not in player_state_data
+        assert "xp" not in player_state_data
+        assert "hp" not in player_state_data
+
+    def _assert_no_numeric_enemy_health_fields(self, enemy_data: dict):
+        """Helper to assert that enemy_data contains no numeric health fields."""
+        assert "level" not in enemy_data
+        assert "hp" not in enemy_data
+        assert "health" not in enemy_data
+        assert "current_hp" not in enemy_data
+        assert "max_hp" not in enemy_data
+        assert "stats" not in enemy_data
+
+    def test_serialization_never_emits_numeric_health_fields(self):
+        """Test that character_to_firestore never includes numeric health/stat fields."""
+        # Create a character with only status-based health
+        player_state = PlayerState(
+            identity=CharacterIdentity(
+                name="Test Hero", race="Human", **{"class": "Warrior"}
+            ),
+            status=Status.HEALTHY,
+            location="Test Location",
+        )
+
+        character = CharacterDocument(
+            character_id="test-no-numeric",
+            owner_user_id="user_123",
+            adventure_prompt="Test adventure without numeric fields",
+            player_state=player_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+        )
+
+        # Serialize
+        data = character_to_firestore(character)
+
+        # Verify player_state exists and has status
+        assert "player_state" in data
+        assert "status" in data["player_state"]
+        assert data["player_state"]["status"] == "Healthy"
+
+        # Verify numeric fields are NOT present in serialized data
+        self._assert_no_numeric_health_fields(data["player_state"])
+
+    def test_wounded_character_serialization_no_numeric_fields(self):
+        """Test wounded character serialization doesn't emit numeric fields."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Wounded", race="Elf", **{"class": "Mage"}),
+            status=Status.WOUNDED,
+            location="Battlefield",
+        )
+
+        character = CharacterDocument(
+            character_id="test-wounded",
+            owner_user_id="user_456",
+            adventure_prompt="Wounded but not defeated",
+            player_state=player_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 11, 12, 0, 0, tzinfo=timezone.utc),
+        )
+
+        # Serialize
+        data = character_to_firestore(character)
+
+        # Verify status is Wounded
+        assert data["player_state"]["status"] == "Wounded"
+
+        # Verify NO numeric health representation exists
+        self._assert_no_numeric_health_fields(data["player_state"])
+
+    def test_dead_character_serialization_no_numeric_fields(self):
+        """Test dead character serialization doesn't emit numeric fields."""
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Fallen", race="Human", **{"class": "Knight"}),
+            status=Status.DEAD,
+            location="Graveyard",
+        )
+
+        character = CharacterDocument(
+            character_id="test-dead",
+            owner_user_id="user_789",
+            adventure_prompt="A heroic end",
+            player_state=player_state,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 11, 15, 0, 0, tzinfo=timezone.utc),
+        )
+
+        # Serialize
+        data = character_to_firestore(character)
+
+        # Verify status is Dead
+        assert data["player_state"]["status"] == "Dead"
+
+        # Verify NO numeric health representation exists
+        self._assert_no_numeric_health_fields(data["player_state"])
+
+    def test_combat_enemy_serialization_no_numeric_fields(self):
+        """Test enemy serialization doesn't emit numeric health fields."""
+        enemy = EnemyState(
+            enemy_id="goblin_001",
+            name="Goblin Scout",
+            status=Status.WOUNDED,
+            weapon="Short Sword",
+            traits=["aggressive"],
+        )
+
+        combat = CombatState(
+            combat_id="combat_456",
+            started_at=datetime(2026, 1, 11, 14, 0, 0, tzinfo=timezone.utc),
+            enemies=[enemy],
+        )
+
+        player_state = PlayerState(
+            identity=CharacterIdentity(name="Fighter", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            location="Arena",
+        )
+
+        character = CharacterDocument(
+            character_id="test-combat",
+            owner_user_id="user_999",
+            adventure_prompt="Battle test",
+            player_state=player_state,
+            combat_state=combat,
+            world_pois_reference="world",
+            narrative_turns_reference="narrative_turns",
+            schema_version="1.0.0",
+            created_at=datetime(2026, 1, 11, 10, 0, 0, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 1, 11, 14, 0, 0, tzinfo=timezone.utc),
+        )
+
+        # Serialize
+        data = character_to_firestore(character)
+
+        # Verify combat state and enemy status
+        assert "combat_state" in data
+        assert len(data["combat_state"]["enemies"]) == 1
+        enemy_data = data["combat_state"]["enemies"][0]
+        
+        # Verify enemy has status field
+        assert "status" in enemy_data
+        assert enemy_data["status"] == "Wounded"
+
+        # Verify enemy does NOT have numeric health fields
+        self._assert_no_numeric_enemy_health_fields(enemy_data)
+
     def test_multiple_entries_in_arrays(self, character_in_combat_multiple_enemies):
         """Test that arrays with multiple entries round-trip correctly."""
         # Round-trip

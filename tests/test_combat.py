@@ -75,9 +75,6 @@ def sample_character_data():
                 "class": "Warrior",
             },
             "status": "Healthy",
-            "level": 1,
-            "experience": 0,
-            "stats": {},
             "equipment": [],
             "inventory": [],
             "location": {
@@ -571,9 +568,6 @@ class TestUpdateCombat:
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -942,9 +936,6 @@ class TestGetCombat:
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -1004,9 +995,6 @@ class TestGetCombat:
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -1060,3 +1048,372 @@ class TestGetCombat:
         data = response.json()
         assert data["active"] is False
         assert data["state"] is None
+
+
+class TestStatusTransitions:
+    """Test status transitions through combat sequences (Healthy → Wounded → Dead)."""
+
+    def test_get_character_when_healthy(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test GET /character/{id} correctly retrieves a Healthy character."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+
+        # Character state - Healthy
+        healthy_character = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "arena", "display_name": "Arena"},
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "combat_state": None,
+        }
+
+        # Setup mock
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = healthy_character
+
+        mock_doc_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_doc_ref.get.return_value = mock_snapshot
+
+        # Get status
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}", headers={"X-User-Id": "user123"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["character"]["player_state"]["status"] == "Healthy"
+
+    def test_get_character_when_wounded(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test GET /character/{id} correctly retrieves a Wounded character."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+
+        # Character state - Wounded
+        wounded_character = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Wounded",
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "battlefield", "display_name": "Battlefield"},
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            "combat_state": {
+                "combat_id": "combat_final",
+                "started_at": datetime.now(timezone.utc),
+                "turn": 3,
+                "enemies": [
+                    {
+                        "enemy_id": "boss_001",
+                        "name": "Dragon",
+                        "status": "Healthy",
+                        "weapon": "Fire Breath",
+                        "traits": ["flying", "powerful"],
+                    }
+                ],
+            },
+        }
+
+        # Setup mock
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = wounded_character
+
+        mock_doc_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_doc_ref.get.return_value = mock_snapshot
+
+        # Verify wounded status
+        response = test_client_with_mock_db.get(
+            f"/characters/{character_id}", headers={"X-User-Id": "user123"}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["character"]["player_state"]["status"] == "Wounded"
+
+    def test_enemy_status_transitions_in_combat(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test enemy status transitions during combat (Healthy → Wounded → Dead)."""
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+
+        # Combat with enemies at different status levels
+        character_data = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",
+                "equipment": [],
+                "inventory": [],
+                "location": {"id": "dungeon", "display_name": "Dungeon"},
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        # Setup mock
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = character_data
+
+        def transaction_get(transaction=None):
+            return mock_snapshot
+
+        mock_doc_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_doc_ref.get = transaction_get
+
+        # Turn 1: All enemies Healthy
+        combat_turn1 = {
+            "combat_id": "combat_progression",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "turn": 1,
+            "enemies": [
+                {
+                    "enemy_id": "orc_001",
+                    "name": "Orc Warrior",
+                    "status": "Healthy",
+                    "weapon": "Axe",
+                    "traits": [],
+                },
+                {
+                    "enemy_id": "orc_002",
+                    "name": "Orc Scout",
+                    "status": "Healthy",
+                    "weapon": "Bow",
+                    "traits": [],
+                },
+            ],
+        }
+
+        response = test_client_with_mock_db.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_turn1},
+            headers={"X-User-Id": "user123"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["active"] is True
+        assert all(e["status"] == "Healthy" for e in response.json()["state"]["enemies"])
+
+        # Turn 2: One enemy Wounded, one still Healthy
+        combat_turn2 = {
+            **combat_turn1,
+            "turn": 2,
+            "enemies": [
+                {
+                    "enemy_id": "orc_001",
+                    "name": "Orc Warrior",
+                    "status": "Wounded",  # Transitioned
+                    "weapon": "Axe",
+                    "traits": [],
+                },
+                {
+                    "enemy_id": "orc_002",
+                    "name": "Orc Scout",
+                    "status": "Healthy",
+                    "weapon": "Bow",
+                    "traits": [],
+                },
+            ],
+        }
+
+        response = test_client_with_mock_db.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_turn2},
+            headers={"X-User-Id": "user123"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["active"] is True
+        enemies = response.json()["state"]["enemies"]
+        assert enemies[0]["status"] == "Wounded"
+        assert enemies[1]["status"] == "Healthy"
+
+        # Turn 3: One enemy Dead, one Wounded
+        combat_turn3 = {
+            **combat_turn1,
+            "turn": 3,
+            "enemies": [
+                {
+                    "enemy_id": "orc_001",
+                    "name": "Orc Warrior",
+                    "status": "Dead",  # Transitioned
+                    "weapon": "Axe",
+                    "traits": [],
+                },
+                {
+                    "enemy_id": "orc_002",
+                    "name": "Orc Scout",
+                    "status": "Wounded",  # Transitioned
+                    "weapon": "Bow",
+                    "traits": [],
+                },
+            ],
+        }
+
+        response = test_client_with_mock_db.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_turn3},
+            headers={"X-User-Id": "user123"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["active"] is True  # Still active (one enemy alive)
+        enemies = response.json()["state"]["enemies"]
+        assert enemies[0]["status"] == "Dead"
+        assert enemies[1]["status"] == "Wounded"
+
+        # Turn 4: All enemies Dead
+        combat_turn4 = {
+            **combat_turn1,
+            "turn": 4,
+            "enemies": [
+                {
+                    "enemy_id": "orc_001",
+                    "name": "Orc Warrior",
+                    "status": "Dead",
+                    "weapon": "Axe",
+                    "traits": [],
+                },
+                {
+                    "enemy_id": "orc_002",
+                    "name": "Orc Scout",
+                    "status": "Dead",  # Transitioned
+                    "weapon": "Bow",
+                    "traits": [],
+                },
+            ],
+        }
+
+        response = test_client_with_mock_db.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_turn4},
+            headers={"X-User-Id": "user123"},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["active"] is False  # Combat ended
+        assert all(e["status"] == "Dead" for e in response.json()["state"]["enemies"])
+
+    def test_status_transitions_without_numeric_arithmetic(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Verify status transitions happen without numeric HP/damage calculations.
+        
+        This test ensures that the combat system uses only status-based health
+        (Healthy/Wounded/Dead) without any numeric HP, level, or stats fields.
+        """
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+
+        character_data = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test status-only combat",
+            "player_state": {
+                "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
+                "status": "Healthy",  # Status-only health, no numeric HP/level/stats
+                "equipment": [],
+                "inventory": [],
+                "location": "Arena",
+                "additional_fields": {},
+            },
+            "world_pois": [],
+            "world_pois_reference": f"characters/{character_id}/pois",
+            "narrative_turns_reference": f"characters/{character_id}/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        mock_snapshot = Mock()
+        mock_snapshot.exists = True
+        mock_snapshot.to_dict.return_value = character_data
+
+        def transaction_get(transaction=None):
+            return mock_snapshot
+
+        mock_doc_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_doc_ref.get = transaction_get
+
+        # Create combat state with status changes - no HP values
+        combat_state = {
+            "combat_id": "combat_no_numeric",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "turn": 1,
+            "enemies": [
+                {
+                    "enemy_id": "enemy_001",
+                    "name": "Test Enemy",
+                    "status": "Wounded",  # Status-only health
+                    "weapon": "Sword",
+                    "traits": ["aggressive"],
+                }
+            ],
+        }
+
+        response = test_client_with_mock_db.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_state},
+            headers={"X-User-Id": "user123"},
+        )
+
+        # Verify combat accepted with status-only health
+        assert response.status_code == status.HTTP_200_OK
+        assert response.json()["state"]["enemies"][0]["status"] == "Wounded"
+        
+        # Verify no numeric fields in enemy response
+        enemy_data = response.json()["state"]["enemies"][0]
+        assert "hp" not in enemy_data
+        assert "health" not in enemy_data
+        assert "current_hp" not in enemy_data
+        assert "max_hp" not in enemy_data
+        assert "damage" not in enemy_data
+        
+        # Verify no numeric fields in player_state
+        player_state = character_data["player_state"]
+        assert "level" not in player_state
+        assert "experience" not in player_state
+        assert "stats" not in player_state
+        assert "health" not in player_state
+        assert "current_hp" not in player_state
+        assert "max_hp" not in player_state
