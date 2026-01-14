@@ -41,12 +41,11 @@ Features:
 - Progress logging for operators
 - Error handling with rollback on transaction failures
 - Migration statistics reporting
-- Configurable batch size and character limit
+- Configurable character limit
 
 Requirements:
 - GCP_PROJECT_ID environment variable must be set
 - Firestore credentials configured (ADC or FIRESTORE_EMULATOR_HOST)
-- Character documents must have character_id field
 """
 
 import argparse
