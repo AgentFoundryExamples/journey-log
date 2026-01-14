@@ -1876,10 +1876,13 @@ async def get_random_pois(
                 )
 
         # 3. Get POIs from subcollection (authoritative) with fallback to embedded
-        # Import helper with alias to avoid naming conflict with other endpoint functions
-        from app.firestore import query_pois as query_pois_helper
-
-        pois_data = query_pois_helper(character_id, limit=None)  # Get all POIs
+        # Query subcollection directly to support mocking in tests
+        pois_collection = char_ref.collection("pois")
+        pois_query = pois_collection.stream()
+        pois_docs = list(pois_query)
+        
+        # Convert document snapshots to dict format
+        pois_data = [doc.to_dict() for doc in pois_docs]
         
         # Fallback to embedded POIs if subcollection is empty and fallback enabled
         if not pois_data and settings.poi_embedded_read_fallback:
@@ -2146,10 +2149,8 @@ async def get_pois(
                 )
 
         # 3. Query POIs from subcollection with cursor-based pagination
-        # Import helper with alias to avoid naming conflict
-        from app.firestore import get_pois_collection
-
-        pois_collection = get_pois_collection(character_id)
+        # Query subcollection directly to support mocking in tests
+        pois_collection = char_ref.collection("pois")
         
         # Build query with ordering by timestamp_discovered descending (newest first)
         query = pois_collection.order_by(
@@ -2404,14 +2405,13 @@ async def get_poi_summary(
                 )
 
         # 3. Get total count using efficient aggregation
-        from app.firestore import count_pois
-
-        total_count = count_pois(character_id)
+        # Use direct subcollection access for counting
+        pois_collection = char_ref.collection("pois")
+        count_query = pois_collection.count()
+        count_result = count_query.get()
+        total_count = count_result[0][0].value
 
         # 4. Get preview of newest POIs
-        from app.firestore import get_pois_collection
-
-        pois_collection = get_pois_collection(character_id)
         preview_query = pois_collection.order_by(
             "timestamp_discovered", direction=firestore.Query.DESCENDING
         ).limit(preview_limit)
@@ -2591,10 +2591,8 @@ async def update_poi(
             if owner_user_id != user_id:
                 return None, "access_denied"
 
-            # 3. Fetch POI from subcollection
-            from app.firestore import get_pois_collection
-
-            pois_collection = get_pois_collection(character_id)
+            # 3. Fetch POI from subcollection directly
+            pois_collection = char_ref.collection("pois")
             poi_ref = pois_collection.document(poi_id)
             poi_snapshot = poi_ref.get(transaction=transaction)
 
@@ -2815,9 +2813,7 @@ async def delete_poi(
                 return "access_denied"
 
             # 3. Delete POI from subcollection (idempotent - no error if doesn't exist)
-            from app.firestore import get_pois_collection
-
-            pois_collection = get_pois_collection(character_id)
+            pois_collection = char_ref.collection("pois")
             poi_ref = pois_collection.document(poi_id)
             transaction.delete(poi_ref)
 
@@ -4213,18 +4209,18 @@ async def get_character_context(
         # 6. Prepare world POI sample from subcollection
         pois_sample_list = []
         if include_pois:
-            # Query POIs from subcollection (authoritative storage)
-            from app.firestore import query_pois as query_pois_helper
-            
+            # Query POIs from subcollection (authoritative storage) directly
             # Fetch up to context_default_poi_sample_size * 2 POIs to ensure good random sample
             # (fetching more than needed provides better randomness)
             fetch_limit = settings.context_default_poi_sample_size * 2
-            pois_data = query_pois_helper(
-                character_id,
-                limit=fetch_limit,
-                order_by="timestamp_discovered",
-                direction="DESCENDING",
-            )
+            pois_collection = char_ref.collection("pois")
+            pois_query = pois_collection.order_by(
+                "timestamp_discovered", direction=firestore.Query.DESCENDING
+            ).limit(fetch_limit)
+            pois_docs = list(pois_query.stream())
+            
+            # Convert document snapshots to dict format
+            pois_data = [doc.to_dict() for doc in pois_docs]
             
             # If subcollection is empty and fallback enabled, try embedded POIs
             if not pois_data and settings.poi_embedded_read_fallback:
