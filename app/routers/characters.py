@@ -1615,7 +1615,7 @@ async def create_poi(
                     character_id=character_id,
                     **migration_stats,
                 )
-                
+
                 # Check for migration errors and log warnings
                 if migration_stats and migration_stats.get("errors"):
                     logger.warning(
@@ -1880,10 +1880,10 @@ async def get_random_pois(
         pois_collection = char_ref.collection("pois")
         pois_query = pois_collection.stream()
         pois_docs = list(pois_query)
-        
+
         # Convert document snapshots to dict format
         pois_data = [doc.to_dict() for doc in pois_docs]
-        
+
         # Fallback to embedded POIs if subcollection is empty and fallback enabled
         if not pois_data and settings.poi_embedded_read_fallback:
             embedded_pois = char_data.get("world_pois", [])
@@ -1903,26 +1903,30 @@ async def get_random_pois(
                             character_id=character_id,
                         )
                         continue
-                    if not embedded_poi.get("name") or not embedded_poi.get("description"):
+                    if not embedded_poi.get("name") or not embedded_poi.get(
+                        "description"
+                    ):
                         logger.warning(
                             "get_random_pois_embedded_poi_missing_required_fields",
                             character_id=character_id,
                             poi_id=embedded_poi.get("id"),
                         )
                         continue
-                    
+
                     # Convert Firestore timestamp to datetime if needed
                     created_at = embedded_poi.get("created_at")
                     if created_at:
                         created_at = datetime_from_firestore(created_at)
 
-                    pois_data.append({
-                        "poi_id": embedded_poi.get("id"),
-                        "name": embedded_poi.get("name"),
-                        "description": embedded_poi.get("description"),
-                        "timestamp_discovered": created_at,
-                        "tags": embedded_poi.get("tags"),
-                    })
+                    pois_data.append(
+                        {
+                            "poi_id": embedded_poi.get("id"),
+                            "name": embedded_poi.get("name"),
+                            "description": embedded_poi.get("description"),
+                            "timestamp_discovered": created_at,
+                            "tags": embedded_poi.get("tags"),
+                        }
+                    )
 
         total_available = len(pois_data)
 
@@ -1957,7 +1961,7 @@ async def get_random_pois(
                     poi_data_keys=list(poi_data.keys()),
                 )
                 continue
-            
+
             created_at = poi_data.get("timestamp_discovered")
             if created_at is not None:
                 created_at = datetime_from_firestore(created_at)
@@ -2151,7 +2155,7 @@ async def get_pois(
         # 3. Query POIs from subcollection with cursor-based pagination
         # Query subcollection directly to support mocking in tests
         pois_collection = char_ref.collection("pois")
-        
+
         # Build query with ordering by timestamp_discovered descending (newest first)
         query = pois_collection.order_by(
             "timestamp_discovered", direction=firestore.Query.DESCENDING
@@ -2166,7 +2170,7 @@ async def get_pois(
                 cursor_poi_id = cursor
                 cursor_doc_ref = pois_collection.document(cursor_poi_id)
                 cursor_snapshot = cursor_doc_ref.get()
-                
+
                 if not cursor_snapshot.exists:
                     # Cursor points to non-existent document - likely expired or invalid
                     logger.warning(
@@ -2178,9 +2182,9 @@ async def get_pois(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired cursor. Please restart pagination from the beginning.",
                     )
-                
+
                 query = query.start_after(cursor_snapshot)
-                
+
             except HTTPException:
                 # Re-raise HTTP exceptions
                 raise
@@ -2212,7 +2216,7 @@ async def get_pois(
         for doc in poi_docs:
             last_doc = doc
             poi_data = doc.to_dict()
-            
+
             # Map subcollection fields to embedded format for backward compatibility
             timestamp_discovered = poi_data.get("timestamp_discovered")
             if timestamp_discovered is not None:
@@ -4064,7 +4068,7 @@ async def get_character_context(
 ) -> CharacterContextResponse:
     """
     Retrieve aggregated character context for Director/LLM integration.
-    
+
     This endpoint provides a single comprehensive payload containing all relevant
     character state for AI-driven narrative generation. It aggregates:
     - Player state (identity, status, equipment, location)
@@ -4072,20 +4076,20 @@ async def get_character_context(
     - Combat state with derived active flag
     - Recent narrative turns with metadata (ordered oldest-to-newest)
     - Optional world POIs sample
-    
+
     The response structure is designed to be consumed directly by LLM Directors
     without additional transformation.
-    
+
     Args:
         character_id: UUID-formatted character identifier
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         recent_n: Number of recent narrative turns to include (default: 20, max: configured)
         include_pois: Whether to include POI sample in response (default: true)
-    
+
     Returns:
         CharacterContextResponse with aggregated context
-    
+
     Raises:
         HTTPException:
             - 400: Invalid parameters (recent_n out of range) or empty X-User-Id
@@ -4218,10 +4222,10 @@ async def get_character_context(
                 "timestamp_discovered", direction=firestore.Query.DESCENDING
             ).limit(fetch_limit)
             pois_docs = list(pois_query.stream())
-            
+
             # Convert document snapshots to dict format
             pois_data = [doc.to_dict() for doc in pois_docs]
-            
+
             # If subcollection is empty and fallback enabled, try embedded POIs
             if not pois_data and settings.poi_embedded_read_fallback:
                 world_pois_data = char_data.get("world_pois", [])
@@ -4239,14 +4243,16 @@ async def get_character_context(
                         created_at = embedded_poi.get("created_at")
                         if created_at:
                             created_at = datetime_from_firestore(created_at)
-                        pois_data.append({
-                            "poi_id": embedded_poi.get("id"),
-                            "name": embedded_poi.get("name"),
-                            "description": embedded_poi.get("description"),
-                            "timestamp_discovered": created_at,
-                            "tags": embedded_poi.get("tags"),
-                        })
-            
+                        pois_data.append(
+                            {
+                                "poi_id": embedded_poi.get("id"),
+                                "name": embedded_poi.get("name"),
+                                "description": embedded_poi.get("description"),
+                                "timestamp_discovered": created_at,
+                                "tags": embedded_poi.get("tags"),
+                            }
+                        )
+
             # Sample POIs randomly using configured sample size
             sample_size = min(settings.context_default_poi_sample_size, len(pois_data))
             if sample_size > 0:
@@ -4255,9 +4261,13 @@ async def get_character_context(
                     try:
                         # Handle both subcollection format and embedded format fields
                         poi_id = poi_data_item.get("poi_id") or poi_data_item.get("id")
-                        timestamp_discovered = poi_data_item.get("timestamp_discovered") or poi_data_item.get("created_at")
+                        timestamp_discovered = poi_data_item.get(
+                            "timestamp_discovered"
+                        ) or poi_data_item.get("created_at")
                         if timestamp_discovered is not None:
-                            timestamp_discovered = datetime_from_firestore(timestamp_discovered)
+                            timestamp_discovered = datetime_from_firestore(
+                                timestamp_discovered
+                            )
 
                         poi = PointOfInterest(
                             id=poi_id,
@@ -4272,7 +4282,8 @@ async def get_character_context(
                         logger.warning(
                             "get_context_malformed_poi",
                             character_id=character_id,
-                            poi_id=poi_data_item.get("poi_id") or poi_data_item.get("id", "unknown"),
+                            poi_id=poi_data_item.get("poi_id")
+                            or poi_data_item.get("id", "unknown"),
                             error_type=type(e).__name__,
                             error_message=str(e),
                         )
@@ -4328,4 +4339,3 @@ async def get_character_context(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve character context due to an internal error",
         )
-
