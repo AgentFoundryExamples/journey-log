@@ -1567,6 +1567,7 @@ async def create_poi(
             poi_data = poi_subcollection_to_firestore(poi_subcollection)
 
             # 5. Create POI in subcollection
+            # Import helper with alias to avoid naming conflict with endpoint function
             from app.firestore import create_poi as create_poi_helper
 
             create_poi_helper(character_id, poi_data, transaction=transaction)
@@ -1798,6 +1799,7 @@ async def get_random_pois(
                 )
 
         # 3. Get POIs from subcollection (authoritative) with fallback to embedded
+        # Import helper with alias to avoid naming conflict with other endpoint functions
         from app.firestore import query_pois as query_pois_helper
 
         pois_data = query_pois_helper(character_id, limit=None)  # Get all POIs
@@ -1842,12 +1844,26 @@ async def get_random_pois(
         sampled_pois = []
         for poi_data in sampled_pois_data:
             # Map subcollection fields to embedded format for response
+            # Handle both subcollection format (poi_id) and embedded format (id)
+            poi_id = poi_data.get("poi_id")
+            if poi_id is None:
+                # Fallback to embedded format field name
+                poi_id = poi_data.get("id")
+            if poi_id is None:
+                # Skip POIs without IDs (data consistency issue)
+                logger.warning(
+                    "get_random_pois_poi_missing_id",
+                    character_id=character_id,
+                    poi_data_keys=list(poi_data.keys()),
+                )
+                continue
+            
             created_at = poi_data.get("timestamp_discovered")
             if created_at is not None:
                 created_at = datetime_from_firestore(created_at)
 
             poi = PointOfInterest(
-                id=poi_data.get("poi_id", poi_data.get("id")),  # Handle both formats
+                id=poi_id,
                 name=poi_data["name"],
                 description=poi_data["description"],
                 created_at=created_at,

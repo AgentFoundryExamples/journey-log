@@ -669,9 +669,11 @@ def migrate_embedded_pois_to_subcollection(
         return stats
 
     # Get existing POI IDs in subcollection to detect duplicates
+    # Only fetch document IDs for efficiency (no need to read full documents)
     pois_collection = get_pois_collection(character_id)
     existing_poi_ids = set()
-    for doc in pois_collection.stream():
+    # Use select() to only fetch document IDs, not full content
+    for doc in pois_collection.select([]).stream():
         existing_poi_ids.add(doc.id)
 
     logger.info(
