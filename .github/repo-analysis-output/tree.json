@@ -189,6 +189,10 @@
         {
           "type": "file",
           "name": "test_serialization.py"
+        },
+        {
+          "type": "file",
+          "name": "test_status_validation.py"
         }
       ]
     },

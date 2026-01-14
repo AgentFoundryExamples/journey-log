@@ -348,6 +348,24 @@
           "pytest"
         ]
       }
+    },
+    {
+      "id": "tests/test_status_validation.py",
+      "path": "tests/test_status_validation.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone",
+          "unittest.mock.MagicMock",
+          "unittest.mock.patch"
+        ],
+        "third-party": [
+          "fastapi.status",
+          "fastapi.testclient.TestClient",
+          "pytest"
+        ]
+      }
     }
   ],
   "edges": [
@@ -482,6 +500,14 @@
     {
       "source": "tests/test_serialization.py",
       "target": "app/models.py"
+    },
+    {
+      "source": "tests/test_status_validation.py",
+      "target": "app/main.py"
+    },
+    {
+      "source": "tests/test_status_validation.py",
+      "target": "app/models.py"
     }
   ],
   "external_dependencies_summary": {
@@ -507,6 +533,7 @@
       "typing.Literal",
       "typing.Optional",
       "typing.Union",
+      "unittest.mock.MagicMock",
       "unittest.mock.Mock",
       "unittest.mock.patch",
       "uuid"
@@ -544,7 +571,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 24,
+    "stdlib_count": 25,
     "third-party_count": 31
   }
 }
