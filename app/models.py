@@ -161,14 +161,18 @@ class InventoryItem(BaseModel):
 
 class PlayerState(BaseModel):
     """
-    Current player character state including equipment, stats, and location.
+    Current player character state using canonical status enum.
 
     This model represents the core game state for a character, including:
     - Character identity (name, race, class)
-    - Health status
+    - Health status (canonical Status enum: Healthy, Wounded, Dead)
     - Equipment (weapons, armor, inventory)
     - Current location
     - Extensible additional fields for game-specific data
+
+    Numeric health/stat fields (level, experience, stats, HP, XP) have been
+    removed in favor of the textual status enum. Legacy numeric fields are
+    ignored during deserialization.
 
     Referenced in: docs/SCHEMA.md - Character Document Fields (player_state)
     """
@@ -176,22 +180,7 @@ class PlayerState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     identity: CharacterIdentity = Field(description="Character identity information")
-    status: Status = Field(description="Character health status")
-    level: int = Field(default=1, ge=1, description="Character level")
-    experience: int = Field(default=0, ge=0, description="Experience points")
-    stats: dict[str, int] = Field(
-        description="Character stats (strength, dexterity, etc.)",
-        examples=[
-            {
-                "strength": 18,
-                "dexterity": 14,
-                "constitution": 16,
-                "intelligence": 12,
-                "wisdom": 13,
-                "charisma": 15,
-            }
-        ],
-    )
+    status: Status = Field(description="Character health status (Healthy, Wounded, Dead)")
     equipment: list[Weapon] = Field(
         default_factory=list, description="Equipped weapons"
     )
@@ -215,8 +204,13 @@ class PlayerState(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_location(self) -> "PlayerState":
-        """Validate location field ensures meaningful data regardless of format."""
+    def validate_status_and_location(self) -> "PlayerState":
+        """Validate required fields: status must be valid enum, location must be meaningful."""
+        # Status field is required and enforced by Pydantic Field, but ensure it's a valid Status enum
+        if not isinstance(self.status, Status):
+            raise ValueError(f"status must be a valid Status enum value (Healthy, Wounded, Dead), got {self.status}")
+        
+        # Validate location field ensures meaningful data regardless of format
         if isinstance(self.location, str):
             # String locations must be non-empty
             if not self.location or not self.location.strip():
@@ -1034,9 +1028,18 @@ def character_from_firestore(
     if character_id:
         data["character_id"] = character_id
 
-    # For backward compatibility, remove the old 'health' field from player_state if it exists
+    # For backward compatibility, remove legacy numeric health/stat fields from player_state
     if "player_state" in data and isinstance(data["player_state"], dict):
-        data["player_state"].pop("health", None)
+        player_data = data["player_state"]
+        # Remove deprecated numeric fields - they are ignored and never persisted back
+        player_data.pop("health", None)  # Old health field
+        player_data.pop("level", None)  # Numeric level (use status enum instead)
+        player_data.pop("experience", None)  # Numeric XP (use status enum instead)
+        player_data.pop("stats", None)  # Numeric stats dict (use status enum instead)
+        player_data.pop("current_hp", None)  # HP-style health (use status enum instead)
+        player_data.pop("max_hp", None)  # HP-style health (use status enum instead)
+        player_data.pop("current_health", None)  # Alternative health field
+        player_data.pop("max_health", None)  # Alternative health field
 
     # Convert timestamps
     for field in ["created_at", "updated_at"]:

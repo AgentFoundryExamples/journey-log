@@ -68,7 +68,7 @@ class TestEnums:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status="InvalidStatus",
-                stats={},
+
                 location="test",
             )
 
@@ -159,9 +159,6 @@ class TestPlayerState:
                 name="Frodo", race="Hobbit", **{"class": "Burglar"}
             ),
             status=Status.HEALTHY,
-            level=5,
-            experience=1000,
-            stats={"strength": 10, "dexterity": 18},
             equipment=[],
             inventory=[],
             location="Rivendell",
@@ -169,7 +166,7 @@ class TestPlayerState:
         )
         assert player_state.identity.name == "Frodo"
         assert player_state.status == Status.HEALTHY
-        assert player_state.level == 5
+        assert player_state.equipment == []
 
     def test_player_state_with_location_dict(self):
         """Test PlayerState with structured location."""
@@ -178,7 +175,6 @@ class TestPlayerState:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
             location={
                 "world": "middle-earth",
                 "region": "gondor",
@@ -195,7 +191,6 @@ class TestPlayerState:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
             location="test",
         )
         assert player_state.equipment == []
@@ -208,14 +203,13 @@ class TestPlayerState:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
             location="test",
             additional_fields={"custom_stat": "value"},
         )
         assert player_state.additional_fields["custom_stat"] == "value"
 
     def test_player_state_rejects_health_field(self):
-        """Test that PlayerState rejects health field (removed in favor of status)."""
+        """Test that PlayerState rejects deprecated health field (removed in favor of status)."""
         with pytest.raises(ValidationError) as exc_info:
             PlayerState(
                 identity=CharacterIdentity(
@@ -223,25 +217,57 @@ class TestPlayerState:
                 ),
                 status=Status.HEALTHY,
                 health={"current": 100, "max": 100},
-                stats={},
                 location="test",
             )
         # Pydantic raises ValidationError for extra fields with "extra_forbidden" type
         error_str = str(exc_info.value).lower()
         assert "health" in error_str and "extra" in error_str
 
+    def test_player_state_rejects_numeric_fields(self):
+        """Test that PlayerState rejects deprecated numeric stat fields."""
+        # Test rejection of level
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                level=5,
+                location="test",
+            )
+        
+        # Test rejection of experience
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                experience=1000,
+                location="test",
+            )
+        
+        # Test rejection of stats
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+                status=Status.HEALTHY,
+                stats={"strength": 18},
+                location="test",
+            )
+
     def test_status_is_sole_health_indicator(self):
         """Test that status field is the only health indicator in PlayerState."""
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
             status=Status.WOUNDED,
-            stats={},
             location="test",
         )
         # Verify status is present
         assert player_state.status == Status.WOUNDED
-        # Verify health field does not exist
+        # Verify no numeric health/stat fields exist
         assert not hasattr(player_state, "health")
+        assert not hasattr(player_state, "level")
+        assert not hasattr(player_state, "experience")
+        assert not hasattr(player_state, "stats")
+        assert not hasattr(player_state, "current_hp")
+        assert not hasattr(player_state, "max_hp")
 
 
 class TestNarrativeTurn:
@@ -558,7 +584,6 @@ class TestCharacterDocument:
                 name="Aragorn", race="Human", **{"class": "Ranger"}
             ),
             status=Status.HEALTHY,
-            stats={"strength": 18},
             location="Rivendell",
         )
 
@@ -591,7 +616,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -622,7 +647,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -658,7 +683,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -693,7 +718,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -724,7 +749,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -751,7 +776,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -797,7 +822,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -840,7 +865,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -876,7 +901,7 @@ class TestCharacterDocument:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -939,7 +964,7 @@ class TestEdgeCases:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
             equipment=[],
         )
@@ -952,7 +977,7 @@ class TestEdgeCases:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
             additional_fields={
                 "key1": "value1",
@@ -1056,7 +1081,7 @@ class TestAdventurePromptValidation:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -1081,7 +1106,7 @@ class TestAdventurePromptValidation:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -1106,7 +1131,7 @@ class TestAdventurePromptValidation:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -1131,7 +1156,7 @@ class TestAdventurePromptValidation:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -1156,7 +1181,7 @@ class TestAdventurePromptValidation:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -1222,7 +1247,7 @@ class TestLocationModel:
         player_state = PlayerState(
             identity=CharacterIdentity(name="Test", race="Elf", **{"class": "Ranger"}),
             status=Status.HEALTHY,
-            stats={},
+
             location=location,
         )
         assert isinstance(player_state.location, Location)
@@ -1236,7 +1261,7 @@ class TestLocationModel:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="Test Location",
         )
         assert player_state.location == "Test Location"
@@ -1249,7 +1274,7 @@ class TestLocationModel:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location=location_dict,
         )
         assert player_state.location == location_dict
@@ -1262,7 +1287,7 @@ class TestLocationModel:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status=Status.HEALTHY,
-                stats={},
+
                 location="",
             )
         assert "location string cannot be empty" in str(exc_info.value)
@@ -1275,7 +1300,7 @@ class TestLocationModel:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status=Status.HEALTHY,
-                stats={},
+
                 location="   ",
             )
         assert "location string cannot be empty" in str(exc_info.value)
@@ -1288,7 +1313,7 @@ class TestLocationModel:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status=Status.HEALTHY,
-                stats={},
+
                 location={},
             )
         assert "location dict cannot be empty" in str(exc_info.value)
@@ -1301,7 +1326,7 @@ class TestLocationModel:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status=Status.HEALTHY,
-                stats={},
+
                 location={"id": "origin:nexus"},
             )
         assert "must have both non-empty fields" in str(exc_info.value)
@@ -1314,7 +1339,7 @@ class TestLocationModel:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status=Status.HEALTHY,
-                stats={},
+
                 location={"display_name": "The Nexus"},
             )
         assert "must have both non-empty fields" in str(exc_info.value)
@@ -1330,7 +1355,7 @@ class TestWorldState:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 
@@ -1355,7 +1380,7 @@ class TestWorldState:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
         )
 

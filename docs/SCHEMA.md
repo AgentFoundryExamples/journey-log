@@ -254,20 +254,28 @@ class CharacterDocument(BaseModel):
 #### `player_state`
 - **Type:** Map (nested object)
 - **Required:** Yes
-- **Description:** Current state of the player character including identity, stats, equipment, and location
+- **Description:** Current state of the player character using canonical status enum. Character health is represented exclusively through the textual status field (Healthy, Wounded, Dead). Numeric health/stat fields (HP, XP, level, experience, stats) are deprecated and ignored.
 - **Nested Fields:**
   - `identity` (map): Character name, race, and class with validation
     - `name` (string, 1-64 chars): Character name with normalized whitespace
     - `race` (string, 1-64 chars): Character race with normalized whitespace
     - `class` (string, 1-64 chars): Character class with normalized whitespace
-  - `status` (string): Character health status (enum: "Healthy", "Wounded", "Dead") - this is the sole indicator of character health
-  - `level` (integer): Character level (≥1)
-  - `experience` (integer): Experience points (≥0)
-  - `stats` (map): Character stats (strength, dexterity, etc.)
+  - `status` (string, required): Character health status (enum: "Healthy", "Wounded", "Dead") - this is the sole indicator of character health/state
   - `equipment` (array): List of weapon objects
   - `inventory` (array): List of inventory item objects
   - `location` (map, string, or Location object): Current location (see Location Structure below)
   - `additional_fields` (map): Extensible fields for game-specific data
+
+**Deprecated Fields (Ignored During Deserialization):**
+The following numeric health/stat fields are **deprecated** and will be ignored if encountered in Firestore documents:
+- `level` (integer) - Removed in favor of status enum
+- `experience` (integer) - Removed in favor of status enum
+- `stats` (map) - Removed in favor of status enum
+- `current_hp` / `max_hp` - Removed in favor of status enum
+- `current_health` / `max_health` - Removed in favor of status enum
+- `health` (any numeric or complex format) - Removed in favor of status enum
+
+When reading legacy documents containing these fields, they are silently dropped and never persisted back to storage. The system relies exclusively on the `status` enum for character state.
 
 **Location Structure:**
 
@@ -321,16 +329,6 @@ All identity fields (name, race, class) are validated to:
       "class": "Ranger"
     },
     "status": "Healthy",
-    "level": 10,
-    "experience": 5000,
-    "stats": {
-      "strength": 18,
-      "dexterity": 14,
-      "constitution": 16,
-      "intelligence": 12,
-      "wisdom": 13,
-      "charisma": 15
-    },
     "equipment": [
       {
         "name": "Anduril",
@@ -342,7 +340,7 @@ All identity fields (name, race, class) are validated to:
       {
         "name": "Healing Potion",
         "quantity": 3,
-        "effect": "Restores 50 HP"
+        "effect": "Restores wounds"
       }
     ],
     "location": {
@@ -2653,13 +2651,6 @@ The context aggregation endpoint provides a single comprehensive payload contain
       "class": "Ranger"
     },
     "status": "Healthy",
-    "level": 10,
-    "experience": 5000,
-    "stats": {
-      "strength": 18,
-      "dexterity": 14,
-      "constitution": 16
-    },
     "equipment": [
       {
         "name": "Anduril",
@@ -2671,7 +2662,7 @@ The context aggregation endpoint provides a single comprehensive payload contain
       {
         "name": "Healing Potion",
         "quantity": 3,
-        "effect": "Restores 50 HP"
+        "effect": "Restores wounds"
       }
     ],
     "location": {

@@ -142,7 +142,6 @@ class TestCharacterDocumentSerialization:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={"strength": 10},
             location="test_location",
         )
 
@@ -576,7 +575,7 @@ class TestEdgeCases:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             location="test",
             equipment=[],
             inventory=[],
