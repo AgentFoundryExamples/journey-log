@@ -2746,7 +2746,7 @@ class TestCreatePOI:
         mock_char_ref.collection.assert_called_with("pois")
         
         # Verify POI was written to subcollection via transaction.set
-        assert len(subcollection_writes) > 0, "POI should be written to subcollection"
+        assert len(subcollection_writes) == 1, "Exactly one POI should be written to subcollection"
         
         # Verify character update was called (updated_at timestamp)
         mock_transaction.update.assert_called()

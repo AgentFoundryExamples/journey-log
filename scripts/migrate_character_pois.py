@@ -59,6 +59,8 @@ from typing import Dict, List, Optional
 # Add parent directory to path to import app modules
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from google.cloud import firestore  # type: ignore[import-untyped]
+
 from app.config import get_settings
 from app.firestore import (
     get_firestore_client,
@@ -155,11 +157,17 @@ def migrate_character(
                 "embedded_count": embedded_count,
             }
 
-        # Perform migration in transaction
+        # Perform migration in transaction with proper callback
         transaction = db.transaction()
-        migration_stats = migrate_embedded_pois_to_subcollection(
-            character_id, transaction
-        )
+        
+        @firestore.transactional
+        def migrate_in_transaction(transaction):
+            """Execute migration within transactional context."""
+            return migrate_embedded_pois_to_subcollection(
+                character_id, transaction
+            )
+        
+        migration_stats = migrate_in_transaction(transaction)
 
         logger.info(
             f"Successfully migrated character {character_id}: "
