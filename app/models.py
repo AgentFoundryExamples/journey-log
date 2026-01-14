@@ -352,6 +352,9 @@ class PointOfInterestSubcollection(BaseModel):
     notes: Optional[str] = Field(
         default=None, description="Player notes about this POI"
     )
+    tags: Optional[list[str]] = Field(
+        default=None, description="Tags for categorizing the POI"
+    )
     metadata: Optional[dict[str, Any]] = Field(
         default=None, description="Additional POI metadata"
     )
