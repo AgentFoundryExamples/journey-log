@@ -11,6 +11,7 @@ This document provides detailed instructions for deploying the Journey Log API t
 - [Firestore Configuration](#firestore-configuration)
 - [Cloud Run Deployment](#cloud-run-deployment)
 - [Testing Connectivity](#testing-connectivity)
+- [POI Migration](#poi-migration)
 - [Troubleshooting](#troubleshooting)
 
 ## Prerequisites
@@ -645,6 +646,356 @@ Once deployed, access the interactive API documentation:
 
 - **Swagger UI**: `https://your-service-url/docs`
 - **ReDoc**: `https://your-service-url/redoc`
+
+## POI Migration
+
+### Overview
+
+Points of Interest (POIs) have been migrated from embedded arrays in character documents to dedicated Firestore subcollections. This provides:
+
+- **Unlimited storage**: No 200-POI limit per character
+- **Better performance**: Efficient pagination and count operations
+- **Firestore best practices**: Subcollections for unbounded data
+
+**Migration Status:** The embedded `world_pois` array is deprecated and will be removed after all characters are migrated to the subcollection model.
+
+### When to Run Migration
+
+Run the POI migration script when:
+1. **Initial deployment** after upgrading to POI subcollection support
+2. **Before removing** the deprecated `world_pois` field
+3. **Periodically** to catch any characters created with legacy code
+
+### Migration Script
+
+**Script Location:** `scripts/migrate_character_pois.py`
+
+**Quick Start:**
+
+```bash
+# 1. Install dependencies (if not already done)
+pip install -r requirements.txt
+
+# 2. Authenticate with GCP
+gcloud auth application-default login
+
+# 3. Set project ID
+export GCP_PROJECT_ID="your-project-id"
+
+# 4. Preview migration (dry run)
+python scripts/migrate_character_pois.py --dry-run
+
+# 5. Run migration
+python scripts/migrate_character_pois.py
+```
+
+### Migration in Staging
+
+**Best Practice:** Always test migration in staging before production.
+
+```bash
+# Staging environment migration
+export GCP_PROJECT_ID="your-staging-project-id"
+export SERVICE_ENVIRONMENT="staging"
+
+# Step 1: Dry run to see what will be migrated
+python scripts/migrate_character_pois.py --dry-run
+# Review output: How many characters? How many POIs?
+
+# Step 2: Test on small subset
+python scripts/migrate_character_pois.py --limit 10
+
+# Step 3: Verify results in Firestore Console
+# Check: characters/{id}/pois subcollections created
+# Check: world_pois array still present (read-only during migration)
+
+# Step 4: Full staging migration
+python scripts/migrate_character_pois.py
+
+# Step 5: Validate staging API
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
+  "https://staging-service-url/characters/{id}/pois?limit=10"
+```
+
+### Migration in Production
+
+**Recommended Rollout:**
+
+1. **Schedule migration** during low-traffic window
+2. **Monitor resources** during migration (Firestore quota, API latency)
+3. **Batch processing** for large character collections
+
+```bash
+# Production environment setup
+export GCP_PROJECT_ID="your-production-project-id"
+export SERVICE_ENVIRONMENT="prod"
+
+# Enable pipefail to catch script failures in pipelines
+set -o pipefail
+
+# Step 1: Estimate scope (dry run)
+python scripts/migrate_character_pois.py --dry-run | tee migration-dry-run.log
+# Output shows: total characters, total POIs to migrate
+
+# Step 2: Batch migration for large datasets
+python scripts/migrate_character_pois.py --limit 1000 2>&1 | tee migration-batch1.log
+# Review logs, check Firestore Console
+
+# Step 3: Resume for remaining characters
+python scripts/migrate_character_pois.py --resume 2>&1 | tee migration-batch2.log
+
+# Step 4: Verify completion (dry run should show 0 characters)
+python scripts/migrate_character_pois.py --dry-run
+# Expected: total_characters_migrated: 0
+
+# Disable pipefail after migration
+set +o pipefail
+```
+
+### Monitoring Migration
+
+**Key Metrics to Monitor:**
+
+1. **Firestore Quota Usage:**
+   ```bash
+   # Check Firestore usage in GCP Console
+   # Navigate to: Firestore → Usage
+   # Monitor: Read/write operations, storage
+   ```
+
+2. **API Latency:**
+   ```bash
+   # Monitor Cloud Run metrics
+   gcloud monitoring dashboards list --project=PROJECT_ID
+   
+   # Check POI endpoint latency
+   # Expected: <200ms for paginated queries
+   ```
+
+3. **Migration Progress:**
+   ```bash
+   # Migration script logs progress every 10 characters
+   # Example output:
+   # "Progress: 100/500 characters processed, 25 migrated, 75 skipped"
+   ```
+
+4. **Error Rate:**
+   ```bash
+   # Check Cloud Logging for errors
+   gcloud logging read "severity>=ERROR AND resource.labels.service_name=journey-log" \
+     --limit=50 \
+     --project=PROJECT_ID
+   ```
+
+### Firestore Indexing Requirements
+
+**Automatic Index Creation:**
+
+Firestore automatically creates composite indexes when queries are first executed. No manual index creation is typically required.
+
+**Required Indexes:**
+- Collection: `pois` (subcollection)
+- Field: `timestamp_discovered` (descending)
+- Query scope: Collection group
+
+**Verify Indexes:**
+
+```bash
+# List Firestore indexes
+gcloud firestore indexes composite list --project=PROJECT_ID
+
+# Expected output includes:
+# Collection ID: pois
+# Fields: timestamp_discovered (DESCENDING)
+# State: READY
+```
+
+**Manual Index Creation (if needed):**
+
+```bash
+# Create index manually (rare - Firestore usually auto-creates)
+gcloud firestore indexes composite create \
+  --collection-group=pois \
+  --field-config field-path=timestamp_discovered,order=descending \
+  --project=PROJECT_ID
+```
+
+### IAM Requirements for Migration
+
+The migration script requires Firestore read/write permissions:
+
+```bash
+# For service account (automated migrations)
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/datastore.user"
+
+# For user account (manual migrations)
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="user:YOUR_EMAIL" \
+  --role="roles/datastore.user"
+```
+
+**Required Permissions:**
+- `datastore.entities.create` - Create POIs in subcollections
+- `datastore.entities.get` - Read character documents and POIs
+- `datastore.entities.update` - Update character documents (remove world_pois)
+- `datastore.entities.delete` - Remove embedded world_pois field
+
+### Environment Variables for Migration
+
+**Configuration Options:**
+
+```bash
+# Required
+export GCP_PROJECT_ID="your-project-id"
+
+# Optional - control migration behavior
+export POI_MIGRATION_ENABLED=true          # Enable automatic migration (default: true)
+export POI_EMBEDDED_READ_FALLBACK=true     # Read from embedded array if subcollection empty (default: true)
+
+# Optional - for Firestore emulator
+export FIRESTORE_EMULATOR_HOST="localhost:8080"
+
+# Optional - custom collection name
+export FIRESTORE_CHARACTERS_COLLECTION="characters"
+```
+
+**Toggle Recommendations:**
+
+| Phase | POI_MIGRATION_ENABLED | POI_EMBEDDED_READ_FALLBACK | Purpose |
+|-------|------------------------|----------------------------|---------|
+| **Pre-migration** | `true` | `true` | Support both storage formats |
+| **During migration** | `true` | `true` | Gradual migration with fallback |
+| **Post-migration** | `false` | `false` | Clean state, subcollections only |
+
+### Verifying Migration Completion
+
+**Checklist:**
+
+- [ ] Run migration script: `python scripts/migrate_character_pois.py`
+- [ ] Verify dry-run shows 0 characters needing migration
+- [ ] Check Firestore Console: Characters have `pois` subcollections
+- [ ] Test API endpoints: POI CRUD operations work correctly
+- [ ] Monitor logs: No fallback warnings
+- [ ] Update environment variables: Set `POI_EMBEDDED_READ_FALLBACK=false`
+
+**API Validation:**
+
+```bash
+# Get service URL
+SERVICE_URL=$(gcloud run services describe journey-log \
+  --region=us-central1 \
+  --project=PROJECT_ID \
+  --format='value(status.url)')
+
+# Test POI endpoints (with authentication)
+TOKEN=$(gcloud auth print-identity-token)
+
+# 1. Get POI summary (count + preview)
+curl -H "Authorization: Bearer $TOKEN" \
+  "${SERVICE_URL}/characters/{character_id}/pois/summary"
+# Expected: {"total_count": N, "preview": [...], "preview_count": M}
+
+# 2. List POIs with pagination
+curl -H "Authorization: Bearer $TOKEN" \
+  "${SERVICE_URL}/characters/{character_id}/pois?limit=20"
+# Expected: {"pois": [...], "count": 20, "cursor": "..."}
+
+# 3. Create new POI
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: test-user" \
+  "${SERVICE_URL}/characters/{character_id}/pois" \
+  -d '{"name":"Test POI","description":"Test migration verification"}'
+# Expected: 201 Created
+
+# 4. Update POI
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: test-user" \
+  "${SERVICE_URL}/characters/{character_id}/pois/{poi_id}" \
+  -d '{"visited":true}'
+# Expected: 200 OK
+
+# 5. Delete POI
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \
+  -H "X-User-Id: test-user" \
+  "${SERVICE_URL}/characters/{character_id}/pois/{poi_id}"
+# Expected: 204 No Content
+```
+
+### Migration Troubleshooting
+
+**Common Issues:**
+
+1. **Permission Denied:**
+   ```
+   Error: PermissionDenied: 403 Missing or insufficient permissions
+   
+   Solution:
+   gcloud projects add-iam-policy-binding PROJECT_ID \
+     --member="user:YOUR_EMAIL" \
+     --role="roles/datastore.user"
+   ```
+
+2. **Transaction Conflicts:**
+   ```
+   Error: Failed to migrate character abc-123: TransactionConflict
+   
+   Solution: Retry failed characters
+   python scripts/migrate_character_pois.py --character-id abc-123
+   ```
+
+3. **Migration Script Not Found:**
+   ```
+   Error: ModuleNotFoundError: No module named 'app'
+   
+   Solution: Run from repository root
+   cd /path/to/journey-log
+   python scripts/migrate_character_pois.py
+   ```
+
+4. **Firestore Quota Exceeded:**
+   ```
+   Error: ResourceExhausted: 429 Quota exceeded
+   
+   Solution: Batch migration with delays
+   # Migrate 100 at a time
+   python scripts/migrate_character_pois.py --limit 100
+   sleep 300  # Wait 5 minutes
+   python scripts/migrate_character_pois.py --resume
+   ```
+
+### Post-Migration Cleanup
+
+After verifying migration completion:
+
+1. **Update Environment Variables:**
+   ```bash
+   # In .env or Cloud Run environment
+   POI_MIGRATION_ENABLED=false
+   POI_EMBEDDED_READ_FALLBACK=false
+   ```
+
+2. **Monitor Application Logs:**
+   ```bash
+   # Check for fallback warnings (should be none)
+   gcloud logging read "jsonPayload.message=~'fallback.*embedded'" \
+     --project=PROJECT_ID \
+     --limit=10
+   ```
+
+3. **Plan Embedded Field Removal:**
+   - After migration is stable, plan to remove `world_pois` field from codebase
+   - Remove read fallback logic from `app/firestore.py`
+   - Update API documentation to reflect subcollections only
+
+4. **Archive Migration Logs:**
+   ```bash
+   # Save migration logs for compliance/audit
+   gsutil cp migration-*.log gs://your-backup-bucket/migration-logs/
+   ```
 
 ## Troubleshooting
 

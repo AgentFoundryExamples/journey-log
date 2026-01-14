@@ -18,10 +18,13 @@ A FastAPI-based service for managing journey logs and entries. Built with Python
   - `GET /characters/{id}` - Get full character details by ID
   - `POST /characters/{id}/narrative` - Append narrative turns to character history
   - `GET /characters/{id}/narrative` - Retrieve narrative turns with filtering (last N, since timestamp)
-- **Point of Interest (POI) Management**: Track discovered locations and landmarks
-  - `POST /characters/{id}/pois` - Add new POI to character's world (max 200 per character)
+- **Point of Interest (POI) Management**: Track discovered locations and landmarks using subcollection storage
+  - `POST /characters/{id}/pois` - Add new POI to character's subcollection (supports unlimited POIs)
   - `GET /characters/{id}/pois/random` - Sample N random POIs for narrative context (default: 3, max: 20)
-  - `GET /characters/{id}/pois` - Retrieve all POIs with pagination, sorted by discovery time
+  - `GET /characters/{id}/pois` - Retrieve all POIs with cursor-based pagination, sorted by discovery time
+  - `GET /characters/{id}/pois/summary` - Get total POI count and preview of newest POIs (efficient aggregation)
+  - `PUT /characters/{id}/pois/{poi_id}` - Update an existing POI
+  - `DELETE /characters/{id}/pois/{poi_id}` - Delete a POI from the character's collection
 - **Quest Management**: Single-active-quest system with archival
   - `PUT /characters/{id}/quest` - Set active quest (enforces single-quest invariant, returns 409 if quest exists)
   - `GET /characters/{id}/quest` - Retrieve active quest (returns null if none)
@@ -212,8 +215,25 @@ curl -X DELETE http://localhost:8080/firestore-test
 
 ### POI Management
 
+#### POI Storage Architecture
+
+POIs (Points of Interest) are stored in **per-character Firestore subcollections** at the path `characters/{character_id}/pois/{poi_id}`. This architecture provides:
+
+- **Unlimited storage**: No hard limit on POIs per character (previously limited to 200 in embedded arrays)
+- **Efficient queries**: Firestore indexes enable fast pagination and filtering on large POI collections
+- **Cursor-based pagination**: True pagination using Firestore cursors for optimal performance
+- **Count aggregation**: Efficient total count queries without loading all documents
+
+**World POI Reference**: Characters have a `world_pois_reference` field that can point to:
+- **Firestore collection paths**: `"characters/{character_id}/pois"` for character-specific POIs, or `"worlds/{world_id}/pois"` for world-global shared POIs
+- **Configuration keys**: Named world configurations like `"world-v1"` or `"middle-earth-pois"` for preset POI sets
+
+**Migration Status**: The embedded `world_pois` array in character documents is **deprecated** and read-only. New POIs are written exclusively to the subcollection. See [Migration Guide](docs/deployment.md#poi-migration) for migration details.
+
+#### POI API Examples
+
 ```bash
-# Add a new POI to a character
+# Add a new POI to a character's subcollection
 curl -X POST http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
   -H "Content-Type: application/json" \
   -H "X-User-Id: user123" \
@@ -223,12 +243,40 @@ curl -X POST http://localhost:8080/characters/550e8400-e29b-41d4-a716-4466554400
     "tags": ["dungeon", "dragon", "high-level"]
   }'
 
+# Get POI count and preview of newest POIs (efficient aggregation)
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/summary?preview_limit=5" \
+  -H "X-User-Id: user123"
+# Response: {"total_count": 150, "preview": [...], "preview_count": 5}
+
 # Get 5 random POIs for narrative context
 curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/random?n=5" \
   -H "X-User-Id: user123"
 
-# List all POIs for a character
-curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois \
+# List POIs with cursor-based pagination (default: 50 per page, sorted by discovery time)
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=20" \
+  -H "X-User-Id: user123"
+# Response: {"pois": [...], "count": 20, "cursor": "eyJwb2lfaWQiOiJhYmMxMjMifQ=="}
+
+# Get next page using cursor from previous response
+# Cursor format: Opaque base64-encoded string containing Firestore document reference
+# - DO NOT parse, decode, or construct cursors manually
+# - Cursors are tied to the query (order, filters) that generated them
+# - Invalid/expired cursors return 400 error with message to restart pagination
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=20&cursor=eyJwb2lfaWQiOiJhYmMxMjMifQ==" \
+  -H "X-User-Id: user123"
+# Response: {"pois": [...], "count": 20, "cursor": "eyJwb2lfaWQiOiJ4eXo3ODkifQ=="} or {"cursor": null} if no more pages
+
+# Update an existing POI
+curl -X PUT http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/abc-123 \
+  -H "Content-Type: application/json" \
+  -H "X-User-Id: user123" \
+  -d '{
+    "visited": true,
+    "tags": ["dungeon", "dragon", "high-level", "completed"]
+  }'
+
+# Delete a POI
+curl -X DELETE http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/pois/abc-123 \
   -H "X-User-Id: user123"
 ```
 
