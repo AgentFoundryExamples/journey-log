@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 20
+Total files: 21
 
 ## app/__init__.py
 **Language:** Python  
@@ -74,8 +74,8 @@ Total files: 20
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 42.77 KB  
-**LOC:** 916  
+**Size:** 43.86 KB  
+**LOC:** 925  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -92,8 +92,8 @@ Total files: 20
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 128.56 KB  
-**LOC:** 2799  
+**Size:** 128.49 KB  
+**LOC:** 2796  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py
@@ -128,8 +128,8 @@ Total files: 20
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 138.71 KB  
-**LOC:** 3179  
+**Size:** 137.57 KB  
+**LOC:** 3147  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_combat.py
@@ -155,8 +155,17 @@ Total files: 20
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 23.17 KB  
-**LOC:** 501  
+**Size:** 23.11 KB  
+**LOC:** 499  
+**TODOs/FIXMEs:** 0  
+
+## tests/test_legacy_fields.py
+**Language:** Python  
+**Role:** test  
+**Role Justification:** filename starts with 'test_'  
+**Summary:** Python test file (role: test)  
+**Size:** 12.28 KB  
+**LOC:** 231  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_models.py
@@ -164,8 +173,8 @@ Total files: 20
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 50.44 KB  
-**LOC:** 1191  
+**Size:** 50.98 KB  
+**LOC:** 1183  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_narrative_turns.py
@@ -182,6 +191,6 @@ Total files: 20
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 40.75 KB  
-**LOC:** 795  
+**Size:** 39.98 KB  
+**LOC:** 772  
 **TODOs/FIXMEs:** 0  

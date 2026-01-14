@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 20,
+  "total_files": 21,
   "files": [
     {
       "schema_version": "2.0",
@@ -109,8 +109,8 @@
       "summary": "Python data models (role: model)",
       "summary_text": "Python data models (role: model)",
       "metrics": {
-        "size_bytes": 43793,
-        "loc": 916,
+        "size_bytes": 44909,
+        "loc": 925,
         "todo_count": 0
       }
     },
@@ -137,8 +137,8 @@
       "summary": "Python module for characters",
       "summary_text": "Python module for characters",
       "metrics": {
-        "size_bytes": 131644,
-        "loc": 2799,
+        "size_bytes": 131575,
+        "loc": 2796,
         "todo_count": 0
       }
     },
@@ -193,8 +193,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 142043,
-        "loc": 3179,
+        "size_bytes": 140867,
+        "loc": 3147,
         "todo_count": 0
       }
     },
@@ -235,8 +235,22 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 23724,
-        "loc": 501,
+        "size_bytes": 23667,
+        "loc": 499,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_legacy_fields.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 12577,
+        "loc": 231,
         "todo_count": 0
       }
     },
@@ -249,8 +263,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 51649,
-        "loc": 1191,
+        "size_bytes": 52199,
+        "loc": 1183,
         "todo_count": 0
       }
     },
@@ -277,8 +291,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 41732,
-        "loc": 795,
+        "size_bytes": 40940,
+        "loc": 772,
         "todo_count": 0
       }
     }
