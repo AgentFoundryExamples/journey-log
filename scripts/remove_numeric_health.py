@@ -52,7 +52,6 @@ import time
 from typing import List, Optional, Set
 
 from google.cloud import firestore  # type: ignore[import-untyped]
-from google.cloud.firestore_v1 import FieldFilter  # type: ignore[import-untyped]
 
 
 # Deprecated fields to remove from player_state
@@ -245,9 +244,7 @@ def process_documents(
             documents_cleaned += 1
             all_removed_fields.update(fields_removed)
             action = "Would remove" if dry_run else "Removed"
-            print(
-                f"{action} legacy fields from {doc.id}: {', '.join(fields_removed)}"
-            )
+            print(f"{action} legacy fields from {doc.id}: {', '.join(fields_removed)}")
 
         # Progress logging every 10 documents
         if (i + 1) % 10 == 0:
