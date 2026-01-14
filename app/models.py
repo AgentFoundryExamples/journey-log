@@ -276,11 +276,21 @@ class NarrativeTurn(BaseModel):
 
 class PointOfInterest(BaseModel):
     """
-    A point of interest (POI) embedded in character documents.
+    A point of interest (POI) - DEPRECATED for writes, read-only for compatibility.
 
-    This simplified POI model is stored directly in the character document
-    as part of the world_pois array. For unbounded POI data, use the
-    subcollection variant (see docs/SCHEMA.md).
+    DEPRECATED: This model represents the legacy embedded POI format stored in
+    the world_pois array. It is maintained for backward compatibility during migration.
+    
+    The AUTHORITATIVE POI storage is now the subcollection at:
+    characters/{character_id}/pois/{poi_id}
+    
+    For new POI writes, use PointOfInterestSubcollection and the subcollection helpers
+    in app/firestore.py. This model is read-only and used for:
+    - Reading legacy embedded POIs during migration
+    - Surfacing embedded POIs on GET for backward compatibility
+    - Migration utilities that copy embedded POIs to subcollection
+    
+    See docs/SCHEMA.md for migration guidance and storage contracts.
 
     EXACT SHAPE REQUIREMENT: This model must match the exact structure
     specified in the issue requirements for embedded POIs.
@@ -301,10 +311,20 @@ class PointOfInterest(BaseModel):
 
 class PointOfInterestSubcollection(BaseModel):
     """
-    A point of interest (POI) stored in subcollections for unbounded data.
+    A point of interest (POI) stored in subcollections - AUTHORITATIVE storage.
 
-    This is the full-featured POI model used in the character's POI subcollection.
-    It includes all optional fields and metadata.
+    This is the AUTHORITATIVE POI model for the subcollection at:
+    characters/{character_id}/pois/{poi_id}
+    
+    This full-featured POI model supports unbounded data with optional fields
+    and metadata. All new POI writes should use this model and the subcollection
+    storage via helpers in app/firestore.py.
+    
+    The subcollection approach:
+    - Allows unlimited POIs per character (no 200-entry array limit)
+    - Enables efficient querying and pagination
+    - Provides atomic POI operations with transaction support
+    - Supports optional shared POI resolution via world_pois_reference
 
     Referenced in: docs/SCHEMA.md - Points of Interest Subcollection
     """
@@ -552,7 +572,12 @@ class CharacterDocument(BaseModel):
     )
     world_pois: list[PointOfInterest] = Field(
         default_factory=list,
-        description="Embedded POIs discovered by this character (max 200 entries)",
+        description=(
+            "DEPRECATED: Read-only compatibility field for legacy embedded POIs. "
+            "The authoritative POI storage is the subcollection at characters/{character_id}/pois/{poi_id}. "
+            "This field is maintained for backward compatibility during migration. "
+            "New POI writes go to the subcollection only. Max 200 entries."
+        ),
     )
     active_quest: Optional[Quest] = Field(
         default=None, description="Current active quest (None if no active quest)"
