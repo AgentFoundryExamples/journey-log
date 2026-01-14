@@ -464,9 +464,6 @@ async def create_character(
         player_state = PlayerState(
             identity=identity,
             status=Status.HEALTHY,
-            level=1,
-            experience=0,
-            stats={},
             equipment=[],
             inventory=[],
             location=location,

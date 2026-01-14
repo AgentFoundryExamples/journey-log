@@ -31,6 +31,10 @@ from typing import Any, Literal, Optional, Union
 from google.cloud import firestore  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 class Status(str, Enum):
     """
@@ -161,14 +165,18 @@ class InventoryItem(BaseModel):
 
 class PlayerState(BaseModel):
     """
-    Current player character state including equipment, stats, and location.
+    Current player character state using canonical status enum.
 
     This model represents the core game state for a character, including:
     - Character identity (name, race, class)
-    - Health status
+    - Health status (canonical Status enum: Healthy, Wounded, Dead)
     - Equipment (weapons, armor, inventory)
     - Current location
     - Extensible additional fields for game-specific data
+
+    Numeric health/stat fields (level, experience, stats, HP, XP) have been
+    removed in favor of the textual status enum. Legacy numeric fields are
+    ignored during deserialization.
 
     Referenced in: docs/SCHEMA.md - Character Document Fields (player_state)
     """
@@ -176,22 +184,7 @@ class PlayerState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     identity: CharacterIdentity = Field(description="Character identity information")
-    status: Status = Field(description="Character health status")
-    level: int = Field(default=1, ge=1, description="Character level")
-    experience: int = Field(default=0, ge=0, description="Experience points")
-    stats: dict[str, int] = Field(
-        description="Character stats (strength, dexterity, etc.)",
-        examples=[
-            {
-                "strength": 18,
-                "dexterity": 14,
-                "constitution": 16,
-                "intelligence": 12,
-                "wisdom": 13,
-                "charisma": 15,
-            }
-        ],
-    )
+    status: Status = Field(description="Character health status (Healthy, Wounded, Dead)")
     equipment: list[Weapon] = Field(
         default_factory=list, description="Equipped weapons"
     )
@@ -951,7 +944,6 @@ def character_to_firestore(
         >>> player_state = PlayerState(
         ...     identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
         ...     status=Status.HEALTHY,
-        ...     stats={},
         ...     location="test"
         ... )
         >>> char = CharacterDocument(
@@ -1034,9 +1026,33 @@ def character_from_firestore(
     if character_id:
         data["character_id"] = character_id
 
-    # For backward compatibility, remove the old 'health' field from player_state if it exists
+    # For backward compatibility, remove legacy numeric health/stat fields from player_state
     if "player_state" in data and isinstance(data["player_state"], dict):
-        data["player_state"].pop("health", None)
+        player_data = data["player_state"]
+        # Track which deprecated fields are present for logging
+        deprecated_fields = [
+            "health", "level", "experience", "stats",
+            "current_hp", "max_hp", "current_health", "max_health"
+        ]
+        found_fields = [field for field in deprecated_fields if field in player_data]
+        
+        if found_fields:
+            char_id = data.get("character_id", "unknown")
+            logger.info(
+                "Stripping legacy numeric fields from player_state during deserialization",
+                character_id=char_id,
+                stripped_fields=found_fields,
+            )
+        
+        # Remove deprecated numeric fields - they are ignored and never persisted back
+        player_data.pop("health", None)  # Old health field
+        player_data.pop("level", None)  # Numeric level (use status enum instead)
+        player_data.pop("experience", None)  # Numeric XP (use status enum instead)
+        player_data.pop("stats", None)  # Numeric stats dict (use status enum instead)
+        player_data.pop("current_hp", None)  # HP-style health (use status enum instead)
+        player_data.pop("max_hp", None)  # HP-style health (use status enum instead)
+        player_data.pop("current_health", None)  # Alternative health field
+        player_data.pop("max_health", None)  # Alternative health field
 
     # Convert timestamps
     for field in ["created_at", "updated_at"]:

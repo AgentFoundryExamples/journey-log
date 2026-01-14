@@ -106,9 +106,6 @@ def sample_character_data():
                 "class": "Warrior",
             },
             "status": "Healthy",
-            "level": 1,
-            "experience": 0,
-            "stats": {},
             "equipment": [],
             "inventory": [],
             "location": {
@@ -164,9 +161,6 @@ class TestCreateCharacter:
                     "class": valid_create_request["class"],
                 },
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {
@@ -210,8 +204,6 @@ class TestCreateCharacter:
             == valid_create_request["class"]
         )
         assert character["player_state"]["status"] == "Healthy"
-        assert character["player_state"]["level"] == 1
-        assert character["player_state"]["experience"] == 0
         # Health field should be excluded from API responses
         assert "health" not in character["player_state"]
         assert character["player_state"]["equipment"] == []
@@ -393,9 +385,6 @@ class TestCreateCharacter:
                     "class": valid_create_request["class"],
                 },
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {
@@ -541,9 +530,6 @@ class TestCharacterDefaultValues:
                     "class": valid_create_request["class"],
                 },
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -595,9 +581,6 @@ class TestCharacterDefaultValues:
                     "class": valid_create_request["class"],
                 },
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -640,9 +623,6 @@ class TestGetCharacter:
                     "class": "Warrior",
                 },
                 "status": "Healthy",
-                "level": 5,
-                "experience": 1000,
-                "stats": {"strength": 18, "dexterity": 14},
                 "equipment": [],
                 "inventory": [],
                 "location": {
@@ -689,8 +669,6 @@ class TestGetCharacter:
         assert character["character_id"] == "550e8400-e29b-41d4-a716-446655440000"
         assert character["owner_user_id"] == "user123"
         assert character["player_state"]["identity"]["name"] == "Test Hero"
-        assert character["player_state"]["level"] == 5
-        assert character["player_state"]["experience"] == 1000
 
     def test_get_character_with_matching_user_id(
         self,
@@ -841,9 +819,6 @@ class TestGetCharacter:
                     "class": "Warrior",
                 },
                 "status": "Healthy",
-                "level": 5,
-                "experience": 1000,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -862,7 +837,6 @@ class TestGetCharacter:
                 "rewards": {
                     "items": ["Legendary Sword"],
                     "currency": {"gold": 500},
-                    "experience": 1000,
                 },
                 "completion_state": "in_progress",
                 "updated_at": datetime.now(timezone.utc),
@@ -1443,9 +1417,6 @@ class TestAppendNarrativeTurn:
                     "class": "Warrior",
                 },
                 "status": "Healthy",
-                "level": 5,
-                "experience": 1000,
-                "stats": {"strength": 18, "dexterity": 14},
                 "equipment": [],
                 "inventory": [],
                 "location": {
@@ -2012,9 +1983,6 @@ class TestGetNarrativeTurns:
                     "class": "Warrior",
                 },
                 "status": "Healthy",
-                "level": 5,
-                "experience": 1000,
-                "stats": {"strength": 18, "dexterity": 14},
                 "equipment": [],
                 "inventory": [],
                 "location": {

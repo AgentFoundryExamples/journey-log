@@ -75,22 +75,12 @@ def base_player_state():
             name="Test Hero", race="Human", **{"class": "Warrior"}
         ),
         status=Status.HEALTHY,
-        level=5,
-        experience=1000,
-        stats={
-            "strength": 16,
-            "dexterity": 12,
-            "constitution": 14,
-            "intelligence": 10,
-            "wisdom": 11,
-            "charisma": 13,
-        },
         equipment=[
             Weapon(name="Iron Sword", damage="1d8", special_effects="Sharp blade"),
             Weapon(name="Wooden Shield", damage=2),
         ],
         inventory=[
-            InventoryItem(name="Healing Potion", quantity=3, effect="Restores 50 HP"),
+            InventoryItem(name="Healing Potion", quantity=3, effect="Restores wounds"),
             InventoryItem(name="Rope", quantity=1),
         ],
         location="Village Square",
@@ -127,9 +117,6 @@ def character_wounded_with_quest(base_player_state):
     player_state = PlayerState(
         identity=base_player_state.identity,
         status=Status.WOUNDED,
-        level=base_player_state.level,
-        experience=base_player_state.experience,
-        stats=base_player_state.stats,
         equipment=base_player_state.equipment,
         inventory=base_player_state.inventory,
         location=base_player_state.location,
@@ -260,7 +247,6 @@ def character_empty_arrays():
     player_state = PlayerState(
         identity=CharacterIdentity(name="Empty", race="Elf", **{"class": "Mage"}),
         status=Status.HEALTHY,
-        stats={},
         equipment=[],
         inventory=[],
         location="Nowhere",
@@ -299,7 +285,6 @@ def character_future_schema():
             name="Future", race="Android", **{"class": "Hacker"}
         ),
         status=Status.HEALTHY,
-        stats={"cyber": 20},
         location="Cyberspace",
     )
 
@@ -510,15 +495,7 @@ class TestCharacterDocumentRoundTrip:
 
         # Verify player state core attributes
         assert restored.player_state.status == character_healthy.player_state.status
-        assert restored.player_state.level == character_healthy.player_state.level
-        assert (
-            restored.player_state.experience
-            == character_healthy.player_state.experience
-        )
         assert restored.player_state.location == character_healthy.player_state.location
-
-        # Verify stats dictionary
-        assert restored.player_state.stats == character_healthy.player_state.stats
 
         # Verify equipment array
         assert len(restored.player_state.equipment) == len(
@@ -698,7 +675,7 @@ class TestCharacterDocumentRoundTrip:
         assert len(restored.player_state.inventory) == 2
         assert restored.player_state.inventory[0].name == "Healing Potion"
         assert restored.player_state.inventory[0].quantity == 3
-        assert restored.player_state.inventory[0].effect == "Restores 50 HP"
+        assert restored.player_state.inventory[0].effect == "Restores wounds"
         assert restored.player_state.inventory[1].quantity == 1
 
     def test_character_additional_metadata_roundtrip(self, character_healthy):
@@ -947,7 +924,7 @@ class TestRoundTripEdgeCases:
                 name="Test", race="Human", **{"class": "Warrior"}
             ),
             status=Status.HEALTHY,
-            stats={},
+
             equipment=[],  # Empty array
             inventory=[],  # Empty array
             location="test",
@@ -984,7 +961,7 @@ class TestRoundTripEdgeCases:
                     name="Test", race="Human", **{"class": "Warrior"}
                 ),
                 status=Status.HEALTHY,
-                stats={},
+
                 location="test",
             )
 
