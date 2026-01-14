@@ -75,9 +75,6 @@ def sample_character_data():
                 "class": "Warrior",
             },
             "status": "Healthy",
-            "level": 1,
-            "experience": 0,
-            "stats": {},
             "equipment": [],
             "inventory": [],
             "location": {
@@ -571,9 +568,6 @@ class TestUpdateCombat:
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -942,9 +936,6 @@ class TestGetCombat:
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},
@@ -1004,9 +995,6 @@ class TestGetCombat:
             "player_state": {
                 "identity": {"name": "Hero", "race": "Human", "class": "Warrior"},
                 "status": "Healthy",
-                "level": 1,
-                "experience": 0,
-                "stats": {},
                 "equipment": [],
                 "inventory": [],
                 "location": {"id": "origin:nexus", "display_name": "The Nexus"},

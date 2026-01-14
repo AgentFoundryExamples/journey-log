@@ -65,9 +65,6 @@ def sample_character_data():
                 "class": "Warrior",
             },
             "status": "Healthy",
-            "level": 5,
-            "experience": 1000,
-            "stats": {"strength": 18, "dexterity": 14},
             "equipment": [],
             "inventory": [],
             "location": {
@@ -106,7 +103,6 @@ def sample_character_data():
             "rewards": {
                 "items": ["Dragon Scale"],
                 "currency": {"gold": 1000},
-                "experience": 5000,
             },
             "completion_state": "in_progress",
             "updated_at": datetime.now(timezone.utc),
