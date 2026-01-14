@@ -1408,3 +1408,164 @@ class TestWorldState:
         assert doc.world_state["time_of_day"] == "morning"
         assert doc.world_state["weather"] == "sunny"
         assert "dragon_awakened" in doc.world_state["global_events"]
+
+
+class TestInvalidStatusValidation:
+    """Test that invalid status values are properly rejected with 422-style validation errors."""
+
+    def test_player_state_rejects_invalid_status_string(self):
+        """Test that PlayerState rejects invalid status string values."""
+        with pytest.raises(ValidationError) as exc_info:
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="InvalidStatus",  # Not a valid Status enum value
+                location="test",
+            )
+        
+        # Verify the error mentions the invalid value and valid options
+        error_str = str(exc_info.value).lower()
+        assert "invalidstatus" in error_str or "input" in error_str
+        # Should mention at least one of the valid values
+        assert any(valid in error_str for valid in ["healthy", "wounded", "dead"])
+
+    def test_player_state_rejects_numeric_status(self):
+        """Test that PlayerState rejects numeric status values."""
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status=100,  # Numeric value should be rejected
+                location="test",
+            )
+
+    def test_player_state_rejects_none_status(self):
+        """Test that PlayerState rejects None as status (status is required)."""
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status=None,  # Status is required, cannot be None
+                location="test",
+            )
+
+    def test_player_state_rejects_empty_string_status(self):
+        """Test that PlayerState rejects empty string status."""
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="",  # Empty string should be rejected
+                location="test",
+            )
+
+    def test_player_state_rejects_case_incorrect_status(self):
+        """Test that PlayerState is case-sensitive for status values."""
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="healthy",  # Lowercase - should be "Healthy"
+                location="test",
+            )
+        
+        with pytest.raises(ValidationError):
+            PlayerState(
+                identity=CharacterIdentity(
+                    name="Test", race="Human", **{"class": "Warrior"}
+                ),
+                status="WOUNDED",  # Uppercase - should be "Wounded"
+                location="test",
+            )
+
+    def test_enemy_state_rejects_invalid_status_string(self):
+        """Test that EnemyState rejects invalid status string values."""
+        with pytest.raises(ValidationError) as exc_info:
+            EnemyState(
+                enemy_id="test_enemy",
+                name="Test Enemy",
+                status="Alive",  # Not a valid Status enum value
+            )
+        
+        error_str = str(exc_info.value).lower()
+        assert "alive" in error_str or "input" in error_str
+
+    def test_enemy_state_rejects_numeric_status(self):
+        """Test that EnemyState rejects numeric status values."""
+        with pytest.raises(ValidationError):
+            EnemyState(
+                enemy_id="test_enemy",
+                name="Test Enemy",
+                status=50,  # Numeric value should be rejected
+            )
+
+    def test_enemy_state_rejects_none_status(self):
+        """Test that EnemyState rejects None as status."""
+        with pytest.raises(ValidationError):
+            EnemyState(
+                enemy_id="test_enemy",
+                name="Test Enemy",
+                status=None,  # Status is required
+            )
+
+    def test_combat_state_rejects_invalid_enemy_status(self):
+        """Test that CombatState rejects enemies with invalid status."""
+        with pytest.raises(ValidationError):
+            enemy = EnemyState(
+                enemy_id="enemy_001",
+                name="Goblin",
+                status="Bleeding",  # Invalid status
+            )
+            CombatState(
+                combat_id="combat_001",
+                started_at="2026-01-11T14:00:00Z",
+                enemies=[enemy],
+            )
+
+    def test_status_enum_accepts_valid_values(self):
+        """Test that all valid Status enum values are accepted."""
+        # Test Healthy
+        player_healthy = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.HEALTHY,
+            location="test",
+        )
+        assert player_healthy.status == Status.HEALTHY
+
+        # Test Wounded
+        player_wounded = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.WOUNDED,
+            location="test",
+        )
+        assert player_wounded.status == Status.WOUNDED
+
+        # Test Dead
+        player_dead = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status=Status.DEAD,
+            location="test",
+        )
+        assert player_dead.status == Status.DEAD
+
+    def test_status_enum_string_values_accepted(self):
+        """Test that valid status string values are accepted and converted to enum."""
+        # Pydantic should accept the string values and convert to enum
+        player = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status="Healthy",  # String value should be accepted
+            location="test",
+        )
+        assert player.status == Status.HEALTHY
+        
+        player2 = PlayerState(
+            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            status="Wounded",
+            location="test",
+        )
+        assert player2.status == Status.WOUNDED
