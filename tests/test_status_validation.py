@@ -78,13 +78,17 @@ class TestStatusValidationInCombatEndpoints:
         
         # Verify error contains information about the field and allowed values
         data = response.json()
-        assert "errors" in data or "detail" in data
+        assert "errors" in data
+        assert len(data["errors"]) == 1
+        error = data["errors"][0]
         
-        # Check that the error message mentions the status field and allowed values
-        error_str = str(data).lower()
-        assert "status" in error_str
-        # Pydantic's error message should list the allowed values
-        assert "healthy" in error_str or "wounded" in error_str or "dead" in error_str
+        # Verify the precise location of the validation error
+        expected_loc = ("body", "combat_state", "enemies", 0, "status")
+        assert tuple(error["loc"]) == expected_loc
+        
+        # Verify the error message and type for enum validation
+        assert error["type"] == "enum"
+        assert "Input should be 'Healthy', 'Wounded' or 'Dead'" in error["msg"]
     
     def test_update_combat_multiple_invalid_statuses(
         self, test_client_with_mock_db
@@ -307,23 +311,11 @@ class TestLegacyNumericFieldHandling:
 class TestStatusEnumValues:
     """Test that Status enum values are correctly defined."""
     
-    def test_status_enum_has_three_values(self):
-        """Test that Status enum has exactly three values."""
-        assert len(Status) == 3
-        assert Status.HEALTHY.value == "Healthy"
-        assert Status.WOUNDED.value == "Wounded"
-        assert Status.DEAD.value == "Dead"
-    
-    def test_status_enum_string_values(self):
-        """Test that Status enum values are proper case strings."""
-        # Verify the exact string values expected by the API
-        status_values = [s.value for s in Status]
-        assert "Healthy" in status_values
-        assert "Wounded" in status_values
-        assert "Dead" in status_values
-        
-        # Verify these are the ONLY values
-        assert len(status_values) == 3
+    def test_status_enum_values_are_correct(self):
+        """Test that Status enum has the exact expected string values."""
+        expected_values = {"Healthy", "Wounded", "Dead"}
+        actual_values = {s.value for s in Status}
+        assert actual_values == expected_values
 
 
 class TestNoNumericDefaultsOrFallbacks:
@@ -409,3 +401,152 @@ class TestNoNumericDefaultsOrFallbacks:
         assert "experience" not in player_state
         assert "hp" not in player_state
         assert "health" not in player_state
+
+
+class TestLegacyFieldPersistence:
+    """Test that legacy numeric fields are not persisted back to Firestore."""
+    
+    def test_legacy_fields_not_repersisted_on_update(
+        self, test_client_with_mock_db
+    ):
+        """Verify that legacy fields are stripped and NOT written back to Firestore."""
+        client, mock_db = test_client_with_mock_db
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Mock Firestore to return character with legacy fields
+        mock_char_snapshot = MagicMock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "character_id": character_id,
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Legacy Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                # Legacy fields that should NOT be persisted
+                "level": 10,
+                "experience": 5000,
+                "stats": {"strength": 18},
+                "current_hp": 100,
+                "max_hp": 100,
+                "equipment": [],
+                "inventory": [],
+                "location": "Town",
+                "additional_fields": {},
+            },
+            "world_pois_reference": "world",
+            "narrative_turns_reference": "narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        
+        # Mock transaction for combat update
+        mock_transaction = MagicMock()
+        mock_db.transaction.return_value = mock_transaction
+        mock_db.collection.return_value.document.return_value.get.return_value = (
+            mock_char_snapshot
+        )
+        
+        # Track the data written to Firestore
+        written_data = {}
+        
+        def mock_update(ref, data):
+            written_data.update(data)
+        
+        mock_transaction.update = mock_update
+        
+        # Update combat state
+        combat_state = {
+            "combat_id": "combat_001",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "turn": 1,
+            "enemies": [
+                {
+                    "enemy_id": "enemy_1",
+                    "name": "Goblin",
+                    "status": "Healthy",
+                    "weapon": "Sword",
+                    "traits": [],
+                }
+            ],
+        }
+        
+        response = client.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_state},
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Should succeed
+        assert response.status_code == status.HTTP_200_OK
+        
+        # Verify that written data does NOT contain legacy numeric fields
+        # The update should only contain combat_state and updated_at
+        assert "combat_state" in written_data
+        assert "updated_at" in written_data
+        
+        # Verify legacy fields are NOT in the written data
+        # Since we're updating at the document level, these shouldn't appear
+        assert "player_state" not in written_data or (
+            isinstance(written_data.get("player_state"), dict) and
+            "level" not in written_data["player_state"] and
+            "experience" not in written_data["player_state"] and
+            "stats" not in written_data["player_state"] and
+            "current_hp" not in written_data["player_state"] and
+            "max_hp" not in written_data["player_state"]
+        )
+
+
+class TestMissingStatusField:
+    """Test that missing status field produces actionable validation errors."""
+    
+    def test_combat_enemy_missing_status_field_returns_422(
+        self, test_client_with_mock_db
+    ):
+        """Test that enemy without status field produces validation error."""
+        client, _ = test_client_with_mock_db
+        character_id = "550e8400-e29b-41d4-a716-446655440000"
+        
+        # Combat state with enemy missing status field
+        combat_state = {
+            "combat_id": "combat_001",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "turn": 1,
+            "enemies": [
+                {
+                    "enemy_id": "enemy_1",
+                    "name": "Goblin",
+                    # Missing "status" field entirely
+                    "weapon": "Sword",
+                    "traits": [],
+                }
+            ],
+        }
+        
+        response = client.put(
+            f"/characters/{character_id}/combat",
+            json={"combat_state": combat_state},
+            headers={"X-User-Id": "user123"},
+        )
+        
+        # Should return 422 validation error
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        
+        data = response.json()
+        assert "errors" in data
+        assert len(data["errors"]) >= 1
+        
+        # Verify at least one error mentions the missing status field
+        error_locations = [tuple(error["loc"]) for error in data["errors"]]
+        # The error location should point to the enemy's status field
+        expected_loc = ("body", "combat_state", "enemies", 0, "status")
+        assert expected_loc in error_locations
+        
+        # Verify it's a "missing" type error
+        missing_errors = [e for e in data["errors"] if e["type"] == "missing"]
+        assert len(missing_errors) >= 1
