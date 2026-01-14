@@ -20,8 +20,8 @@ Total files: 24
 **Role:** configuration  
 **Role Justification:** configuration file name 'config'  
 **Summary:** Python configuration file (role: configuration)  
-**Size:** 6.61 KB  
-**LOC:** 137  
+**Size:** 7.35 KB  
+**LOC:** 153  
 **TODOs/FIXMEs:** 0  
 
 ## app/dependencies.py
@@ -38,8 +38,8 @@ Total files: 24
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for firestore  
-**Size:** 9.94 KB  
-**LOC:** 195  
+**Size:** 24.08 KB  
+**LOC:** 532  
 **TODOs/FIXMEs:** 0  
 
 ## app/logging.py
@@ -74,8 +74,8 @@ Total files: 24
 **Role:** model  
 **Role Justification:** model/schema name 'models'  
 **Summary:** Python data models (role: model)  
-**Size:** 43.86 KB  
-**LOC:** 925  
+**Size:** 45.13 KB  
+**LOC:** 945  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/__init__.py
@@ -92,8 +92,8 @@ Total files: 24
 **Role:** implementation  
 **Role Justification:** general implementation file (default classification)  
 **Summary:** Python module for characters  
-**Size:** 128.40 KB  
-**LOC:** 2793  
+**Size:** 133.50 KB  
+**LOC:** 2870  
 **TODOs/FIXMEs:** 0  
 
 ## app/routers/firestore_test.py

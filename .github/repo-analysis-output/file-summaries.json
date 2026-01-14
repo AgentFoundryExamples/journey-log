@@ -25,8 +25,8 @@
       "summary": "Python configuration file (role: configuration)",
       "summary_text": "Python configuration file (role: configuration)",
       "metrics": {
-        "size_bytes": 6768,
-        "loc": 137,
+        "size_bytes": 7522,
+        "loc": 153,
         "todo_count": 0
       }
     },
@@ -53,8 +53,8 @@
       "summary": "Python module for firestore",
       "summary_text": "Python module for firestore",
       "metrics": {
-        "size_bytes": 10174,
-        "loc": 195,
+        "size_bytes": 24657,
+        "loc": 532,
         "todo_count": 0
       }
     },
@@ -109,8 +109,8 @@
       "summary": "Python data models (role: model)",
       "summary_text": "Python data models (role: model)",
       "metrics": {
-        "size_bytes": 44909,
-        "loc": 925,
+        "size_bytes": 46210,
+        "loc": 945,
         "todo_count": 0
       }
     },
@@ -137,8 +137,8 @@
       "summary": "Python module for characters",
       "summary_text": "Python module for characters",
       "metrics": {
-        "size_bytes": 131480,
-        "loc": 2793,
+        "size_bytes": 136701,
+        "loc": 2870,
         "todo_count": 0
       }
     },

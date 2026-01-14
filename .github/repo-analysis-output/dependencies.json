@@ -418,6 +418,10 @@
       "target": "app/config.py"
     },
     {
+      "source": "app/firestore.py",
+      "target": "app/logging.py"
+    },
+    {
       "source": "app/logging.py",
       "target": "app/config.py"
     },
@@ -468,6 +472,10 @@
     {
       "source": "app/routers/characters.py",
       "target": "app/models.py"
+    },
+    {
+      "source": "app/routers/characters.py",
+      "target": "app/firestore.py"
     },
     {
       "source": "app/routers/firestore_test.py",
