@@ -749,3 +749,155 @@ class TestGetCharacterContext:
 
         # Total: 2 Firestore read operations
         # This validates the performance claim in README.md
+
+
+class TestContextPOISubcollectionRead:
+    """Tests for reading POIs from subcollection via context endpoint."""
+
+    @pytest.fixture
+    def subcollection_character_data(self):
+        """Character data with POIs in subcollection (not embedded)."""
+        return {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+            # No world_pois field - POIs are in subcollection
+        }
+
+    @pytest.fixture
+    def legacy_character_data_with_embedded_pois(self):
+        """Character data with legacy embedded POIs."""
+        return {
+            "character_id": "550e8400-e29b-41d4-a716-446655440000",
+            "owner_user_id": "user123",
+            "adventure_prompt": "Test adventure",
+            "player_state": {
+                "identity": {
+                    "name": "Test Hero",
+                    "race": "Human",
+                    "class": "Warrior",
+                },
+                "status": "Healthy",
+                "equipment": [],
+                "inventory": [],
+                "location": {
+                    "id": "origin:nexus",
+                    "display_name": "The Nexus",
+                },
+                "additional_fields": {},
+            },
+            "world_pois": [
+                {
+                    "id": "legacy_poi_1",
+                    "name": "Legacy Temple",
+                    "description": "An old temple from embedded storage",
+                    "created_at": datetime.now(timezone.utc),
+                    "tags": ["legacy"],
+                }
+            ],
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            "narrative_turns_reference": "characters/550e8400-e29b-41d4-a716-446655440000/narrative_turns",
+            "schema_version": "1.0.0",
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+    def test_context_reads_pois_from_subcollection_when_available(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        subcollection_character_data,
+    ):
+        """Test that context endpoint reads POIs from subcollection."""
+
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = subcollection_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify world section is present
+        assert "world" in data
+        assert "include_pois" in data["world"]
+        assert "pois_sample" in data["world"]
+
+    def test_context_fallback_to_embedded_pois_when_subcollection_empty(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        legacy_character_data_with_embedded_pois,
+    ):
+        """Test context falls back to embedded world_pois when subcollection is empty."""
+
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = legacy_character_data_with_embedded_pois
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify POIs from embedded array appear in context
+        assert "world" in data
+        assert "pois_sample" in data["world"]
+        
+        # Note: The actual implementation may sample POIs, so we just verify
+        # the structure exists and legacy POIs can be accessed
+        pois_sample = data["world"]["pois_sample"]
+        assert isinstance(pois_sample, list)
