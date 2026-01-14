@@ -49,7 +49,7 @@ import argparse
 import os
 import sys
 import time
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 from google.cloud import firestore  # type: ignore[import-untyped]
 
@@ -141,7 +141,7 @@ def remove_legacy_fields_from_document(
     db: firestore.Client,
     doc_ref: firestore.DocumentReference,
     dry_run: bool = False,
-) -> tuple[bool, List[str]]:
+) -> Tuple[bool, List[str]]:
     """
     Remove legacy numeric health fields from a single character document.
 
@@ -174,7 +174,9 @@ def remove_legacy_fields_from_document(
     # Check if status field exists (log warning if missing but don't fail)
     if "status" not in player_state:
         print(
-            f"WARNING: Document {doc_ref.id} has legacy fields but missing 'status' field - skipping"
+            f"WARNING: Document {doc_ref.id} has legacy fields {legacy_fields} but is missing required 'status' field. "
+            f"This document may be corrupted or from an old schema version. Skipping to avoid potential data issues. "
+            f"Manual review recommended."
         )
         return False, []
 
@@ -201,7 +203,7 @@ def process_documents(
     batch_size: int = 10,
     batch_delay: float = 0.5,
     dry_run: bool = False,
-) -> tuple[int, int]:
+) -> Tuple[int, int]:
     """
     Process character documents and remove legacy fields.
 
