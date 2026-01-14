@@ -1418,7 +1418,14 @@ class UpdatePOIRequest(BaseModel):
     @model_validator(mode="after")
     def validate_at_least_one_field(self) -> "UpdatePOIRequest":
         """Validate that at least one field is provided for update."""
-        if not any([self.name, self.description, self.visited is not None, self.tags]):
+        if not any(
+            [
+                self.name is not None,
+                self.description is not None,
+                self.visited is not None,
+                self.tags is not None,
+            ]
+        ):
             raise ValueError(
                 "At least one field must be provided for update (name, description, visited, or tags)"
             )
@@ -2816,13 +2823,15 @@ async def delete_poi(
             if owner_user_id != user_id:
                 return "access_denied"
 
-            # 3. Delete POI from subcollection (idempotent - no error if doesn't exist)
+            # 3. Check if POI exists before deleting
             pois_collection = char_ref.collection("pois")
             poi_ref = pois_collection.document(poi_id)
-            transaction.delete(poi_ref)
+            poi_snapshot = poi_ref.get(transaction=transaction)
 
-            # 4. Update character updated_at timestamp
-            transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
+            if poi_snapshot.exists:
+                # 4. Delete POI and update character timestamp
+                transaction.delete(poi_ref)
+                transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
 
             return "success"
 
@@ -4214,13 +4223,14 @@ async def get_character_context(
         pois_sample_list = []
         if include_pois:
             # Query POIs from subcollection (authoritative storage) directly
-            # Fetch up to context_default_poi_sample_size * 2 POIs to ensure good random sample
-            # (fetching more than needed provides better randomness)
-            fetch_limit = settings.context_default_poi_sample_size * 2
             pois_collection = char_ref.collection("pois")
-            pois_query = pois_collection.order_by(
-                "timestamp_discovered", direction=firestore.Query.DESCENDING
-            ).limit(fetch_limit)
+
+            # Use offset-based random sampling for better performance
+            # First, get a rough count (or use a limited query)
+            sample_size = settings.context_default_poi_sample_size
+
+            # Fetch POIs ordered by document ID for consistent results
+            pois_query = pois_collection.order_by("__name__").limit(sample_size * 3)
             pois_docs = list(pois_query.stream())
 
             # Convert document snapshots to dict format
@@ -4254,9 +4264,9 @@ async def get_character_context(
                         )
 
             # Sample POIs randomly using configured sample size
-            sample_size = min(settings.context_default_poi_sample_size, len(pois_data))
-            if sample_size > 0:
-                sampled_data = random.sample(pois_data, sample_size)
+            actual_sample_size = min(sample_size, len(pois_data))
+            if actual_sample_size > 0:
+                sampled_data = random.sample(pois_data, actual_sample_size)
                 for poi_data_item in sampled_data:
                     try:
                         # Handle both subcollection format and embedded format fields
