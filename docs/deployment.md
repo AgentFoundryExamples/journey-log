@@ -763,6 +763,220 @@ curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" \
 9. **Monitor for unusual activity** on test endpoints
 10. **Use environment-specific error messages** to avoid information disclosure
 
+## Cleanup Script
+
+### Overview
+
+The cleanup script (`scripts/remove_numeric_health.py`) removes deprecated numeric health fields from existing Firestore character documents. This is useful when migrating from numeric health tracking to the status-only model.
+
+### When to Use the Cleanup Script
+
+- **After Migration:** When transitioning existing characters from numeric health to status-only model
+- **Database Maintenance:** Periodically clean up legacy fields that may have been written by older code
+- **Storage Optimization:** Remove unnecessary fields to reduce document size
+- **Audit Compliance:** Ensure consistent schema across all stored documents
+
+**Note:** The application automatically strips legacy fields when reading documents, so running the cleanup script is **optional**. It's primarily useful for:
+1. Reducing stored document sizes
+2. Ensuring consistent schema in the database
+3. Simplifying manual database inspection/debugging
+
+### Environment Variables
+
+Add these variables to your `.env` file:
+
+```bash
+# Required for cleanup script
+GCP_PROJECT_ID=your-project-id
+
+# Optional: Specify custom collection name (defaults to "characters")
+FIRESTORE_CHARACTERS_COLLECTION=characters
+
+# Optional: For local testing with Firestore emulator
+FIRESTORE_EMULATOR_HOST=localhost:8080
+```
+
+### Running the Script
+
+#### 1. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+#### 2. Authenticate with GCP
+
+```bash
+# For local development
+gcloud auth application-default login
+
+# Or use service account key
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+```
+
+#### 3. Preview Changes (Dry Run)
+
+**Always run in dry-run mode first to preview changes:**
+
+```bash
+python scripts/remove_numeric_health.py --dry-run
+```
+
+This will:
+- Scan all character documents
+- Identify legacy numeric health fields
+- Log what **would** be removed
+- **Not modify** any documents
+
+#### 4. Apply Changes
+
+After reviewing the dry-run output:
+
+```bash
+# Clean all documents
+python scripts/remove_numeric_health.py
+
+# Clean specific documents
+python scripts/remove_numeric_health.py --character-ids char_001 char_002
+
+# Clean first 100 documents (for testing)
+python scripts/remove_numeric_health.py --limit 100
+```
+
+### Script Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--dry-run` | Preview changes without modifying documents | `False` |
+| `--character-ids` | Process only specific character IDs (space-separated) | `None` (all) |
+| `--limit` | Process at most N documents | `None` (all) |
+| `--batch-size` | Number of documents per batch | `10` |
+| `--batch-delay` | Seconds to wait between batches | `0.5` |
+
+### Example Usage
+
+```bash
+# Preview changes for specific characters
+python scripts/remove_numeric_health.py --dry-run --character-ids \
+  550e8400-e29b-41d4-a716-446655440000 \
+  660f9511-f39c-52e5-b827-557766551111
+
+# Clean all documents with progress logging
+python scripts/remove_numeric_health.py
+
+# Conservative cleanup for large datasets (slower, avoids rate limits)
+python scripts/remove_numeric_health.py --batch-size 5 --batch-delay 2.0
+
+# Test on small subset first
+python scripts/remove_numeric_health.py --limit 10
+```
+
+### What Gets Removed
+
+The script removes these deprecated fields from `player_state`:
+- `level` (numeric progression)
+- `experience` (numeric XP)
+- `stats` (nested stat object)
+- `current_hp`, `max_hp` (HP-style health)
+- `current_health`, `max_health` (alternative health fields)
+- `health` (any format)
+
+### Permissions Required
+
+The script needs Firestore read/write permissions:
+
+#### For Service Account
+
+```bash
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="serviceAccount:SERVICE_ACCOUNT_EMAIL" \
+  --role="roles/datastore.user"
+```
+
+#### For User Account
+
+```bash
+gcloud projects add-iam-policy-binding PROJECT_ID \
+  --member="user:YOUR_EMAIL" \
+  --role="roles/datastore.user"
+```
+
+### Rate Limits and Performance
+
+**Firestore Quotas:**
+- Standard tier: 10,000 writes/day free, then paid
+- Read operations: 50,000/day free, then paid
+- Consult [Firestore quotas](https://cloud.google.com/firestore/quotas) for your project tier
+
+**Script Performance:**
+- Default: ~1000 documents/minute
+- Adjust `--batch-size` and `--batch-delay` to tune throughput
+- Use conservative settings for heavily rate-limited projects
+
+**Recommendations:**
+- Start with `--limit 100` to test performance
+- Monitor GCP Console → Firestore → Usage for quota consumption
+- Increase batch size only if well within quota limits
+- Add delays if encountering rate limit errors
+
+### Safety Features
+
+The script includes several safety mechanisms:
+
+1. **Dry-run mode:** Preview without modifying data
+2. **Atomic updates:** Each document update is atomic (no partial updates)
+3. **Error isolation:** Failures on individual documents don't stop the batch
+4. **Idempotent:** Safe to run multiple times
+5. **Graceful handling:** Documents without legacy fields are skipped
+6. **Audit logging:** All actions logged with character IDs and field names
+7. **Status validation:** Documents missing status field are logged but not modified
+
+### Validation After Cleanup
+
+Verify the cleanup was successful:
+
+```bash
+# Run dry-run again - should find no documents to clean
+python scripts/remove_numeric_health.py --dry-run
+```
+
+Expected output:
+```
+INFO: Dry run mode enabled - no changes will be made
+INFO: Scanning character documents...
+INFO: Processed 1000 documents
+INFO: Documents with legacy fields: 0
+INFO: Documents cleaned: 0 (dry run)
+```
+
+### Troubleshooting
+
+**Permission Denied:**
+```bash
+# Verify authentication
+gcloud auth application-default login
+gcloud config set project YOUR_PROJECT_ID
+
+# Verify IAM roles
+gcloud projects get-iam-policy YOUR_PROJECT_ID --flatten="bindings[].members" --filter="bindings.members:user:YOUR_EMAIL"
+```
+
+**Rate Limit Errors:**
+```bash
+# Reduce throughput
+python scripts/remove_numeric_health.py --batch-size 2 --batch-delay 5.0
+```
+
+**Script Hangs:**
+- Check network connectivity to GCP
+- Verify Firestore database exists and is in active state
+- Check for very large documents (>500KB) that may timeout
+
+**Unexpected Results:**
+- Review dry-run output carefully before applying
+- Check application logs for automatic stripping behavior
+- Verify `GCP_PROJECT_ID` and `FIRESTORE_CHARACTERS_COLLECTION` are correct
+
 ## Additional Resources
 
 - [Google Cloud Run Documentation](https://cloud.google.com/run/docs)
