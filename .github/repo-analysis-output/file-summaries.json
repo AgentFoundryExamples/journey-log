@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 23,
+  "total_files": 24,
   "files": [
     {
       "schema_version": "2.0",
@@ -167,6 +167,20 @@
       "metrics": {
         "size_bytes": 21089,
         "loc": 415,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "scripts/remove_numeric_health.py",
+      "language": "Python",
+      "role": "script",
+      "role_justification": "located in 'scripts' directory",
+      "summary": "Python utility script (role: script)",
+      "summary_text": "Python utility script (role: script)",
+      "metrics": {
+        "size_bytes": 13738,
+        "loc": 322,
         "todo_count": 0
       }
     },

@@ -4,7 +4,7 @@ Heuristic summaries of source files based on filenames, extensions, and paths.
 
 Schema Version: 2.0
 
-Total files: 23
+Total files: 24
 
 ## app/__init__.py
 **Language:** Python  
@@ -112,6 +112,15 @@ Total files: 23
 **Summary:** Python module for example openai usage  
 **Size:** 20.59 KB  
 **LOC:** 415  
+**TODOs/FIXMEs:** 0  
+
+## scripts/remove_numeric_health.py
+**Language:** Python  
+**Role:** script  
+**Role Justification:** located in 'scripts' directory  
+**Summary:** Python utility script (role: script)  
+**Size:** 13.42 KB  
+**LOC:** 322  
 **TODOs/FIXMEs:** 0  
 
 ## tests/__init__.py

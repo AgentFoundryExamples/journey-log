@@ -32,7 +32,8 @@
   ├── deployment.md
   └── SCHEMA.md
 ├── scripts
-  └── deploy_cloud_run.sh
+  ├── deploy_cloud_run.sh
+  └── remove_numeric_health.py
 ├── tests
   ├── __init__.py
   ├── test_characters.py

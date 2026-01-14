@@ -207,6 +207,29 @@
       }
     },
     {
+      "id": "scripts/remove_numeric_health.py",
+      "path": "scripts/remove_numeric_health.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "argparse",
+          "os",
+          "re",
+          "sys",
+          "time",
+          "traceback",
+          "typing.List",
+          "typing.Optional",
+          "typing.Set",
+          "typing.Tuple"
+        ],
+        "third-party": [
+          "google.cloud.exceptions.GoogleCloudError",
+          "google.cloud.firestore"
+        ]
+      }
+    },
+    {
       "id": "tests/__init__.py",
       "path": "tests/__init__.py",
       "type": "file",
@@ -529,6 +552,7 @@
   ],
   "external_dependencies_summary": {
     "stdlib": [
+      "argparse",
       "contextvars.ContextVar",
       "copy",
       "datetime.datetime",
@@ -544,12 +568,15 @@
       "sys",
       "threading",
       "time",
+      "traceback",
       "typing.Annotated",
       "typing.Any",
       "typing.Callable",
       "typing.List",
       "typing.Literal",
       "typing.Optional",
+      "typing.Set",
+      "typing.Tuple",
       "typing.Union",
       "unittest.mock.MagicMock",
       "unittest.mock.Mock",
@@ -569,6 +596,7 @@
       "fastapi.responses.JSONResponse",
       "fastapi.status",
       "fastapi.testclient.TestClient",
+      "google.cloud.exceptions.GoogleCloudError",
       "google.cloud.firestore",
       "openai",
       "openai.OpenAI",
@@ -589,7 +617,7 @@
       "structlog.types.Processor",
       "uvicorn"
     ],
-    "stdlib_count": 26,
-    "third-party_count": 31
+    "stdlib_count": 30,
+    "third-party_count": 32
   }
 }

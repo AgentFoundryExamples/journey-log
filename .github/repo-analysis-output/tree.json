@@ -147,6 +147,10 @@
         {
           "type": "file",
           "name": "deploy_cloud_run.sh"
+        },
+        {
+          "type": "file",
+          "name": "remove_numeric_health.py"
         }
       ]
     },
