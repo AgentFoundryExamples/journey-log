@@ -760,7 +760,6 @@ class TestContextPOISubcollectionRead:
         mock_firestore_client,
     ):
         """Test that context endpoint reads POIs from subcollection."""
-        from unittest.mock import patch
 
         # Mock character with world_pois_reference (subcollection-based)
         sample_char_data = {
