@@ -18,6 +18,8 @@ These tests ensure that the API schema only exposes status enum fields for
 player and enemy health representations, with no numeric health properties.
 """
 
+import re
+
 import pytest
 
 from app.main import app
@@ -219,7 +221,6 @@ class TestOpenAPISchemaHealthModel:
                             # Check for "xp" not followed by "erience" (to avoid matching "experience")
                             if "xp" in description_lower:
                                 # Make sure it's not part of "experience"
-                                import re
                                 # Look for "xp" as standalone term, not as part of "exp" from "experience"
                                 if re.search(r'\bxp\b', description_lower):
                                     raise AssertionError(

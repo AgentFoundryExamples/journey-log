@@ -1023,6 +1023,28 @@ class TestRoundTripEdgeCases:
 class TestNumericFieldSerializationExclusion:
     """Test that numeric health/stat fields are never emitted during serialization."""
 
+    def _assert_no_numeric_health_fields(self, player_state_data: dict):
+        """Helper to assert that player_state_data contains no numeric health fields."""
+        assert "level" not in player_state_data
+        assert "experience" not in player_state_data
+        assert "stats" not in player_state_data
+        assert "health" not in player_state_data
+        assert "current_hp" not in player_state_data
+        assert "max_hp" not in player_state_data
+        assert "current_health" not in player_state_data
+        assert "max_health" not in player_state_data
+        assert "xp" not in player_state_data
+        assert "hp" not in player_state_data
+
+    def _assert_no_numeric_enemy_health_fields(self, enemy_data: dict):
+        """Helper to assert that enemy_data contains no numeric health fields."""
+        assert "level" not in enemy_data
+        assert "hp" not in enemy_data
+        assert "health" not in enemy_data
+        assert "current_hp" not in enemy_data
+        assert "max_hp" not in enemy_data
+        assert "stats" not in enemy_data
+
     def test_serialization_never_emits_numeric_health_fields(self):
         """Test that character_to_firestore never includes numeric health/stat fields."""
         # Create a character with only status-based health
@@ -1055,17 +1077,7 @@ class TestNumericFieldSerializationExclusion:
         assert data["player_state"]["status"] == "Healthy"
 
         # Verify numeric fields are NOT present in serialized data
-        player_state_data = data["player_state"]
-        assert "level" not in player_state_data
-        assert "experience" not in player_state_data
-        assert "stats" not in player_state_data
-        assert "health" not in player_state_data
-        assert "current_hp" not in player_state_data
-        assert "max_hp" not in player_state_data
-        assert "current_health" not in player_state_data
-        assert "max_health" not in player_state_data
-        assert "xp" not in player_state_data
-        assert "hp" not in player_state_data
+        self._assert_no_numeric_health_fields(data["player_state"])
 
     def test_wounded_character_serialization_no_numeric_fields(self):
         """Test wounded character serialization doesn't emit numeric fields."""
@@ -1094,9 +1106,7 @@ class TestNumericFieldSerializationExclusion:
         assert data["player_state"]["status"] == "Wounded"
 
         # Verify NO numeric health representation exists
-        assert "level" not in data["player_state"]
-        assert "stats" not in data["player_state"]
-        assert "current_hp" not in data["player_state"]
+        self._assert_no_numeric_health_fields(data["player_state"])
 
     def test_dead_character_serialization_no_numeric_fields(self):
         """Test dead character serialization doesn't emit numeric fields."""
@@ -1125,9 +1135,7 @@ class TestNumericFieldSerializationExclusion:
         assert data["player_state"]["status"] == "Dead"
 
         # Verify NO numeric health representation exists
-        assert "level" not in data["player_state"]
-        assert "health" not in data["player_state"]
-        assert "max_hp" not in data["player_state"]
+        self._assert_no_numeric_health_fields(data["player_state"])
 
     def test_combat_enemy_serialization_no_numeric_fields(self):
         """Test enemy serialization doesn't emit numeric health fields."""
@@ -1177,12 +1185,7 @@ class TestNumericFieldSerializationExclusion:
         assert enemy_data["status"] == "Wounded"
 
         # Verify enemy does NOT have numeric health fields
-        assert "level" not in enemy_data
-        assert "hp" not in enemy_data
-        assert "health" not in enemy_data
-        assert "current_hp" not in enemy_data
-        assert "max_hp" not in enemy_data
-        assert "stats" not in enemy_data
+        self._assert_no_numeric_enemy_health_fields(enemy_data)
 
     def test_multiple_entries_in_arrays(self, character_in_combat_multiple_enemies):
         """Test that arrays with multiple entries round-trip correctly."""
