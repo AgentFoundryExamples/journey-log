@@ -222,14 +222,10 @@ class TestOpenAPISchemaHealthModel:
                     if method in ["get", "post", "put", "delete", "patch"]:
                         if "description" in operation:
                             description_lower = operation["description"].lower()
-                            # Check for "xp" not followed by "erience" (to avoid matching "experience")
-                            if "xp" in description_lower:
-                                # Make sure it's not part of "experience"
-                                # Look for "xp" as standalone term, not as part of "exp" from "experience"
-                                if self.XP_PATTERN.search(description_lower):
-                                    raise AssertionError(
-                                        f"Found standalone 'xp' reference in {method.upper()} {endpoint} description"
-                                    )
+                            if "xp" in description_lower and self.XP_PATTERN.search(description_lower):
+                                raise AssertionError(
+                                    f"Found standalone 'xp' reference in {method.upper()} {endpoint} description"
+                                )
 
     def test_openapi_example_responses_use_status_only(self):
         """Test that example responses in schema use status-only health model."""
