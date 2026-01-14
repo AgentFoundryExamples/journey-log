@@ -669,11 +669,12 @@ def migrate_embedded_pois_to_subcollection(
         return stats
 
     # Get existing POI IDs in subcollection to detect duplicates
-    # Only fetch document IDs for efficiency (no need to read full documents)
+    # Read within transaction to prevent race conditions
     pois_collection = get_pois_collection(character_id)
     existing_poi_ids = set()
     # Use select() to only fetch document IDs, not full content
-    for doc in pois_collection.select([]).stream():
+    # Query within transaction to ensure consistency
+    for doc in pois_collection.select([]).stream(transaction=transaction):
         existing_poi_ids.add(doc.id)
 
     logger.info(
@@ -709,9 +710,12 @@ def migrate_embedded_pois_to_subcollection(
                 "name": embedded_poi.get("name", ""),
                 "description": embedded_poi.get("description", ""),
                 "timestamp_discovered": embedded_poi.get("created_at"),
-                "tags": embedded_poi.get("tags"),
                 "visited": False,  # Default for migrated POIs
             }
+            
+            # Only add tags if they exist to avoid null fields in Firestore
+            if "tags" in embedded_poi and embedded_poi["tags"] is not None:
+                subcollection_poi["tags"] = embedded_poi["tags"]
 
             # Create POI in subcollection within transaction
             poi_ref = pois_collection.document(poi_id)

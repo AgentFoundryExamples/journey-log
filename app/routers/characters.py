@@ -1546,6 +1546,15 @@ async def create_poi(
                     character_id=character_id,
                     **migration_stats,
                 )
+                
+                # Check for migration errors and log warnings
+                if migration_stats and migration_stats.get("errors"):
+                    logger.warning(
+                        "create_poi_migration_partial_failure",
+                        character_id=character_id,
+                        error_count=len(migration_stats["errors"]),
+                        errors=migration_stats["errors"],
+                    )
 
             # 4. Create POI data for subcollection
             # Use server timestamp if not provided by client
@@ -1816,11 +1825,31 @@ async def get_random_pois(
                 # Convert embedded format to subcollection format
                 pois_data = []
                 for embedded_poi in embedded_pois:
+                    # Validate that required fields exist before conversion
+                    if not embedded_poi.get("id"):
+                        logger.warning(
+                            "get_random_pois_embedded_poi_missing_id",
+                            character_id=character_id,
+                        )
+                        continue
+                    if not embedded_poi.get("name") or not embedded_poi.get("description"):
+                        logger.warning(
+                            "get_random_pois_embedded_poi_missing_required_fields",
+                            character_id=character_id,
+                            poi_id=embedded_poi.get("id"),
+                        )
+                        continue
+                    
+                    # Convert Firestore timestamp to datetime if needed
+                    created_at = embedded_poi.get("created_at")
+                    if created_at:
+                        created_at = datetime_from_firestore(created_at)
+
                     pois_data.append({
                         "poi_id": embedded_poi.get("id"),
                         "name": embedded_poi.get("name"),
                         "description": embedded_poi.get("description"),
-                        "timestamp_discovered": embedded_poi.get("created_at"),
+                        "timestamp_discovered": created_at,
                         "tags": embedded_poi.get("tags"),
                     })
 
