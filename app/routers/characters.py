@@ -54,12 +54,8 @@ from app.models import (
     datetime_to_firestore,
     narrative_turn_from_firestore,
     poi_subcollection_to_firestore,
-    poi_subcollection_from_firestore,
 )
 from app.firestore import (
-    get_pois_collection,
-    create_poi,
-    query_pois,
     should_migrate_pois,
     migrate_embedded_pois_to_subcollection,
 )
