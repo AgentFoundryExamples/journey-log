@@ -1389,6 +1389,65 @@ class GetPOISummaryResponse(BaseModel):
     preview_count: int = Field(description="Number of POIs in preview")
 
 
+class UpdatePOIRequest(BaseModel):
+    """Request model for updating an existing POI."""
+
+    model_config = {"extra": "forbid"}
+
+    name: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="POI name (1-200 characters)",
+    )
+    description: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=2000,
+        description="POI description (1-2000 characters)",
+    )
+    visited: Optional[bool] = Field(
+        default=None, description="Whether the POI has been visited"
+    )
+    tags: Optional[list[str]] = Field(
+        default=None,
+        max_length=20,
+        description="Tags for categorizing the POI (max 20 tags)",
+    )
+
+    @model_validator(mode="after")
+    def validate_at_least_one_field(self) -> "UpdatePOIRequest":
+        """Validate that at least one field is provided for update."""
+        if not any([self.name, self.description, self.visited is not None, self.tags]):
+            raise ValueError(
+                "At least one field must be provided for update (name, description, visited, or tags)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_tags(self) -> "UpdatePOIRequest":
+        """Validate tags list size and individual tag lengths."""
+        if self.tags is not None:
+            if len(self.tags) > 20:
+                raise ValueError(
+                    f"tags list cannot exceed 20 entries (got {len(self.tags)})"
+                )
+            for tag in self.tags:
+                if len(tag) > 50:
+                    raise ValueError(
+                        f"Individual tag cannot exceed 50 characters (got {len(tag)} for tag: {tag[:20]}...)"
+                    )
+                if not tag.strip():
+                    raise ValueError("Tags cannot be empty or only whitespace")
+        return self
+
+
+class UpdatePOIResponse(BaseModel):
+    """Response model for POI update."""
+
+    poi: PointOfInterest = Field(description="The updated POI")
+
+
 @router.post(
     "/{character_id}/pois",
     response_model=CreatePOIResponse,
@@ -2134,7 +2193,7 @@ async def get_pois(
                 )
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Malformed cursor. Please restart pagination from the beginning.",
+                    detail="Malformed cursor. Please restart pagination from the beginning.",
                 )
 
         # Fetch limit + 1 to determine if there are more results
@@ -2407,6 +2466,417 @@ async def get_poi_summary(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve POI summary due to an internal error",
+        )
+
+
+@router.put(
+    "/{character_id}/pois/{poi_id}",
+    response_model=UpdatePOIResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Update an existing POI",
+    description=(
+        "Update fields of an existing POI in the character's pois subcollection.\n\n"
+        "**Authoritative Storage:** Updates POI in `characters/{character_id}/pois/{poi_id}` subcollection.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n"
+        "- `poi_id`: UUID-formatted POI identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Request Body:**\n"
+        "- At least one field must be provided for update\n"
+        "- `name`: Optional POI name (1-200 characters)\n"
+        "- `description`: Optional POI description (1-2000 characters)\n"
+        "- `visited`: Optional visited flag (boolean)\n"
+        "- `tags`: Optional list of tags (max 20 tags, each max 50 characters)\n\n"
+        "**Partial Updates:**\n"
+        "- Only provided fields are updated\n"
+        "- Null/missing fields are not changed\n"
+        "- To clear tags, provide an empty list []\n\n"
+        "**Response:**\n"
+        "- Returns the updated POI with all fields (including unchanged ones)\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header, no fields provided\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character or POI not found\n"
+        "- `422`: Validation error (invalid field values)\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def update_poi(
+    character_id: str,
+    poi_id: str,
+    request: UpdatePOIRequest,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+) -> UpdatePOIResponse:
+    """
+    Update an existing POI in the character's pois subcollection.
+
+    This endpoint:
+    1. Validates character_id and poi_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Validates update payload (at least one field provided)
+    4. Updates POI in subcollection with provided fields
+    5. Returns updated POI
+
+    Args:
+        character_id: UUID-formatted character identifier
+        poi_id: UUID-formatted POI identifier
+        request: POI update request data
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+
+    Returns:
+        UpdatePOIResponse with the updated POI
+
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id or no fields provided
+            - 403: Access denied (user not owner)
+            - 404: Character or POI not found
+            - 422: Validation error
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID formats
+    try:
+        character_id = str(uuid.UUID(character_id))
+        poi_id = str(uuid.UUID(poi_id))
+    except ValueError:
+        logger.warning(
+            "update_poi_invalid_uuid",
+            character_id=character_id,
+            poi_id=poi_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid UUID format for character_id or poi_id",
+        )
+
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("update_poi_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+
+    user_id = x_user_id.strip()
+
+    # Log update attempt
+    logger.info(
+        "update_poi_attempt",
+        character_id=character_id,
+        poi_id=poi_id,
+        user_id=user_id,
+    )
+
+    try:
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+
+        @firestore.transactional
+        def update_poi_in_transaction(transaction):
+            """Atomically update POI and character timestamp."""
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+
+            if not char_snapshot.exists:
+                return None, "not_found_character"
+
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+
+            if owner_user_id != user_id:
+                return None, "access_denied"
+
+            # 3. Fetch POI from subcollection
+            from app.firestore import get_pois_collection
+
+            pois_collection = get_pois_collection(character_id)
+            poi_ref = pois_collection.document(poi_id)
+            poi_snapshot = poi_ref.get(transaction=transaction)
+
+            if not poi_snapshot.exists:
+                return None, "not_found_poi"
+
+            poi_data = poi_snapshot.to_dict()
+
+            # 4. Build update dict with only provided fields
+            update_data = {}
+            if request.name is not None:
+                update_data["name"] = request.name
+            if request.description is not None:
+                update_data["description"] = request.description
+            if request.visited is not None:
+                update_data["visited"] = request.visited
+            if request.tags is not None:
+                update_data["tags"] = request.tags
+
+            # 5. Update POI in subcollection
+            transaction.update(poi_ref, update_data)
+
+            # 6. Update character updated_at timestamp
+            transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
+
+            # 7. Merge updated fields with existing data for response
+            poi_data.update(update_data)
+
+            return poi_data, "success"
+
+        # Execute transaction
+        poi_data, result = update_poi_in_transaction(transaction)
+
+        # Handle transaction results
+        if result == "not_found_character":
+            logger.warning(
+                "update_poi_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "not_found_poi":
+            logger.warning(
+                "update_poi_poi_not_found",
+                character_id=character_id,
+                poi_id=poi_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"POI with ID '{poi_id}' not found for this character",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "update_poi_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+
+        # Convert to PointOfInterest model for response
+        timestamp_discovered = poi_data.get("timestamp_discovered")
+        if timestamp_discovered is not None:
+            timestamp_discovered = datetime_from_firestore(timestamp_discovered)
+
+        updated_poi = PointOfInterest(
+            id=poi_data.get("poi_id", poi_id),
+            name=poi_data["name"],
+            description=poi_data["description"],
+            created_at=timestamp_discovered,
+            tags=poi_data.get("tags"),
+        )
+
+        logger.info(
+            "update_poi_success",
+            character_id=character_id,
+            poi_id=poi_id,
+        )
+
+        return UpdatePOIResponse(poi=updated_poi)
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "update_poi_error",
+            character_id=character_id,
+            poi_id=poi_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update POI: {str(e)}",
+        )
+
+
+@router.delete(
+    "/{character_id}/pois/{poi_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a POI",
+    description=(
+        "Delete a POI from the character's pois subcollection.\n\n"
+        "**Authoritative Storage:** Deletes POI from `characters/{character_id}/pois/{poi_id}` subcollection.\n\n"
+        "**Path Parameters:**\n"
+        "- `character_id`: UUID-formatted character identifier\n"
+        "- `poi_id`: UUID-formatted POI identifier\n\n"
+        "**Required Headers:**\n"
+        "- `X-User-Id`: User identifier (must match character owner for access control)\n\n"
+        "**Behavior:**\n"
+        "- Permanently deletes the POI from subcollection\n"
+        "- Idempotent: succeeds even if POI doesn't exist (returns 204)\n"
+        "- Updates character.updated_at timestamp\n\n"
+        "**Response:**\n"
+        "- Returns 204 No Content on success (even if POI didn't exist)\n\n"
+        "**Error Responses:**\n"
+        "- `400`: Missing or invalid X-User-Id header\n"
+        "- `403`: X-User-Id does not match character owner\n"
+        "- `404`: Character not found\n"
+        "- `422`: Invalid UUID format for character_id or poi_id\n"
+        "- `500`: Internal server error (e.g., Firestore transient errors)"
+    ),
+)
+async def delete_poi(
+    character_id: str,
+    poi_id: str,
+    db: FirestoreClient,
+    x_user_id: str = Header(..., description="User identifier for ownership"),
+):
+    """
+    Delete a POI from the character's pois subcollection.
+
+    This endpoint:
+    1. Validates character_id and poi_id as UUID format
+    2. Validates X-User-Id matches character owner
+    3. Deletes POI from subcollection
+    4. Updates character updated_at timestamp
+    5. Idempotent - succeeds even if POI doesn't exist
+
+    Args:
+        character_id: UUID-formatted character identifier
+        poi_id: UUID-formatted POI identifier
+        db: Firestore client (dependency injection)
+        x_user_id: User ID from X-User-Id header
+
+    Returns:
+        No content (204 status)
+
+    Raises:
+        HTTPException:
+            - 400: Invalid X-User-Id
+            - 403: Access denied (user not owner)
+            - 404: Character not found
+            - 422: Validation error
+            - 500: Firestore error
+    """
+    # Validate and normalize UUID formats
+    try:
+        character_id = str(uuid.UUID(character_id))
+        poi_id = str(uuid.UUID(poi_id))
+    except ValueError:
+        logger.warning(
+            "delete_poi_invalid_uuid",
+            character_id=character_id,
+            poi_id=poi_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Invalid UUID format for character_id or poi_id",
+        )
+
+    # Validate X-User-Id
+    if not x_user_id or not x_user_id.strip():
+        logger.warning("delete_poi_missing_user_id", character_id=character_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-User-Id header is required and cannot be empty",
+        )
+
+    user_id = x_user_id.strip()
+
+    # Log delete attempt
+    logger.info(
+        "delete_poi_attempt",
+        character_id=character_id,
+        poi_id=poi_id,
+        user_id=user_id,
+    )
+
+    try:
+        # Create transaction
+        transaction = db.transaction()
+        characters_ref = db.collection(settings.firestore_characters_collection)
+
+        @firestore.transactional
+        def delete_poi_in_transaction(transaction):
+            """Atomically delete POI and update character timestamp."""
+            # 1. Fetch character document to verify existence and ownership
+            char_ref = characters_ref.document(character_id)
+            char_snapshot = char_ref.get(transaction=transaction)
+
+            if not char_snapshot.exists:
+                return "not_found_character"
+
+            # 2. Verify ownership
+            char_data = char_snapshot.to_dict()
+            owner_user_id = char_data.get("owner_user_id")
+
+            if owner_user_id != user_id:
+                return "access_denied"
+
+            # 3. Delete POI from subcollection (idempotent - no error if doesn't exist)
+            from app.firestore import get_pois_collection
+
+            pois_collection = get_pois_collection(character_id)
+            poi_ref = pois_collection.document(poi_id)
+            transaction.delete(poi_ref)
+
+            # 4. Update character updated_at timestamp
+            transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
+
+            return "success"
+
+        # Execute transaction
+        result = delete_poi_in_transaction(transaction)
+
+        # Handle transaction results
+        if result == "not_found_character":
+            logger.warning(
+                "delete_poi_character_not_found",
+                character_id=character_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Character with ID '{character_id}' not found",
+            )
+        elif result == "access_denied":
+            logger.warning(
+                "delete_poi_access_denied",
+                character_id=character_id,
+                requested_user_id=user_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: user ID does not match character owner",
+            )
+
+        logger.info(
+            "delete_poi_success",
+            character_id=character_id,
+            poi_id=poi_id,
+        )
+
+        # Return 204 No Content
+        return None
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        # Log and convert to 500 error
+        logger.error(
+            "delete_poi_error",
+            character_id=character_id,
+            poi_id=poi_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error_message=str(e),
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete POI: {str(e)}",
         )
 
 
