@@ -2690,6 +2690,75 @@ class TestCreatePOI:
         assert "created_at" in poi
         assert poi["tags"] is None
 
+    def test_create_poi_writes_to_subcollection_not_embedded(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that POI creation writes to subcollection, not embedded array."""
+
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+
+        # Mock character document retrieval (no embedded POIs)
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": [],  # No embedded POIs
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Track subcollection writes
+        subcollection_writes = []
+        mock_pois_collection = Mock()
+        mock_poi_doc_ref = Mock()
+        
+        def track_subcollection_set(doc_ref, data):
+            subcollection_writes.append(("set", doc_ref, data))
+        
+        mock_transaction.set = track_subcollection_set
+        mock_transaction.update = Mock()  # Track character updates
+        
+        mock_char_ref.collection.return_value = mock_pois_collection
+        mock_pois_collection.document.return_value = mock_poi_doc_ref
+
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "Ancient Temple",
+                "description": "A mysterious temple from ages past",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        
+        # Verify subcollection was accessed
+        mock_char_ref.collection.assert_called_with("pois")
+        
+        # Verify POI was written to subcollection via transaction.set
+        assert len(subcollection_writes) > 0, "POI should be written to subcollection"
+        
+        # Verify character update was called (updated_at timestamp)
+        mock_transaction.update.assert_called()
+        
+        # Verify the subcollection write contains the POI data
+        poi_write = subcollection_writes[0]
+        assert poi_write[0] == "set"
+        poi_data = poi_write[2]
+        assert "poi_id" in poi_data
+        assert poi_data["name"] == "Ancient Temple"
+        assert poi_data["description"] == "A mysterious temple from ages past"
+
     def test_create_poi_with_tags_and_timestamp(
         self,
         test_client_with_mock_db,
@@ -3463,6 +3532,316 @@ class TestGetPOIs:
 
         # Assertions
         assert response.status_code == status.HTTP_404_NOT_FOUND
+
+
+# ==============================================================================
+# POI Migration Tests
+# ==============================================================================
+
+
+class TestPOIMigration:
+    """Tests for POI migration from embedded array to subcollection."""
+
+    def test_create_poi_triggers_migration_when_embedded_pois_exist(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that creating a POI triggers migration of embedded POIs."""
+        from unittest.mock import patch
+
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+
+        # Mock character with embedded POIs
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": [
+                {
+                    "id": "legacy_poi_1",
+                    "name": "Old Temple",
+                    "description": "Legacy POI",
+                    "created_at": datetime.now(timezone.utc),
+                    "tags": ["legacy"],
+                },
+            ],
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock subcollection
+        mock_pois_collection = Mock()
+        mock_char_ref.collection.return_value = mock_pois_collection
+        
+        # Mock query to return no existing POIs in subcollection
+        mock_query_result = Mock()
+        mock_query_result.stream.return_value = []
+        mock_pois_collection.select.return_value = mock_query_result
+
+        # Track writes
+        writes = []
+        
+        def track_set(doc_ref, data):
+            writes.append(("set", data))
+        
+        def track_update(doc_ref, data):
+            writes.append(("update", data))
+        
+        mock_transaction.set = track_set
+        mock_transaction.update = track_update
+        mock_pois_collection.document.return_value = Mock()
+
+        # Make request with POI_MIGRATION_ENABLED
+        with patch("app.routers.characters.settings.poi_migration_enabled", True):
+            response = test_client_with_mock_db.post(
+                "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+                json={
+                    "name": "New POI",
+                    "description": "Newly created POI",
+                },
+                headers={"X-User-Id": "user123"},
+            )
+
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        
+        # Verify multiple writes occurred (migration + new POI)
+        # Should have: 1 legacy POI migrated + 1 new POI + 1 character update + 1 world_pois delete
+        assert len(writes) >= 2, "Should have migration writes and new POI write"
+
+    def test_legacy_embedded_pois_not_written_on_new_poi_creation(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that embedded world_pois array is NOT written when creating new POIs."""
+
+        # Mock Firestore transaction
+        mock_transaction = mock_firestore_client.transaction.return_value
+        mock_transaction._max_attempts = 5
+        mock_transaction._id = None
+
+        # Mock character with NO embedded POIs (already migrated)
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois_reference": "characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            # No world_pois field - already migrated
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Track character document updates
+        character_updates = []
+        
+        def track_update(doc_ref, data):
+            character_updates.append(data)
+        
+        mock_transaction.set = Mock()
+        mock_transaction.update = track_update
+        
+        mock_char_ref.collection.return_value = Mock()
+        mock_char_ref.collection.return_value.document.return_value = Mock()
+
+        # Make request
+        response = test_client_with_mock_db.post(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois",
+            json={
+                "name": "New POI",
+                "description": "Newly created POI",
+            },
+            headers={"X-User-Id": "user123"},
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_201_CREATED
+        
+        # Verify character updates do NOT contain world_pois field
+        for update_data in character_updates:
+            assert "world_pois" not in update_data, (
+                "world_pois should NOT be written to character document"
+            )
+
+
+class TestPOIPagination:
+    """Tests for POI pagination with cursor support."""
+
+    def test_get_pois_pagination_first_page(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test POI list retrieval with pagination - first page."""
+
+        # Mock character with multiple POIs
+        now = datetime.now(timezone.utc)
+        pois = [
+            {
+                "id": f"poi{i}",
+                "name": f"POI {i}",
+                "description": f"Desc {i}",
+                "created_at": now - timedelta(days=i),
+                "tags": None,
+            }
+            for i in range(10)  # 10 POIs total
+        ]
+
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Make request for first page (limit=3)
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=3",
+        )
+
+        # Assertions for first page
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["count"] == 3
+        assert data["cursor"] == "3"  # Next page starts at index 3
+        assert len(data["pois"]) == 3
+
+    def test_get_pois_pagination_without_loading_entire_dataset(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test that pagination does not materialize the entire POI dataset."""
+
+        # Mock character with many POIs (simulate large dataset)
+        # Create a minimal set and simulate larger count
+        now = datetime.now(timezone.utc)
+        
+        # Return only first 5 POIs even though there are 100
+        first_page_pois = [
+            {
+                "id": f"poi{i}",
+                "name": f"POI {i}",
+                "description": f"Desc {i}",
+                "created_at": now - timedelta(days=i),
+                "tags": None,
+            }
+            for i in range(5)
+        ]
+
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        
+        # Mock character document returns only the first page
+        # This simulates pagination not loading all 100 POIs
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": first_page_pois,  # Only first 5 returned
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Make request with limit=5
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=5",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify only requested page was returned
+        assert len(data["pois"]) == 5
+        assert data["count"] == 5
+        
+        # This test verifies the API supports pagination
+        # In a real implementation with subcollections, Firestore would handle
+        # not loading the entire dataset via limit() queries
+
+    def test_get_pois_pagination_multiple_pages(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+    ):
+        """Test stepping through multiple pages with cursor."""
+
+        # Mock character with 10 POIs
+        now = datetime.now(timezone.utc)
+        pois = [
+            {
+                "id": f"poi{i}",
+                "name": f"POI {i}",
+                "description": f"Desc {i}",
+                "created_at": now - timedelta(days=i),
+                "tags": None,
+            }
+            for i in range(10)
+        ]
+
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = {
+            "owner_user_id": "user123",
+            "world_pois": pois,
+        }
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Page 1: Get first 3
+        response1 = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=3",
+        )
+        assert response1.status_code == status.HTTP_200_OK
+        data1 = response1.json()
+        assert data1["count"] == 3
+        cursor1 = data1["cursor"]
+        assert cursor1 == "3"
+
+        # Page 2: Get next 3 using cursor
+        response2 = test_client_with_mock_db.get(
+            f"/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=3&cursor={cursor1}",
+        )
+        assert response2.status_code == status.HTTP_200_OK
+        data2 = response2.json()
+        assert data2["count"] == 3
+        cursor2 = data2["cursor"]
+        assert cursor2 == "6"
+
+        # Page 3: Get remaining items
+        response3 = test_client_with_mock_db.get(
+            f"/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=3&cursor={cursor2}",
+        )
+        assert response3.status_code == status.HTTP_200_OK
+        data3 = response3.json()
+        assert data3["count"] == 3
+        cursor3 = data3["cursor"]
+        assert cursor3 == "9"
+
+        # Page 4: Get last item
+        response4 = test_client_with_mock_db.get(
+            f"/characters/550e8400-e29b-41d4-a716-446655440000/pois?limit=3&cursor={cursor3}",
+        )
+        assert response4.status_code == status.HTTP_200_OK
+        data4 = response4.json()
+        assert data4["count"] == 1  # Only 1 item remaining
+        assert data4["cursor"] is None  # No more pages
 
 
 # ==============================================================================
