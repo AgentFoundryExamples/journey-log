@@ -28,6 +28,17 @@ from app.main import app
 class TestOpenAPISchemaHealthModel:
     """Test OpenAPI schema exposes only status-based health model."""
 
+    # Class-level constants for validation
+    PROBLEMATIC_HEALTH_TERMS = ["hp", "hit points", "current_hp", "max_hp"]
+    CHARACTER_RELATED_ENDPOINTS = [
+        "/characters",
+        "/characters/{character_id}",
+        "/characters/{character_id}/combat",
+    ]
+    
+    # Pre-compiled regex for standalone "xp" detection
+    XP_PATTERN = re.compile(r'\bxp\b')
+
     def test_openapi_schema_player_state_has_status_field(self):
         """Test that PlayerState schema includes status field."""
         schema = app.openapi()
@@ -183,7 +194,6 @@ class TestOpenAPISchemaHealthModel:
         
         # Check all path descriptions for numeric PLAYER health terminology
         # Note: "experience" in quest rewards is acceptable
-        problematic_terms = ["hp", "hit points", "current_hp", "max_hp"]
         
         for path, path_item in schema["paths"].items():
             for method, operation in path_item.items():
@@ -191,7 +201,7 @@ class TestOpenAPISchemaHealthModel:
                     # Check operation description
                     if "description" in operation:
                         description_lower = operation["description"].lower()
-                        for term in problematic_terms:
+                        for term in self.PROBLEMATIC_HEALTH_TERMS:
                             assert term not in description_lower, \
                                 f"Found '{term}' in {method.upper()} {path} description"
                     
@@ -200,18 +210,12 @@ class TestOpenAPISchemaHealthModel:
                         for param in operation["parameters"]:
                             if "description" in param:
                                 param_desc_lower = param["description"].lower()
-                                for term in problematic_terms:
+                                for term in self.PROBLEMATIC_HEALTH_TERMS:
                                     assert term not in param_desc_lower, \
                                         f"Found '{term}' in parameter description for {method.upper()} {path}"
         
         # Also check for XP specifically in character-related endpoints (not quest rewards)
-        character_endpoints = [
-            "/characters",
-            "/characters/{character_id}",
-            "/characters/{character_id}/combat",
-        ]
-        
-        for endpoint in character_endpoints:
+        for endpoint in self.CHARACTER_RELATED_ENDPOINTS:
             if endpoint in schema["paths"]:
                 path_item = schema["paths"][endpoint]
                 for method, operation in path_item.items():
@@ -222,7 +226,7 @@ class TestOpenAPISchemaHealthModel:
                             if "xp" in description_lower:
                                 # Make sure it's not part of "experience"
                                 # Look for "xp" as standalone term, not as part of "exp" from "experience"
-                                if re.search(r'\bxp\b', description_lower):
+                                if self.XP_PATTERN.search(description_lower):
                                     raise AssertionError(
                                         f"Found standalone 'xp' reference in {method.upper()} {endpoint} description"
                                     )
