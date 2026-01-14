@@ -491,15 +491,16 @@ class TestLegacyFieldPersistence:
         assert "updated_at" in written_data
         
         # Verify legacy fields are NOT in the written data
-        # Since we're updating at the document level, these shouldn't appear
-        assert "player_state" not in written_data or (
-            isinstance(written_data.get("player_state"), dict) and
-            "level" not in written_data["player_state"] and
-            "experience" not in written_data["player_state"] and
-            "stats" not in written_data["player_state"] and
-            "current_hp" not in written_data["player_state"] and
-            "max_hp" not in written_data["player_state"]
-        )
+        # Since we're updating combat at the document level, player_state shouldn't be touched
+        # If player_state is somehow in the update, verify legacy fields are not included
+        if "player_state" in written_data:
+            player_state = written_data["player_state"]
+            assert isinstance(player_state, dict)
+            assert "level" not in player_state
+            assert "experience" not in player_state
+            assert "stats" not in player_state
+            assert "current_hp" not in player_state
+            assert "max_hp" not in player_state
 
 
 class TestMissingStatusField:
