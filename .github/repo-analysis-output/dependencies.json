@@ -564,6 +564,10 @@
       "target": "app/dependencies.py"
     },
     {
+      "source": "tests/test_context_aggregation.py",
+      "target": "app/config.py"
+    },
+    {
       "source": "tests/test_context_contract.py",
       "target": "app/config.py"
     },

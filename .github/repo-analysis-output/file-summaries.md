@@ -164,8 +164,8 @@ Total files: 26
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 35.26 KB  
-**LOC:** 737  
+**Size:** 44.67 KB  
+**LOC:** 910  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_context_contract.py
@@ -218,8 +218,8 @@ Total files: 26
 **Role:** test  
 **Role Justification:** filename starts with 'test_'  
 **Summary:** Python test file (role: test)  
-**Size:** 11.76 KB  
-**LOC:** 164  
+**Size:** 19.26 KB  
+**LOC:** 276  
 **TODOs/FIXMEs:** 0  
 
 ## tests/test_serialization.py
