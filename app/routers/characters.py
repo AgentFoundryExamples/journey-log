@@ -40,10 +40,8 @@ from app.models import (
     CombatEnvelope,
     CombatState,
     ContextCapsMetadata,
-    ContextCombatState,
     Location,
     NarrativeContext,
-    NarrativeContextMetadata,
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
@@ -4069,8 +4067,6 @@ async def get_character_context(
     ),
     recent_n: int = Query(
         default=settings.context_recent_n_default,
-        ge=1,
-        le=settings.context_recent_n_max,
         description=f"Number of recent narrative turns to include (default: {settings.context_recent_n_default}, max: {settings.context_recent_n_max})",
     ),
     include_pois: bool = Query(
@@ -4097,7 +4093,7 @@ async def get_character_context(
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         recent_n: Number of recent narrative turns to include (default: 20, max: configured)
-        include_pois: Whether to include POI sample in response (default: true)
+        include_pois: Whether to include POI sample in response (default: false)
 
     Returns:
         CharacterContextResponse with aggregated context
@@ -4121,6 +4117,19 @@ async def get_character_context(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid UUID format for character_id: {character_id}",
+        )
+
+    # Validate recent_n bounds (return 400 per requirements, not 422)
+    if recent_n < 1 or recent_n > settings.context_recent_n_max:
+        logger.warning(
+            "get_context_invalid_recent_n",
+            character_id=character_id,
+            recent_n=recent_n,
+            max_allowed=settings.context_recent_n_max,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Parameter 'recent_n' must be between 1 and {settings.context_recent_n_max} (got {recent_n})",
         )
 
     # Log retrieval attempt
@@ -4309,8 +4318,9 @@ async def get_character_context(
 
         # 7. Prepare narrative context
         narrative_context = NarrativeContext(
-            turns=recent_turns,
+            recent_turns=recent_turns,
             requested_n=recent_n,
+            returned_n=len(recent_turns),
             max_n=settings.context_recent_n_max,
         )
 

@@ -712,12 +712,15 @@ class NarrativeContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    turns: list[NarrativeTurn] = Field(
+    recent_turns: list[NarrativeTurn] = Field(
         default_factory=list,
         description="List of recent narrative turns ordered oldest-to-newest (chronological)"
     )
     requested_n: int = Field(
         description="Number of turns requested via recent_n parameter"
+    )
+    returned_n: int = Field(
+        description="Number of turns actually returned (may be less than requested if not enough exist)"
     )
     max_n: int = Field(
         description="Maximum number of turns that can be requested (server config limit)"

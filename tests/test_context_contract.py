@@ -146,12 +146,14 @@ class TestNarrativeContext:
     def test_create_empty_narrative(self):
         """Test creating narrative context with no turns."""
         narrative = NarrativeContext(
-            turns=[],
+            recent_turns=[],
             requested_n=20,
+            returned_n=0,
             max_n=100,
         )
-        assert narrative.turns == []
+        assert narrative.recent_turns == []
         assert narrative.requested_n == 20
+        assert narrative.returned_n == 0
         assert narrative.max_n == 100
 
     def test_create_with_turns(self):
@@ -165,24 +167,28 @@ class TestNarrativeContext:
             )
         ]
         narrative = NarrativeContext(
-            turns=turns,
+            recent_turns=turns,
             requested_n=20,
+            returned_n=1,
             max_n=100,
         )
-        assert len(narrative.turns) == 1
+        assert len(narrative.recent_turns) == 1
         assert narrative.requested_n == 20
+        assert narrative.returned_n == 1
         assert narrative.max_n == 100
 
     def test_serialization(self):
         """Test narrative context serialization."""
         narrative = NarrativeContext(
-            turns=[],
+            recent_turns=[],
             requested_n=20,
+            returned_n=0,
             max_n=100,
         )
         data = narrative.model_dump()
-        assert data["turns"] == []
+        assert data["recent_turns"] == []
         assert data["requested_n"] == 20
+        assert data["returned_n"] == 0
         assert data["max_n"] == 100
 
 
@@ -285,7 +291,7 @@ class TestCharacterContextResponse:
             updated_at=datetime.now(timezone.utc),
         )
         combat = CombatEnvelope(active=False, state=None)
-        narrative = NarrativeContext(turns=[], requested_n=20, max_n=100)
+        narrative = NarrativeContext(recent_turns=[], requested_n=20, returned_n=0, max_n=100)
         world = WorldContextState(pois_sample=[], pois_cap=3, include_pois=False)
         metadata = ContextCapsMetadata(
             narrative_max_n=100,
@@ -324,7 +330,7 @@ class TestCharacterContextResponse:
             location=Location(id="loc1", display_name="Test Location"),
         )
         combat = CombatEnvelope(active=False, state=None)
-        narrative = NarrativeContext(turns=[], requested_n=20, max_n=100)
+        narrative = NarrativeContext(recent_turns=[], requested_n=20, returned_n=0, max_n=100)
         world = WorldContextState(pois_sample=[], pois_cap=3, include_pois=False)
         metadata = ContextCapsMetadata(
             narrative_max_n=100,

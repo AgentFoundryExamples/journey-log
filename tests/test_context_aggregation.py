@@ -149,9 +149,20 @@ class TestGetCharacterContext:
         mock_char_snapshot.to_dict.return_value = sample_character_data
         mock_char_ref.get.return_value = mock_char_snapshot
 
-        # Mock narrative turns
+        # Mock narrative turns subcollection
         mock_turns_collection = Mock()
-        mock_char_ref.collection.return_value = mock_turns_collection
+        # Mock POIs subcollection
+        mock_pois_collection = Mock()
+        
+        # Set up char_ref.collection to return appropriate subcollection based on name
+        def collection_side_effect(name):
+            if name == "narrative_turns":
+                return mock_turns_collection
+            elif name == "pois":
+                return mock_pois_collection
+            return Mock()
+        
+        mock_char_ref.collection.side_effect = collection_side_effect
 
         # Create 3 sample turns
         now = datetime.now(timezone.utc)
@@ -173,9 +184,16 @@ class TestGetCharacterContext:
         mock_order_by.limit.return_value = mock_limit
         mock_turns_collection.order_by.return_value = mock_order_by
 
-        # Make request
+        # Mock POIs subcollection (return empty to use fallback to embedded POIs)
+        mock_pois_limit = Mock()
+        mock_pois_limit.stream.return_value = []
+        mock_pois_order_by = Mock()
+        mock_pois_order_by.limit.return_value = mock_pois_limit
+        mock_pois_collection.order_by.return_value = mock_pois_order_by
+
+        # Make request with include_pois=true
         response = test_client_with_mock_db.get(
-            "/characters/550e8400-e29b-41d4-a716-446655440000/context",
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=true",
         )
 
         # Assertions
@@ -219,6 +237,88 @@ class TestGetCharacterContext:
             "timestamp", direction=firestore.Query.DESCENDING
         )
         mock_order_by.limit.assert_called_once_with(20)  # default recent_n
+
+    def test_get_context_with_poi_subcollection(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test context with POIs from subcollection (not embedded fallback)."""
+
+        # Remove embedded POIs to ensure we're testing subcollection path
+        char_data = copy.deepcopy(sample_character_data)
+        char_data.pop("world_pois", None)
+
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = char_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock narrative turns and POI subcollections
+        mock_turns_collection = Mock()
+        mock_pois_collection = Mock()
+
+        def collection_side_effect(name):
+            if name == "narrative_turns":
+                return mock_turns_collection
+            elif name == "pois":
+                return mock_pois_collection
+            return Mock()
+
+        mock_char_ref.collection.side_effect = collection_side_effect
+
+        # Mock empty narrative turns
+        mock_turns_limit = Mock()
+        mock_turns_limit.stream.return_value = []
+        mock_turns_order_by = Mock()
+        mock_turns_order_by.limit.return_value = mock_turns_limit
+        mock_turns_collection.order_by.return_value = mock_turns_order_by
+
+        # Mock POI subcollection with actual POI documents
+        now = datetime.now(timezone.utc)
+        mock_poi_docs = []
+        for i in range(2):
+            mock_poi_doc = Mock()
+            mock_poi_doc.id = f"poi_{i}"
+            mock_poi_doc.to_dict.return_value = {
+                "poi_id": f"poi_{i}",
+                "name": f"POI {i}",
+                "description": f"Description {i}",
+                "timestamp_discovered": now - timedelta(hours=i),
+                "tags": [f"tag{i}"],
+            }
+            mock_poi_docs.append(mock_poi_doc)
+
+        mock_pois_limit = Mock()
+        mock_pois_limit.stream.return_value = mock_poi_docs
+        mock_pois_order_by = Mock()
+        mock_pois_order_by.limit.return_value = mock_pois_limit
+        mock_pois_collection.order_by.return_value = mock_pois_order_by
+
+        # Make request with include_pois=true
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=true",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Verify POI query was made
+        assert mock_pois_collection.order_by.called
+        assert mock_pois_order_by.limit.called
+
+        # Verify POIs from subcollection are returned (not embedded fallback)
+        assert data["world"]["include_pois"] is True
+        assert len(data["world"]["pois_sample"]) > 0
+        # Check that POI data matches subcollection format
+        poi_names = [poi["name"] for poi in data["world"]["pois_sample"]]
+        assert any("POI" in name for name in poi_names)
 
     def test_get_context_no_active_quest(
         self,
@@ -611,7 +711,7 @@ class TestGetCharacterContext:
         self,
         test_client_with_mock_db,
     ):
-        """Test 422 for recent_n=0."""
+        """Test 400 for recent_n=0."""
 
         # Make request with recent_n=0
         response = test_client_with_mock_db.get(
@@ -619,13 +719,13 @@ class TestGetCharacterContext:
         )
 
         # Assertions
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_get_context_invalid_recent_n_negative(
         self,
         test_client_with_mock_db,
     ):
-        """Test 422 for negative recent_n."""
+        """Test 400 for negative recent_n."""
 
         # Make request with recent_n=-1
         response = test_client_with_mock_db.get(
@@ -633,13 +733,13 @@ class TestGetCharacterContext:
         )
 
         # Assertions
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_get_context_invalid_recent_n_too_large(
         self,
         test_client_with_mock_db,
     ):
-        """Test 422 for recent_n > 100."""
+        """Test 400 for recent_n > 100."""
 
         # Make request with recent_n=101
         response = test_client_with_mock_db.get(
@@ -647,7 +747,7 @@ class TestGetCharacterContext:
         )
 
         # Assertions
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     def test_get_context_narrative_ordering(
         self,
