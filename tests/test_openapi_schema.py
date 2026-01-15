@@ -254,3 +254,187 @@ class TestOpenAPISchemaHealthModel:
                                 # Enemies should use status, not HP
                                 assert "level" not in enemy
                                 assert "hp" not in enemy
+
+
+class TestOpenAPISchemaContextEndpoint:
+    """Test OpenAPI schema for context aggregation endpoint."""
+
+    def test_openapi_context_endpoint_exists(self):
+        """Test that context endpoint is documented in OpenAPI schema."""
+        schema = app.openapi()
+        
+        # Verify context endpoint exists
+        assert "paths" in schema
+        assert "/characters/{character_id}/context" in schema["paths"]
+        
+        context_path = schema["paths"]["/characters/{character_id}/context"]
+        assert "get" in context_path
+        
+    def test_openapi_context_endpoint_query_parameters(self):
+        """Test that context endpoint documents recent_n and include_pois parameters."""
+        schema = app.openapi()
+        
+        context_endpoint = schema["paths"]["/characters/{character_id}/context"]["get"]
+        
+        # Verify parameters are documented
+        assert "parameters" in context_endpoint
+        params = context_endpoint["parameters"]
+        
+        # Find recent_n and include_pois parameters
+        param_names = [p["name"] for p in params if "name" in p]
+        assert "recent_n" in param_names
+        assert "include_pois" in param_names
+        
+        # Verify recent_n parameter details
+        recent_n_param = next(p for p in params if p.get("name") == "recent_n")
+        assert recent_n_param["in"] == "query"
+        assert recent_n_param["required"] is False  # Optional parameter
+        assert "schema" in recent_n_param
+        assert recent_n_param["schema"]["type"] == "integer"
+        
+        # Verify include_pois parameter details
+        include_pois_param = next(p for p in params if p.get("name") == "include_pois")
+        assert include_pois_param["in"] == "query"
+        assert include_pois_param["required"] is False  # Optional parameter
+        assert "schema" in include_pois_param
+        assert include_pois_param["schema"]["type"] == "boolean"
+        
+    def test_openapi_context_response_model(self):
+        """Test that context response model is properly defined."""
+        schema = app.openapi()
+        
+        context_endpoint = schema["paths"]["/characters/{character_id}/context"]["get"]
+        
+        # Verify 200 response is documented
+        assert "responses" in context_endpoint
+        assert "200" in context_endpoint["responses"]
+        
+        response_200 = context_endpoint["responses"]["200"]
+        assert "content" in response_200
+        assert "application/json" in response_200["content"]
+        
+        # Verify response schema reference
+        json_content = response_200["content"]["application/json"]
+        assert "schema" in json_content
+        
+        # The schema should reference CharacterContextResponse
+        response_schema = json_content["schema"]
+        if "$ref" in response_schema:
+            schema_name = response_schema["$ref"].split("/")[-1]
+            assert "CharacterContextResponse" in schema_name or "Context" in schema_name
+        
+    def test_openapi_character_context_response_schema(self):
+        """Test that CharacterContextResponse schema has all required fields."""
+        schema = app.openapi()
+        
+        # Find CharacterContextResponse in components
+        assert "components" in schema
+        assert "schemas" in schema["components"]
+        
+        # Access schema definition by its name
+        schemas = schema["components"]["schemas"]
+        assert "CharacterContextResponse" in schemas, "CharacterContextResponse schema not found"
+        context_response_schema = schemas["CharacterContextResponse"]
+        
+        # Verify required fields
+        assert "properties" in context_response_schema
+        props = context_response_schema["properties"]
+        
+        # Check for key fields
+        assert "character_id" in props
+        assert "player_state" in props
+        assert "quest" in props
+        assert "has_active_quest" in props
+        assert "combat" in props
+        assert "narrative" in props
+        assert "world" in props
+        
+        # Verify has_active_quest is a boolean
+        has_active_quest = props["has_active_quest"]
+        if "$ref" not in has_active_quest:
+            assert has_active_quest.get("type") == "boolean"
+        
+    def test_openapi_narrative_context_schema(self):
+        """Test that NarrativeContext schema includes metadata fields."""
+        schema = app.openapi()
+        
+        # Find NarrativeContext schema
+        assert "NarrativeContext" in schema["components"]["schemas"]
+        narrative_context = schema["components"]["schemas"]["NarrativeContext"]
+        
+        # Verify metadata fields
+        assert "properties" in narrative_context
+        props = narrative_context["properties"]
+        
+        assert "recent_turns" in props
+        assert "requested_n" in props
+        assert "returned_n" in props
+        assert "max_n" in props
+        
+        # Verify field types
+        if "$ref" not in props["requested_n"]:
+            assert props["requested_n"]["type"] == "integer"
+        if "$ref" not in props["returned_n"]:
+            assert props["returned_n"]["type"] == "integer"
+        if "$ref" not in props["max_n"]:
+            assert props["max_n"]["type"] == "integer"
+        
+    def test_openapi_combat_envelope_schema(self):
+        """Test that CombatEnvelope schema has active flag and state."""
+        schema = app.openapi()
+        
+        # Find CombatEnvelope schema
+        assert "CombatEnvelope" in schema["components"]["schemas"]
+        combat_envelope = schema["components"]["schemas"]["CombatEnvelope"]
+        
+        # Verify fields
+        assert "properties" in combat_envelope
+        props = combat_envelope["properties"]
+        
+        assert "active" in props
+        assert "state" in props
+        
+        # Verify active is boolean
+        if "$ref" not in props["active"]:
+            assert props["active"]["type"] == "boolean"
+        
+    def test_openapi_world_context_state_schema(self):
+        """Test that WorldContextState schema has POI sampling fields."""
+        schema = app.openapi()
+        
+        # Find WorldContextState schema
+        assert "WorldContextState" in schema["components"]["schemas"]
+        world_context = schema["components"]["schemas"]["WorldContextState"]
+        
+        # Verify fields
+        assert "properties" in world_context
+        props = world_context["properties"]
+        
+        assert "pois_sample" in props
+        assert "pois_cap" in props
+        assert "include_pois" in props
+        
+        # Verify include_pois is boolean
+        if "$ref" not in props["include_pois"]:
+            assert props["include_pois"]["type"] == "boolean"
+        
+        # Verify pois_cap is integer
+        if "$ref" not in props["pois_cap"]:
+            assert props["pois_cap"]["type"] == "integer"
+        
+    def test_openapi_context_endpoint_error_responses(self):
+        """Test that context endpoint documents error responses."""
+        schema = app.openapi()
+        
+        context_endpoint = schema["paths"]["/characters/{character_id}/context"]["get"]
+        responses = context_endpoint["responses"]
+        
+        # Verify at minimum 422 is documented (FastAPI auto-generates this)
+        assert "422" in responses  # Invalid UUID or validation error
+        
+        # Verify 200 success response is documented
+        assert "200" in responses
+        
+        # Note: FastAPI doesn't auto-generate 400/404 responses in OpenAPI schema
+        # unless explicitly defined with @response decorator. The actual endpoint
+        # returns these codes, but they're not in the OpenAPI spec by default.

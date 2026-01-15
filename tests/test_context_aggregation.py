@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.dependencies import get_db
+from app.config import get_settings
 
 
 @pytest.fixture
@@ -1001,3 +1002,249 @@ class TestContextPOISubcollectionRead:
         # the structure exists and legacy POIs can be accessed
         pois_sample = data["world"]["pois_sample"]
         assert isinstance(pois_sample, list)
+
+    def test_context_with_fewer_pois_than_cap(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test context when available POIs are fewer than the configured cap (no padding)."""
+
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock narrative and POI subcollections
+        mock_turns_collection = Mock()
+        mock_pois_collection = Mock()
+
+        def collection_side_effect(name):
+            if name == "narrative_turns":
+                return mock_turns_collection
+            elif name == "pois":
+                return mock_pois_collection
+            return Mock()
+
+        mock_char_ref.collection.side_effect = collection_side_effect
+
+        # Mock empty narrative turns
+        mock_turns_limit = Mock()
+        mock_turns_limit.stream.return_value = []
+        mock_turns_order_by = Mock()
+        mock_turns_order_by.limit.return_value = mock_turns_limit
+        mock_turns_collection.order_by.return_value = mock_turns_order_by
+
+        # Mock POI subcollection with only 1 POI (less than cap of 3)
+        now = datetime.now(timezone.utc)
+        mock_poi_doc = Mock()
+        mock_poi_doc.id = "poi_001"
+        mock_poi_doc.to_dict.return_value = {
+            "poi_id": "poi_001",
+            "name": "Single POI",
+            "description": "Only one POI available",
+            "timestamp_discovered": now,
+            "tags": ["unique"],
+        }
+
+        mock_pois_limit = Mock()
+        mock_pois_limit.stream.return_value = [mock_poi_doc]
+        mock_pois_order_by = Mock()
+        mock_pois_order_by.limit.return_value = mock_pois_limit
+        mock_pois_collection.order_by.return_value = mock_pois_order_by
+
+        # Make request with include_pois=true
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=true",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+
+        # Verify world section with POIs
+        assert data["world"]["include_pois"] is True
+        assert len(data["world"]["pois_sample"]) == 1  # Only 1 POI, no padding
+        assert data["world"]["pois_sample"][0]["name"] == "Single POI"
+        
+        # Verify no padding artifacts
+        assert data["world"]["pois_sample"][0]["id"] == "poi_001"
+
+        # Verify Firestore read count (acceptance criteria)
+        # Read 1: Character document
+        assert mock_char_ref.get.call_count == 1, "Expected 1 character document read"
+        
+        # Read 2: Narrative turns query
+        assert mock_turns_collection.order_by.call_count == 1, "Expected 1 narrative query"
+        
+        # Read 3: POI query (when include_pois=true)
+        assert mock_pois_collection.order_by.call_count == 1, "Expected 1 POI query"
+        
+        # Total: 3 reads (character + narrative + POI)
+
+    def test_context_response_includes_all_metadata_fields(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that context response includes all required metadata fields."""
+
+        # Mock character document with quest and combat
+        char_data = copy.deepcopy(sample_character_data)
+        
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = char_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock narrative turns
+        mock_turns_collection = Mock()
+        mock_pois_collection = Mock()
+
+        def collection_side_effect(name):
+            if name == "narrative_turns":
+                return mock_turns_collection
+            elif name == "pois":
+                # Mock empty POI subcollection for this test
+                mock_pois_query = Mock()
+                mock_pois_query.stream.return_value = []
+                mock_pois_collection.order_by.return_value.limit.return_value = mock_pois_query
+                return mock_pois_collection
+            return Mock()
+
+        mock_char_ref.collection.side_effect = collection_side_effect
+        
+        now = datetime.now(timezone.utc)
+        mock_turn_docs = []
+        for i in range(2):
+            mock_doc = Mock()
+            mock_doc.id = f"turn_{i}"
+            mock_doc.to_dict.return_value = {
+                "turn_id": f"turn_{i}",
+                "player_action": f"Action {i}",
+                "gm_response": f"Response {i}",
+                "timestamp": now - timedelta(minutes=10 - i),
+            }
+            mock_turn_docs.append(mock_doc)
+
+        mock_limit = Mock()
+        mock_limit.stream.return_value = list(reversed(mock_turn_docs))
+        mock_order_by = Mock()
+        mock_order_by.limit.return_value = mock_limit
+        mock_turns_collection.order_by.return_value = mock_order_by
+
+        # Make request
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?recent_n=5",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify top-level structure
+        assert "character_id" in data
+        assert "player_state" in data
+        assert "quest" in data
+        assert "has_active_quest" in data
+        assert "combat" in data
+        assert "narrative" in data
+        assert "world" in data
+        assert "metadata" in data
+        
+        # Verify narrative metadata
+        settings = get_settings()
+        narrative = data["narrative"]
+        assert "recent_turns" in narrative
+        assert "requested_n" in narrative
+        assert "returned_n" in narrative
+        assert "max_n" in narrative
+        assert narrative["requested_n"] == 5
+        assert narrative["returned_n"] == 2
+        assert narrative["max_n"] == settings.context_recent_n_max
+        
+        # Verify combat envelope
+        combat = data["combat"]
+        assert "active" in combat
+        assert "state" in combat
+        assert isinstance(combat["active"], bool)
+        
+        # Verify world state
+        world = data["world"]
+        assert "pois_sample" in world
+        assert "pois_cap" in world
+        assert "include_pois" in world
+        assert world["pois_cap"] == settings.context_poi_cap
+        
+        # Verify context metadata
+        metadata = data["metadata"]
+        assert "narrative_max_n" in metadata
+        assert "narrative_requested_n" in metadata
+        assert "pois_cap" in metadata
+        assert "pois_requested" in metadata
+        assert metadata["narrative_max_n"] == settings.context_recent_n_max
+        assert metadata["narrative_requested_n"] == 5
+        assert metadata["pois_cap"] == settings.context_poi_cap
+        
+        # Verify derived boolean fields
+        assert data["has_active_quest"] is True  # sample_character_data has quest
+        assert combat["active"] is True  # sample_character_data has combat with non-dead enemy
+
+        # Verify Firestore read count (acceptance criteria)
+        # Read 1: Character document
+        assert mock_char_ref.get.call_count == 1, "Expected 1 character document read"
+        
+        # Read 2: Narrative turns query
+        assert mock_turns_collection.order_by.call_count == 1, "Expected 1 narrative query"
+        
+        # Total: 2 reads (character + narrative, no POI since include_pois=false by default)
+
+    def test_context_metadata_consistency_with_settings(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that metadata fields reflect the configured settings."""
+        settings = get_settings()
+        
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+
+        # Make request with default parameters
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify metadata matches settings
+        assert data["narrative"]["max_n"] == settings.context_recent_n_max
+        assert data["narrative"]["requested_n"] == settings.context_recent_n_default
+        assert data["world"]["pois_cap"] == settings.context_poi_cap
+        assert data["metadata"]["narrative_max_n"] == settings.context_recent_n_max
+        assert data["metadata"]["pois_cap"] == settings.context_poi_cap
