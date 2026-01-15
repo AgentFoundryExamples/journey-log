@@ -40,10 +40,8 @@ from app.models import (
     CombatEnvelope,
     CombatState,
     ContextCapsMetadata,
-    ContextCombatState,
     Location,
     NarrativeContext,
-    NarrativeContextMetadata,
     NarrativeTurn,
     PlayerState,
     PointOfInterest,
@@ -4095,7 +4093,7 @@ async def get_character_context(
         db: Firestore client (dependency injection)
         x_user_id: Optional user ID from X-User-Id header for access control
         recent_n: Number of recent narrative turns to include (default: 20, max: configured)
-        include_pois: Whether to include POI sample in response (default: true)
+        include_pois: Whether to include POI sample in response (default: false)
 
     Returns:
         CharacterContextResponse with aggregated context
