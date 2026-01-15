@@ -4119,9 +4119,9 @@ async def get_character_context(
 
     The response structure is designed to be consumed directly by LLM Directors
     without additional transformation.
-    
+
     Component toggles allow selective payload sizing for performance optimization.
-    When a component is excluded, the response maintains stable structure with 
+    When a component is excluded, the response maintains stable structure with
     empty/neutral values.
 
     Args:
@@ -4186,13 +4186,15 @@ async def get_character_context(
     try:
         # Track timing for performance monitoring
         timings = {}
-        
+
         # 1. Fetch character document
         start_time = time.perf_counter()
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
-        timings['character_doc_fetch_ms'] = round((time.perf_counter() - start_time) * 1000, 2)
+        timings["character_doc_fetch_ms"] = round(
+            (time.perf_counter() - start_time) * 1000, 2
+        )
 
         if not char_snapshot.exists:
             logger.warning(
@@ -4253,21 +4255,23 @@ async def get_character_context(
                 turn_data = doc.to_dict()
                 turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
                 recent_turns.append(turn)
-            
-            timings['narrative_query_ms'] = round((time.perf_counter() - start_time) * 1000, 2)
+
+            timings["narrative_query_ms"] = round(
+                (time.perf_counter() - start_time) * 1000, 2
+            )
         else:
             # Skip narrative fetch when flag is false, but validate recent_n param for consistency
-            timings['narrative_query_ms'] = 0.0
+            timings["narrative_query_ms"] = 0.0
             logger.debug(
                 "get_context_narrative_skipped",
                 character_id=character_id,
-                reason="include_narrative=false"
+                reason="include_narrative=false",
             )
 
         # 5. Prepare combat state with derived active flag (conditionally)
         combat_active = False
         combat_state_obj = None
-        
+
         if include_combat:
             combat_state_data = char_data.get("combat_state")
 
@@ -4290,7 +4294,7 @@ async def get_character_context(
             logger.debug(
                 "get_context_combat_skipped",
                 character_id=character_id,
-                reason="include_combat=false"
+                reason="include_combat=false",
             )
 
         # When combat is inactive or skipped, set state to None per acceptance criteria
@@ -4378,11 +4382,13 @@ async def get_character_context(
                             error_type=type(e).__name__,
                             error_message=str(e),
                         )
-            
-            timings['poi_query_ms'] = round((time.perf_counter() - start_time) * 1000, 2)
+
+            timings["poi_query_ms"] = round(
+                (time.perf_counter() - start_time) * 1000, 2
+            )
         else:
             # Skip POI fetch when flag is false
-            timings['poi_query_ms'] = 0.0
+            timings["poi_query_ms"] = 0.0
 
         world_context = WorldContextState(
             pois_sample=pois_sample_list,
@@ -4401,12 +4407,12 @@ async def get_character_context(
         # 8. Prepare quest data (conditionally)
         active_quest = character.active_quest if include_quest else None
         has_active_quest = active_quest is not None
-        
+
         if not include_quest:
             logger.debug(
                 "get_context_quest_skipped",
                 character_id=character_id,
-                reason="include_quest=false"
+                reason="include_quest=false",
             )
 
         # 9. Prepare context metadata

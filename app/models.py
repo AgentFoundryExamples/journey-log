@@ -184,7 +184,9 @@ class PlayerState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     identity: CharacterIdentity = Field(description="Character identity information")
-    status: Status = Field(description="Character health status (Healthy, Wounded, Dead)")
+    status: Status = Field(
+        description="Character health status (Healthy, Wounded, Dead)"
+    )
     equipment: list[Weapon] = Field(
         default_factory=list, description="Equipped weapons"
     )
@@ -280,16 +282,16 @@ class PointOfInterest(BaseModel):
 
     DEPRECATED: This model represents the legacy embedded POI format stored in
     the world_pois array. It is maintained for backward compatibility during migration.
-    
+
     The AUTHORITATIVE POI storage is now the subcollection at:
     characters/{character_id}/pois/{poi_id}
-    
+
     For new POI writes, use PointOfInterestSubcollection and the subcollection helpers
     in app/firestore.py. This model is read-only and used for:
     - Reading legacy embedded POIs during migration
     - Surfacing embedded POIs on GET for backward compatibility
     - Migration utilities that copy embedded POIs to subcollection
-    
+
     See docs/SCHEMA.md for migration guidance and storage contracts.
 
     EXACT SHAPE REQUIREMENT: This model must match the exact structure
@@ -315,11 +317,11 @@ class PointOfInterestSubcollection(BaseModel):
 
     This is the AUTHORITATIVE POI model for the subcollection at:
     characters/{character_id}/pois/{poi_id}
-    
+
     This full-featured POI model supports unbounded data with optional fields
     and metadata. All new POI writes should use this model and the subcollection
     storage via helpers in app/firestore.py.
-    
+
     The subcollection approach:
     - Allows unlimited POIs per character (no 200-entry array limit)
     - Enables efficient querying and pagination
@@ -631,14 +633,14 @@ class CharacterDocument(BaseModel):
 class CharacterContextQuery(BaseModel):
     """
     Query parameters for character context aggregation endpoint.
-    
+
     Validates request parameters with configurable bounds from settings:
     - recent_n: Number of recent narrative turns to include
     - include_pois: Whether to include POI sample in world context
     - include_narrative: Whether to include narrative turns in response
     - include_combat: Whether to include combat state in response
     - include_quest: Whether to include quest data in response
-    
+
     Validators ensure recent_n stays within configured min/max bounds.
     All include_* flags default to true to preserve existing behavior.
     """
@@ -671,7 +673,7 @@ class CharacterContextQuery(BaseModel):
 class ContextCapsMetadata(BaseModel):
     """
     Metadata describing read limits and caps for context aggregation.
-    
+
     Exposes server configuration to help Directors understand:
     - Firestore read pattern (1 character doc + 1 narrative query + optional 1 POI query)
     - Configured limits for narrative and POI caps
@@ -701,7 +703,7 @@ class ContextCapsMetadata(BaseModel):
 class CombatEnvelope(BaseModel):
     """
     Combat envelope for context aggregation with derived active flag.
-    
+
     This model exposes the active boolean explicitly for Director consumption,
     computed server-side based on enemy statuses.
     """
@@ -720,7 +722,7 @@ class CombatEnvelope(BaseModel):
 class NarrativeContext(BaseModel):
     """
     Narrative context for context aggregation.
-    
+
     Provides recent narrative turns with metadata about the requested,
     returned, and maximum narrative window to help Directors understand
     context boundaries.
@@ -730,7 +732,7 @@ class NarrativeContext(BaseModel):
 
     recent_turns: list[NarrativeTurn] = Field(
         default_factory=list,
-        description="List of recent narrative turns ordered oldest-to-newest (chronological)"
+        description="List of recent narrative turns ordered oldest-to-newest (chronological)",
     )
     requested_n: int = Field(
         description="Number of turns requested via recent_n parameter"
@@ -746,7 +748,7 @@ class NarrativeContext(BaseModel):
 class WorldContextState(BaseModel):
     """
     World state for context aggregation including optional POI sample.
-    
+
     POIs can be suppressed via include_pois flag to reduce payload size.
     The pois_cap field exposes the server configuration for POI sampling limits.
     """
@@ -768,7 +770,7 @@ class WorldContextState(BaseModel):
 class CharacterContextResponse(BaseModel):
     """
     Aggregated character context for Director/LLM integration.
-    
+
     This model provides a single JSON payload capturing all relevant character state:
     - Identity and player state (status, level, equipment, location)
     - Active quest with derived has_active_quest flag
@@ -776,10 +778,10 @@ class CharacterContextResponse(BaseModel):
     - Recent narrative turns with metadata
     - Optional world POIs sample
     - Metadata describing caps and read limits
-    
+
     This is the primary integration surface for Directors to retrieve character context
     for AI-driven narrative generation.
-    
+
     EXACT SHAPE REQUIREMENT: This model must match the exact structure specified
     in the issue requirements for the context aggregation endpoint.
     """
@@ -794,9 +796,7 @@ class CharacterContextResponse(BaseModel):
     has_active_quest: bool = Field(
         description="Derived flag: true if quest is not null, false otherwise"
     )
-    combat: CombatEnvelope = Field(
-        description="Combat state with derived active flag"
-    )
+    combat: CombatEnvelope = Field(description="Combat state with derived active flag")
     narrative: NarrativeContext = Field(
         description="Recent narrative turns with metadata"
     )
@@ -811,7 +811,6 @@ class CharacterContextResponse(BaseModel):
 # Backward compatibility aliases for existing code
 ContextCombatState = CombatEnvelope
 NarrativeContextMetadata = NarrativeContext
-
 
 
 # ==============================================================================
@@ -1143,11 +1142,17 @@ def character_from_firestore(
         player_data = data["player_state"]
         # Track which deprecated fields are present for logging
         deprecated_fields = [
-            "health", "level", "experience", "stats",
-            "current_hp", "max_hp", "current_health", "max_health"
+            "health",
+            "level",
+            "experience",
+            "stats",
+            "current_hp",
+            "max_hp",
+            "current_health",
+            "max_health",
         ]
         found_fields = [field for field in deprecated_fields if field in player_data]
-        
+
         if found_fields:
             char_id = data.get("character_id", "unknown")
             logger.info(
@@ -1155,7 +1160,7 @@ def character_from_firestore(
                 character_id=char_id,
                 stripped_fields=found_fields,
             )
-        
+
         # Remove deprecated numeric fields - they are ignored and never persisted back
         player_data.pop("health", None)  # Old health field
         player_data.pop("level", None)  # Numeric level (use status enum instead)
