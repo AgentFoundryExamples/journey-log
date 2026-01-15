@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.dependencies import get_db
+from app.config import get_settings
 
 
 @pytest.fixture
@@ -1179,8 +1180,6 @@ class TestContextPOISubcollectionRead:
         sample_character_data,
     ):
         """Test that metadata fields reflect the configured settings."""
-        from app.config import get_settings
-        
         settings = get_settings()
         
         # Mock character document
