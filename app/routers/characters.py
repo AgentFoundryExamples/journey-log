@@ -4074,8 +4074,8 @@ async def get_character_context(
         description=f"Number of recent narrative turns to include (default: {settings.context_recent_n_default}, max: {settings.context_recent_n_max})",
     ),
     include_pois: bool = Query(
-        default=True,
-        description="Whether to include POI sample in world state (default: true)",
+        default=False,
+        description="Whether to include POI sample in world state (default: false)",
     ),
 ) -> CharacterContextResponse:
     """

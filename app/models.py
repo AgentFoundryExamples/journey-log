@@ -651,19 +651,6 @@ class CharacterContextQuery(BaseModel):
         description="Whether to include POI sample in world context",
     )
 
-    @model_validator(mode="after")
-    def validate_recent_n_max(self) -> "CharacterContextQuery":
-        """
-        Validate recent_n against configured maximum.
-        
-        This validation is deferred to runtime so the model can be created
-        before settings are loaded. The actual max validation happens in
-        the router using settings.context_recent_n_max.
-        """
-        # Note: Max validation happens in router with settings.context_recent_n_max
-        # This is because Pydantic models are instantiated before settings
-        return self
-
 
 class ContextCapsMetadata(BaseModel):
     """
