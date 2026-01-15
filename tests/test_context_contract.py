@@ -22,7 +22,6 @@ Tests the schema/config groundwork for context aggregation endpoint:
 """
 
 from datetime import datetime, timezone
-from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -108,7 +107,10 @@ class TestContextCapsMetadata:
         assert metadata.narrative_requested_n == 20
         assert metadata.pois_cap == 3
         assert metadata.pois_requested is True
-        assert metadata.firestore_reads == "1 character doc + 1 narrative query + optional 1 POI query"
+        expected_reads = (
+            "1 character doc + 1 narrative query + optional 1 POI query"
+        )
+        assert metadata.firestore_reads == expected_reads
 
     def test_default_firestore_reads(self):
         """Test default firestore_reads field."""
@@ -266,8 +268,11 @@ class TestCharacterContextResponse:
 
     def test_complete_response(self):
         """Test creating a complete context response."""
+        identity = CharacterIdentity(
+            name="Test", race="Human", **{"class": "Warrior"}
+        )
         player_state = PlayerState(
-            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            identity=identity,
             status=Status.HEALTHY,
             location=Location(id="loc1", display_name="Test Location"),
         )
@@ -310,8 +315,11 @@ class TestCharacterContextResponse:
 
     def test_no_quest_response(self):
         """Test response with no active quest."""
+        identity = CharacterIdentity(
+            name="Test", race="Human", **{"class": "Warrior"}
+        )
         player_state = PlayerState(
-            identity=CharacterIdentity(name="Test", race="Human", **{"class": "Warrior"}),
+            identity=identity,
             status=Status.HEALTHY,
             location=Location(id="loc1", display_name="Test Location"),
         )
@@ -351,8 +359,12 @@ class TestSettingsValidation:
         assert settings.context_poi_cap == 3
 
     def test_context_defaults_validation(self):
-        """Test that context_recent_n_default cannot exceed context_recent_n_max."""
-        # When default exceeds the field constraint (le=100), field validation fails first
+        """
+        Test that context_recent_n_default cannot exceed
+        context_recent_n_max.
+        """
+        # When default exceeds the field constraint (le=100),
+        # field validation fails first
         with pytest.raises(ValidationError) as exc_info:
             Settings(
                 context_recent_n_default=150,
@@ -360,7 +372,8 @@ class TestSettingsValidation:
             )
         assert "less_than_equal" in str(exc_info.value).lower()
 
-        # When default exceeds max but both are within bounds, model validator catches it
+        # When default exceeds max but both are within bounds,
+        # model validator catches it
         with pytest.raises(ValidationError) as exc_info:
             Settings(
                 context_recent_n_default=60,
