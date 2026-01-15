@@ -1075,6 +1075,18 @@ class TestContextPOISubcollectionRead:
         # Verify no padding artifacts
         assert data["world"]["pois_sample"][0]["id"] == "poi_001"
 
+        # Verify Firestore read count (acceptance criteria)
+        # Read 1: Character document
+        assert mock_char_ref.get.call_count == 1, "Expected 1 character document read"
+        
+        # Read 2: Narrative turns query
+        assert mock_turns_collection.order_by.call_count == 1, "Expected 1 narrative query"
+        
+        # Read 3: POI query (when include_pois=true)
+        assert mock_pois_collection.order_by.call_count == 1, "Expected 1 POI query"
+        
+        # Total: 3 reads (character + narrative + POI)
+
     def test_context_response_includes_all_metadata_fields(
         self,
         test_client_with_mock_db,
@@ -1096,7 +1108,20 @@ class TestContextPOISubcollectionRead:
 
         # Mock narrative turns
         mock_turns_collection = Mock()
-        mock_char_ref.collection.return_value = mock_turns_collection
+        mock_pois_collection = Mock()
+
+        def collection_side_effect(name):
+            if name == "narrative_turns":
+                return mock_turns_collection
+            elif name == "pois":
+                # Mock empty POI subcollection for this test
+                mock_pois_query = Mock()
+                mock_pois_query.stream.return_value = []
+                mock_pois_collection.order_by.return_value.limit.return_value = mock_pois_query
+                return mock_pois_collection
+            return Mock()
+
+        mock_char_ref.collection.side_effect = collection_side_effect
         
         now = datetime.now(timezone.utc)
         mock_turn_docs = []
@@ -1137,6 +1162,7 @@ class TestContextPOISubcollectionRead:
         assert "metadata" in data
         
         # Verify narrative metadata
+        settings = get_settings()
         narrative = data["narrative"]
         assert "recent_turns" in narrative
         assert "requested_n" in narrative
@@ -1144,7 +1170,7 @@ class TestContextPOISubcollectionRead:
         assert "max_n" in narrative
         assert narrative["requested_n"] == 5
         assert narrative["returned_n"] == 2
-        assert narrative["max_n"] == 100
+        assert narrative["max_n"] == settings.context_recent_n_max
         
         # Verify combat envelope
         combat = data["combat"]
@@ -1157,7 +1183,7 @@ class TestContextPOISubcollectionRead:
         assert "pois_sample" in world
         assert "pois_cap" in world
         assert "include_pois" in world
-        assert world["pois_cap"] == 3  # Default from config
+        assert world["pois_cap"] == settings.context_poi_cap
         
         # Verify context metadata
         metadata = data["metadata"]
@@ -1165,13 +1191,22 @@ class TestContextPOISubcollectionRead:
         assert "narrative_requested_n" in metadata
         assert "pois_cap" in metadata
         assert "pois_requested" in metadata
-        assert metadata["narrative_max_n"] == 100
+        assert metadata["narrative_max_n"] == settings.context_recent_n_max
         assert metadata["narrative_requested_n"] == 5
-        assert metadata["pois_cap"] == 3
+        assert metadata["pois_cap"] == settings.context_poi_cap
         
         # Verify derived boolean fields
         assert data["has_active_quest"] is True  # sample_character_data has quest
         assert combat["active"] is True  # sample_character_data has combat with non-dead enemy
+
+        # Verify Firestore read count (acceptance criteria)
+        # Read 1: Character document
+        assert mock_char_ref.get.call_count == 1, "Expected 1 character document read"
+        
+        # Read 2: Narrative turns query
+        assert mock_turns_collection.order_by.call_count == 1, "Expected 1 narrative query"
+        
+        # Total: 2 reads (character + narrative, no POI since include_pois=false by default)
 
     def test_context_metadata_consistency_with_settings(
         self,

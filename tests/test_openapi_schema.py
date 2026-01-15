@@ -331,14 +331,10 @@ class TestOpenAPISchemaContextEndpoint:
         assert "components" in schema
         assert "schemas" in schema["components"]
         
-        # Look for the context response schema
-        context_response_schema = None
-        for schema_name, schema_def in schema["components"]["schemas"].items():
-            if "Context" in schema_name and "Response" in schema_name:
-                context_response_schema = schema_def
-                break
-        
-        assert context_response_schema is not None, "Context response schema not found"
+        # Access schema definition by its name
+        schemas = schema["components"]["schemas"]
+        assert "CharacterContextResponse" in schemas, "CharacterContextResponse schema not found"
+        context_response_schema = schemas["CharacterContextResponse"]
         
         # Verify required fields
         assert "properties" in context_response_schema
