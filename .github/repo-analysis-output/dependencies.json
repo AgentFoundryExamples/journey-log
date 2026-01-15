@@ -317,6 +317,21 @@
       }
     },
     {
+      "id": "tests/test_context_contract.py",
+      "path": "tests/test_context_contract.py",
+      "type": "file",
+      "external_dependencies": {
+        "stdlib": [
+          "datetime.datetime",
+          "datetime.timezone"
+        ],
+        "third-party": [
+          "pydantic.ValidationError",
+          "pytest"
+        ]
+      }
+    },
+    {
       "id": "tests/test_firestore_serialization.py",
       "path": "tests/test_firestore_serialization.py",
       "type": "file",
@@ -547,6 +562,14 @@
     {
       "source": "tests/test_context_aggregation.py",
       "target": "app/dependencies.py"
+    },
+    {
+      "source": "tests/test_context_contract.py",
+      "target": "app/config.py"
+    },
+    {
+      "source": "tests/test_context_contract.py",
+      "target": "app/models.py"
     },
     {
       "source": "tests/test_firestore_serialization.py",

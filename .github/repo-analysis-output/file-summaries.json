@@ -1,6 +1,6 @@
 {
   "schema_version": "2.0",
-  "total_files": 25,
+  "total_files": 26,
   "files": [
     {
       "schema_version": "2.0",
@@ -25,7 +25,7 @@
       "summary": "Python configuration file (role: configuration)",
       "summary_text": "Python configuration file (role: configuration)",
       "metrics": {
-        "size_bytes": 7522,
+        "size_bytes": 7506,
         "loc": 153,
         "todo_count": 0
       }
@@ -109,8 +109,8 @@
       "summary": "Python data models (role: model)",
       "summary_text": "Python data models (role: model)",
       "metrics": {
-        "size_bytes": 46321,
-        "loc": 948,
+        "size_bytes": 48508,
+        "loc": 1000,
         "todo_count": 0
       }
     },
@@ -137,8 +137,8 @@
       "summary": "Python module for characters",
       "summary_text": "Python module for characters",
       "metrics": {
-        "size_bytes": 165783,
-        "loc": 3478,
+        "size_bytes": 166146,
+        "loc": 3488,
         "todo_count": 0
       }
     },
@@ -251,6 +251,20 @@
       "metrics": {
         "size_bytes": 32177,
         "loc": 666,
+        "todo_count": 0
+      }
+    },
+    {
+      "schema_version": "2.0",
+      "path": "tests/test_context_contract.py",
+      "language": "Python",
+      "role": "test",
+      "role_justification": "filename starts with 'test_'",
+      "summary": "Python test file (role: test)",
+      "summary_text": "Python test file (role: test)",
+      "metrics": {
+        "size_bytes": 14436,
+        "loc": 358,
         "todo_count": 0
       }
     },
