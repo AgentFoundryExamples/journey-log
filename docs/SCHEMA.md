@@ -3160,8 +3160,14 @@ The context aggregation endpoint provides a single comprehensive payload contain
   - If provided, must match the character's owner_user_id
 
 **Optional Query Parameters:**
-- `recent_n` (integer): Number of recent narrative turns to include (default: 20, min: 1, max: configured via `CONTEXT_MAX_RECENT_N`)
-- `include_pois` (boolean): Whether to include POI sample in world state (default: true)
+- `recent_n` (integer): Number of recent narrative turns to include (default: 20, min: 1, max: configured via `CONTEXT_RECENT_N_MAX`)
+- `include_pois` (boolean): Whether to include POI sample in world state (default: false)
+
+**Query Parameter Validation:**
+- `recent_n` must be between 1 and configured maximum (default max: 100, configurable via `CONTEXT_RECENT_N_MAX`)
+- Requests with `recent_n < 1` or `recent_n > max` return 422 Unprocessable Entity
+- `include_pois` must be a boolean value (true/false)
+- Invalid query parameters trigger HTTP 400 Bad Request with validation details
 
 **Response Format:**
 ```json
@@ -3233,7 +3239,7 @@ The context aggregation endpoint provides a single comprehensive payload contain
     }
   },
   "narrative": {
-    "recent_turns": [
+    "turns": [
       {
         "turn_id": "turn_001",
         "turn_number": 1,
@@ -3245,7 +3251,6 @@ The context aggregation endpoint provides a single comprehensive payload contain
       }
     ],
     "requested_n": 20,
-    "returned_n": 1,
     "max_n": 100
   },
   "world": {
@@ -3258,9 +3263,17 @@ The context aggregation endpoint provides a single comprehensive payload contain
         "tags": ["dungeon", "dragon", "high-danger"]
       }
     ],
+    "pois_cap": 3,
     "include_pois": true
   },
-  "has_active_quest": true
+  "has_active_quest": true,
+  "metadata": {
+    "firestore_reads": "1 character doc + 1 narrative query + optional 1 POI query",
+    "narrative_max_n": 100,
+    "narrative_requested_n": 20,
+    "pois_cap": 3,
+    "pois_requested": true
+  }
 }
 ```
 
@@ -3268,30 +3281,36 @@ The context aggregation endpoint provides a single comprehensive payload contain
 - `character_id` (string): UUID character identifier
 - `player_state` (object): Complete player state including identity, status, level, equipment, inventory, location
 - `quest` (object or null): Active quest details or null if no active quest
-- `combat` (object): Combat state with derived active flag
+- `has_active_quest` (boolean): Derived flag - true if quest is not null, false otherwise
+- `combat` (object): Combat envelope with derived active flag
   - `active` (boolean): Whether combat is currently active (any enemy status != "Dead")
   - `state` (object or null): Full combat details or null if inactive
-- `narrative` (object): Recent narrative turns with metadata
-  - `recent_turns` (array): List of turns ordered oldest-to-newest (chronological)
-  - `requested_n` (integer): Number of turns requested via query parameter
-  - `returned_n` (integer): Actual number of turns returned (may be less if fewer exist)
-  - `max_n` (integer): Server-configured maximum (from `CONTEXT_MAX_RECENT_N` setting)
-- `world` (object): World state including optional POI sample
-  - `pois_sample` (array): Random sample of POIs from world_pois array (default: 3 POIs from configured sample size, empty if include_pois=false)
+- `narrative` (object): Narrative context with turns and metadata
+  - `turns` (array): List of narrative turns ordered oldest-to-newest (chronological)
+  - `requested_n` (integer): Number of turns requested via recent_n parameter
+  - `max_n` (integer): Server-configured maximum (from `CONTEXT_RECENT_N_MAX` setting)
+- `world` (object): World context including optional POI sample
+  - `pois_sample` (array): Random sample of POIs (empty if include_pois=false)
+  - `pois_cap` (integer): Maximum POIs that can be sampled (server config limit)
   - `include_pois` (boolean): Whether POIs were included (reflects request parameter)
-- `has_active_quest` (boolean): Derived field - true if quest is not null
+- `metadata` (object): Context caps and read pattern metadata
+  - `firestore_reads` (string): Expected Firestore read pattern for this request
+  - `narrative_max_n` (integer): Maximum narrative turns that can be requested
+  - `narrative_requested_n` (integer): Number of narrative turns requested in this call
+  - `pois_cap` (integer): Maximum POIs that can be sampled
+  - `pois_requested` (boolean): Whether POIs were requested via include_pois parameter
 
 **Derived Fields:**
-The response includes several derived fields computed server-side for Director convenience:
+The response includes several server-computed derived fields for Director convenience:
 - `has_active_quest`: Boolean derived from `quest is not None`
 - `combat.active`: Boolean derived from enemy statuses (true if any enemy status != "Dead")
-- `narrative.returned_n`: Actual count of turns returned (may be less than requested_n)
-- `narrative.max_n`: Server configuration limit exposed to inform clients
+- Narrative turn count: Can be computed from `len(narrative.turns)` by clients
+- All metadata fields expose server configuration to inform client behavior
 
 **Default Values:**
-- `recent_n`: Default 20 turns (configurable via `CONTEXT_DEFAULT_RECENT_N` environment variable)
-- Maximum `recent_n`: 100 turns (configurable via `CONTEXT_MAX_RECENT_N` environment variable)
-- POI sample size: 3 POIs by default (configurable via `CONTEXT_DEFAULT_POI_SAMPLE_SIZE`, use dedicated POI endpoints for more control)
+- `recent_n`: Default 20 turns (configurable via `CONTEXT_RECENT_N_DEFAULT` environment variable)
+- Maximum `recent_n`: 100 turns (configurable via `CONTEXT_RECENT_N_MAX` environment variable)
+- POI sample cap: 3 POIs (configurable via `CONTEXT_POI_CAP`, use dedicated POI endpoints for more control)
 
 **Performance Notes:**
 - **Character document**: Single Firestore read (all embedded state loaded at once)
@@ -3299,11 +3318,12 @@ The response includes several derived fields computed server-side for Director c
 - **POI sample**: In-memory random sampling from embedded world_pois array (no additional Firestore reads)
 - **Total latency**: Typically <100ms for moderate datasets, scales with narrative history size
 - **Optimization tip**: Use `include_pois=false` to reduce payload size if POIs aren't needed
+- **Firestore Read Pattern**: 1 character doc + 1 narrative query + optional 1 POI query (exposed in metadata)
 
 **Validation Rules:**
 - `recent_n` must be between 1 and configured maximum (default max: 100)
-- Requests with `recent_n < 1` or `recent_n > max` return 400 Bad Request
-- `include_pois` accepts true/false, default true
+- Requests with `recent_n < 1` or `recent_n > max` return 422 Unprocessable Entity
+- `include_pois` accepts true/false, default false
 
 **Error Responses:**
 - `400 Bad Request`: Invalid query parameters (recent_n out of range) or empty X-User-Id
@@ -3314,14 +3334,14 @@ The response includes several derived fields computed server-side for Director c
 
 **Example Requests:**
 ```bash
-# Get context with default settings (20 recent turns, POIs included)
+# Get context with default settings (20 recent turns, POIs not included by default)
 curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context
 
 # Get context with custom narrative window
 curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?recent_n=50"
 
-# Get context without POIs (smaller payload)
-curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=false"
+# Get context with POIs included
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=true"
 
 # Get context with access control
 curl -H "X-User-Id: user123" \
@@ -3335,11 +3355,11 @@ http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/c
 ```
 
 **Edge Cases:**
-- **Empty narrative history**: Returns `narrative.recent_turns=[]`, `narrative.returned_n=0`
+- **Empty narrative history**: Returns `narrative.turns=[]` (empty array)
 - **No active quest**: Returns `quest=null`, `has_active_quest=false`
 - **Inactive combat**: Returns `combat.active=false`, `combat.state=null`
 - **include_pois=false**: Returns `world.pois_sample=[]`, `world.include_pois=false`
-- **recent_n exceeds available turns**: Returns all available turns without error, `returned_n < requested_n`
+- **recent_n exceeds available turns**: Returns all available turns without error (check `len(narrative.turns)` for actual count)
 - **Malformed combat state**: Treated as inactive (defensive handling), logs warning
 - **Missing X-User-Id**: Allows anonymous access (useful for public character viewing)
 - **Empty/whitespace-only X-User-Id**: Returns 400 error (client error)
@@ -3352,13 +3372,28 @@ Context endpoint behavior is configurable via environment variables:
 These settings can be adjusted in `.env` file:
 ```bash
 # Context aggregation settings
-CONTEXT_DEFAULT_RECENT_N=20
-CONTEXT_MAX_RECENT_N=100
+CONTEXT_RECENT_N_DEFAULT=20
+CONTEXT_RECENT_N_MAX=100
+CONTEXT_POI_CAP=3
 ```
+
+**Configuration Details:**
+See `.env.example` for complete configuration options and descriptions of each setting, including:
+- `CONTEXT_RECENT_N_DEFAULT`: Default narrative window size (default: 20, range: 1-100)
+- `CONTEXT_RECENT_N_MAX`: Maximum narrative window size (default: 100, range: 1-1000)
+- `CONTEXT_POI_CAP`: Maximum POIs to sample (default: 3, range: 1-20)
+
+**Firestore Read Pattern:**
+The endpoint follows a predictable read pattern exposed via the `metadata.firestore_reads` field:
+1. **Character Document Read**: 1 read for core character state (player_state, quest, combat)
+2. **Narrative Query**: 1 subcollection query for recent turns (limited by recent_n parameter)
+3. **Optional POI Query**: 1 additional read if include_pois=true (bounded by context_poi_cap setting)
+
+This pattern ensures efficient Firestore usage and predictable costs.
 
 **Use Cases for Directors:**
 1. **Full Context Prompt**: Use this endpoint to build comprehensive LLM prompts with all character state
-2. **Narrative Continuation**: Include recent_turns to provide conversation history for coherent responses
+2. **Narrative Continuation**: Include turns to provide conversation history for coherent responses
 3. **Quest-Aware Responses**: Use has_active_quest and quest details to generate quest-relevant content
 4. **Combat Integration**: Check combat.active to generate combat-appropriate narration
 5. **World Building**: Use pois_sample to reference previously discovered locations in responses
@@ -3386,8 +3421,8 @@ Location: {context['player_state']['location']['display_name']}
 Active Quest: {context['quest']['name'] if context['has_active_quest'] else 'None'}
 Combat Active: {context['combat']['active']}
 
-Recent Narrative (last {context['narrative']['returned_n']} turns):
-{format_narrative_turns(context['narrative']['recent_turns'])}
+Recent Narrative (last {len(context['narrative']['turns'])} turns):
+{format_narrative_turns(context['narrative']['turns'])}
 
 Respond to the player's next action in character.
 """
