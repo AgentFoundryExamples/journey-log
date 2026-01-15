@@ -851,6 +851,199 @@ class TestGetCharacterContext:
         # Total: 2 Firestore read operations
         # This validates the performance claim in README.md
 
+    def test_get_context_include_narrative_false(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test context with include_narrative=false skips narrative query."""
+        
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock narrative turns collection (should NOT be called)
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+
+        # Make request with include_narrative=false
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?include_narrative=false",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify narrative is empty
+        assert data["narrative"]["returned_n"] == 0
+        assert data["narrative"]["recent_turns"] == []
+        assert data["narrative"]["requested_n"] == 20  # default value
+        
+        # Verify narrative query was skipped
+        assert mock_turns_collection.order_by.call_count == 0, "Expected no narrative query"
+
+    def test_get_context_include_combat_false(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test context with include_combat=false returns empty combat envelope."""
+        
+        # Mock character document with combat state
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+
+        # Make request with include_combat=false
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?include_combat=false",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify combat is inactive with null state
+        assert data["combat"]["active"] is False
+        assert data["combat"]["state"] is None
+
+    def test_get_context_include_quest_false(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test context with include_quest=false returns null quest."""
+        
+        # Mock character document with active quest
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock empty narrative turns
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+        mock_query = Mock()
+        mock_query.stream.return_value = []
+        mock_turns_collection.order_by.return_value.limit.return_value = mock_query
+
+        # Make request with include_quest=false
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context?include_quest=false",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify quest is null
+        assert data["quest"] is None
+        assert data["has_active_quest"] is False
+
+    def test_get_context_all_components_false(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test context with all include_* flags false maintains stable structure."""
+        
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Mock narrative collection (should NOT be called)
+        mock_turns_collection = Mock()
+        mock_char_ref.collection.return_value = mock_turns_collection
+
+        # Make request with all flags false
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context"
+            "?include_narrative=false&include_combat=false&include_quest=false&include_pois=false",
+        )
+
+        # Assertions
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify all components are empty/neutral but structure is stable
+        assert "player_state" in data
+        assert "quest" in data
+        assert data["quest"] is None
+        assert data["has_active_quest"] is False
+        assert "combat" in data
+        assert data["combat"]["active"] is False
+        assert data["combat"]["state"] is None
+        assert "narrative" in data
+        assert data["narrative"]["recent_turns"] == []
+        assert data["narrative"]["returned_n"] == 0
+        assert "world" in data
+        assert data["world"]["pois_sample"] == []
+        assert "metadata" in data
+        
+        # Verify no missing keys
+        assert "character_id" in data
+        
+        # Verify narrative query was skipped
+        assert mock_turns_collection.order_by.call_count == 0
+
+    def test_get_context_include_narrative_false_validates_recent_n(
+        self,
+        test_client_with_mock_db,
+        mock_firestore_client,
+        sample_character_data,
+    ):
+        """Test that recent_n is still validated even when include_narrative=false."""
+        
+        # Mock character document
+        mock_char_ref = (
+            mock_firestore_client.collection.return_value.document.return_value
+        )
+        mock_char_snapshot = Mock()
+        mock_char_snapshot.exists = True
+        mock_char_snapshot.to_dict.return_value = sample_character_data
+        mock_char_ref.get.return_value = mock_char_snapshot
+
+        # Make request with include_narrative=false but invalid recent_n
+        response = test_client_with_mock_db.get(
+            "/characters/550e8400-e29b-41d4-a716-446655440000/context"
+            "?include_narrative=false&recent_n=200",  # exceeds max
+        )
+
+        # Assertions - should still validate recent_n
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        error_detail = response.json()
+        assert "recent_n" in str(error_detail).lower()
+
+
 
 class TestContextPOISubcollectionRead:
     """Tests for reading POIs from subcollection via context endpoint."""
