@@ -250,6 +250,10 @@
     },
     {
       "type": "file",
+      "name": "openapi.json"
+    },
+    {
+      "type": "file",
       "name": "python_dev_versions.txt"
     },
     {

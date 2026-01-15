@@ -57,6 +57,7 @@
 ├── LICENSE
 ├── LLMs.md
 ├── Makefile
+├── openapi.json
 ├── python_dev_versions.txt
 ├── README.md
 └── requirements.txt
