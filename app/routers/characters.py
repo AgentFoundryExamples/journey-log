@@ -18,6 +18,7 @@ Provides endpoints for creating and managing character documents.
 """
 
 import random
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -3998,9 +3999,9 @@ async def get_combat(
         "Retrieve a comprehensive context payload for AI-driven narrative generation.\n\n"
         "This endpoint aggregates:\n"
         "- Player state (identity, status, level, equipment, location)\n"
-        "- Active quest with derived has_active_quest flag\n"
-        "- Combat state with derived active flag\n"
-        "- Recent narrative turns (configurable window, ordered oldest-to-newest)\n"
+        "- Active quest with derived has_active_quest flag (optional via include_quest)\n"
+        "- Combat state with derived active flag (optional via include_combat)\n"
+        "- Recent narrative turns (configurable window, ordered oldest-to-newest, optional via include_narrative)\n"
         "- Optional world POIs sample (can be suppressed via include_pois flag)\n\n"
         "**Path Parameters:**\n"
         "- `character_id`: UUID-formatted character identifier\n\n"
@@ -4011,7 +4012,23 @@ async def get_combat(
         "  - If provided, must match the character's owner_user_id\n\n"
         "**Optional Query Parameters:**\n"
         "- `recent_n` (integer): Number of recent narrative turns to include (default: 20, min: 1, max: configured limit)\n"
-        "- `include_pois` (boolean): Whether to include POI sample in world state (default: true)\n\n"
+        "- `include_pois` (boolean): Whether to include POI sample in world state (default: false)\n"
+        "- `include_narrative` (boolean): Whether to include narrative turns (default: true)\n"
+        "- `include_combat` (boolean): Whether to include combat state (default: true)\n"
+        "- `include_quest` (boolean): Whether to include quest data (default: true)\n\n"
+        "**Component Toggles:**\n"
+        "The include_* flags allow selective payload sizing for performance optimization:\n"
+        "- When include_narrative=false: narrative.recent_turns returns empty list, Firestore query skipped\n"
+        "- When include_combat=false: combat returns {active: false, state: null}\n"
+        "- When include_quest=false: quest returns null, has_active_quest=false\n"
+        "- Component flags (narrative, combat, quest) default to true; include_pois defaults to false\n"
+        "- Response structure remains stable regardless of flag values\n\n"
+        "**Timing Metrics:**\n"
+        "Success logs include timing measurements (in milliseconds):\n"
+        "- character_doc_fetch_ms: Time to fetch character document\n"
+        "- narrative_query_ms: Time to query narrative turns (0 if skipped)\n"
+        "- poi_query_ms: Time to query POIs (0 if skipped)\n"
+        "All timing fields are included in structured logs with character_id for correlation.\n\n"
         "**Response Structure:**\n"
         "```json\n"
         "{\n"
@@ -4042,9 +4059,10 @@ async def get_combat(
         "- `narrative.max_n`: Server-configured maximum (informs clients of limits)\n\n"
         "**Performance Notes:**\n"
         "- Character document: Single Firestore read (embedded state)\n"
-        "- Narrative turns: Subcollection query (indexed by timestamp)\n"
-        "- POI sample: In-memory sampling from embedded world_pois array\n"
-        "- Total latency typically <100ms for moderate datasets\n\n"
+        "- Narrative turns: Subcollection query (indexed by timestamp) - skipped if include_narrative=false\n"
+        "- POI sample: Subcollection query - skipped if include_pois=false\n"
+        "- Total latency typically <100ms for moderate datasets\n"
+        "- Use component toggles to reduce payload size and query time\n\n"
         "**Error Responses:**\n"
         "- `400 Bad Request`: Invalid query parameters (recent_n out of range) or empty X-User-Id\n"
         "- `403 Forbidden`: X-User-Id provided but does not match character owner\n"
@@ -4056,6 +4074,8 @@ async def get_combat(
         "- No active quest: Returns quest=null, has_active_quest=false\n"
         "- Inactive combat: Returns combat.active=false, combat.state=null\n"
         "- include_pois=false: Returns world.pois_sample=[], world.include_pois=false\n"
+        "- include_narrative=false: Skips Firestore query, returns empty turns, recent_n still validated\n"
+        "- Multiple include_* flags false: Response remains structurally valid without missing keys\n"
         "- recent_n exceeds available turns: Returns all available turns without error\n"
     ),
 )
@@ -4073,6 +4093,18 @@ async def get_character_context(
         default=False,
         description="Whether to include POI sample in world state (default: false)",
     ),
+    include_narrative: bool = Query(
+        default=True,
+        description="Whether to include narrative turns in response (default: true)",
+    ),
+    include_combat: bool = Query(
+        default=True,
+        description="Whether to include combat state in response (default: true)",
+    ),
+    include_quest: bool = Query(
+        default=True,
+        description="Whether to include quest data in response (default: true)",
+    ),
 ) -> CharacterContextResponse:
     """
     Retrieve aggregated character context for Director/LLM integration.
@@ -4080,13 +4112,17 @@ async def get_character_context(
     This endpoint provides a single comprehensive payload containing all relevant
     character state for AI-driven narrative generation. It aggregates:
     - Player state (identity, status, equipment, location)
-    - Active quest with derived has_active_quest flag
-    - Combat state with derived active flag
-    - Recent narrative turns with metadata (ordered oldest-to-newest)
-    - Optional world POIs sample
+    - Active quest with derived has_active_quest flag (optional via include_quest)
+    - Combat state with derived active flag (optional via include_combat)
+    - Recent narrative turns with metadata (optional via include_narrative, ordered oldest-to-newest)
+    - Optional world POIs sample (via include_pois)
 
     The response structure is designed to be consumed directly by LLM Directors
     without additional transformation.
+
+    Component toggles allow selective payload sizing for performance optimization.
+    When a component is excluded, the response maintains stable structure with
+    empty/neutral values.
 
     Args:
         character_id: UUID-formatted character identifier
@@ -4094,6 +4130,9 @@ async def get_character_context(
         x_user_id: Optional user ID from X-User-Id header for access control
         recent_n: Number of recent narrative turns to include (default: 20, max: configured)
         include_pois: Whether to include POI sample in response (default: false)
+        include_narrative: Whether to include narrative turns (default: true)
+        include_combat: Whether to include combat state (default: true)
+        include_quest: Whether to include quest data (default: true)
 
     Returns:
         CharacterContextResponse with aggregated context
@@ -4139,13 +4178,23 @@ async def get_character_context(
         user_id=x_user_id if x_user_id else "anonymous",
         recent_n=recent_n,
         include_pois=include_pois,
+        include_narrative=include_narrative,
+        include_combat=include_combat,
+        include_quest=include_quest,
     )
 
     try:
+        # Track timing for performance monitoring
+        timings = {}
+
         # 1. Fetch character document
+        start_time = time.perf_counter()
         characters_ref = db.collection(settings.firestore_characters_collection)
         char_ref = characters_ref.document(character_id)
         char_snapshot = char_ref.get()
+        timings["character_doc_fetch_ms"] = round(
+            (time.perf_counter() - start_time) * 1000, 2
+        )
 
         if not char_snapshot.exists:
             logger.warning(
@@ -4189,126 +4238,163 @@ async def get_character_context(
         # 3. Deserialize character document
         character = character_from_firestore(char_data, character_id=character_id)
 
-        # 4. Fetch recent narrative turns
-        turns_collection = char_ref.collection("narrative_turns")
-        query = turns_collection.order_by(
-            "timestamp", direction=firestore.Query.DESCENDING
-        ).limit(recent_n)
-
-        turn_docs = list(query.stream())
-        # Reverse to get oldest-to-newest order (chronological)
-        turn_docs.reverse()
-
+        # 4. Fetch recent narrative turns (conditionally)
         recent_turns = []
-        for doc in turn_docs:
-            turn_data = doc.to_dict()
-            turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
-            recent_turns.append(turn)
+        if include_narrative:
+            start_time = time.perf_counter()
+            try:
+                turns_collection = char_ref.collection("narrative_turns")
+                query = turns_collection.order_by(
+                    "timestamp", direction=firestore.Query.DESCENDING
+                ).limit(recent_n)
 
-        # 5. Prepare combat state with derived active flag
-        combat_state_data = char_data.get("combat_state")
+                turn_docs = list(query.stream())
+                # Reverse to get oldest-to-newest order (chronological)
+                turn_docs.reverse()
+
+                for doc in turn_docs:
+                    turn_data = doc.to_dict()
+                    turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
+                    recent_turns.append(turn)
+            finally:
+                timings["narrative_query_ms"] = round(
+                    (time.perf_counter() - start_time) * 1000, 2
+                )
+        else:
+            # Skip narrative fetch when flag is false
+            timings["narrative_query_ms"] = 0.0
+            logger.debug(
+                "get_context_narrative_skipped",
+                character_id=character_id,
+                reason="include_narrative=false",
+            )
+
+        # 5. Prepare combat state with derived active flag (conditionally)
         combat_active = False
         combat_state_obj = None
 
-        if combat_state_data is not None:
-            try:
-                combat_state_obj = CombatState(**combat_state_data)
-                combat_active = combat_state_obj.is_active
-            except (ValueError, TypeError, KeyError) as e:
-                # Defensive: malformed combat state, treat as inactive
-                logger.warning(
-                    "get_context_malformed_combat_state",
-                    character_id=character_id,
-                    error_type=type(e).__name__,
-                    error_message=str(e),
-                )
-                combat_state_obj = None
-                combat_active = False
+        if include_combat:
+            combat_state_data = char_data.get("combat_state")
 
-        # When combat is inactive, set state to None per acceptance criteria
+            if combat_state_data is not None:
+                try:
+                    combat_state_obj = CombatState(**combat_state_data)
+                    combat_active = combat_state_obj.is_active
+                except (ValueError, TypeError, KeyError) as e:
+                    # Defensive: malformed combat state, treat as inactive
+                    logger.warning(
+                        "get_context_malformed_combat_state",
+                        character_id=character_id,
+                        error_type=type(e).__name__,
+                        error_message=str(e),
+                    )
+                    combat_state_obj = None
+                    combat_active = False
+        else:
+            # Skip combat processing when flag is false
+            logger.debug(
+                "get_context_combat_skipped",
+                character_id=character_id,
+                reason="include_combat=false",
+            )
+
+        # When combat is inactive or skipped, set state to None per acceptance criteria
         combat_context = CombatEnvelope(
             active=combat_active,
             state=combat_state_obj if combat_active else None,
         )
 
-        # 6. Prepare world POI sample from subcollection
+        # 6. Prepare world POI sample from subcollection (conditionally)
         pois_sample_list = []
         if include_pois:
-            # Query POIs from subcollection (authoritative storage) directly
-            pois_collection = char_ref.collection("pois")
+            start_time = time.perf_counter()
+            try:
+                # Query POIs from subcollection (authoritative storage) directly
+                pois_collection = char_ref.collection("pois")
 
-            # Use offset-based random sampling for better performance
-            # First, get a rough count (or use a limited query)
-            sample_size = settings.context_poi_cap
+                # Use offset-based random sampling for better performance
+                # First, get a rough count (or use a limited query)
+                sample_size = settings.context_poi_cap
 
-            # Fetch POIs ordered by document ID for consistent results
-            pois_query = pois_collection.order_by("__name__").limit(sample_size * 3)
-            pois_docs = list(pois_query.stream())
+                # Fetch POIs ordered by document ID for consistent results
+                pois_query = pois_collection.order_by("__name__").limit(
+                    sample_size * 3
+                )
+                pois_docs = list(pois_query.stream())
 
-            # Convert document snapshots to dict format
-            pois_data = [doc.to_dict() for doc in pois_docs]
+                # Convert document snapshots to dict format
+                pois_data = [doc.to_dict() for doc in pois_docs]
 
-            # If subcollection is empty and fallback enabled, try embedded POIs
-            if not pois_data and settings.poi_embedded_read_fallback:
-                world_pois_data = char_data.get("world_pois", [])
-                if world_pois_data:
-                    logger.info(
-                        "get_context_fallback_to_embedded_pois",
-                        character_id=character_id,
-                        embedded_count=len(world_pois_data),
-                    )
-                    # Convert embedded format to subcollection format for consistent handling
-                    pois_data = []
-                    for embedded_poi in world_pois_data:
-                        if not embedded_poi.get("id"):
-                            continue
-                        created_at = embedded_poi.get("created_at")
-                        if created_at:
-                            created_at = datetime_from_firestore(created_at)
-                        pois_data.append(
-                            {
-                                "poi_id": embedded_poi.get("id"),
-                                "name": embedded_poi.get("name"),
-                                "description": embedded_poi.get("description"),
-                                "timestamp_discovered": created_at,
-                                "tags": embedded_poi.get("tags"),
-                            }
+                # If subcollection is empty and fallback enabled, try embedded POIs
+                if not pois_data and settings.poi_embedded_read_fallback:
+                    world_pois_data = char_data.get("world_pois", [])
+                    if world_pois_data:
+                        logger.info(
+                            "get_context_fallback_to_embedded_pois",
+                            character_id=character_id,
+                            embedded_count=len(world_pois_data),
                         )
-
-            # Sample POIs randomly using configured sample size
-            actual_sample_size = min(sample_size, len(pois_data))
-            if actual_sample_size > 0:
-                sampled_data = random.sample(pois_data, actual_sample_size)
-                for poi_data_item in sampled_data:
-                    try:
-                        # Handle both subcollection format and embedded format fields
-                        poi_id = poi_data_item.get("poi_id") or poi_data_item.get("id")
-                        timestamp_discovered = poi_data_item.get(
-                            "timestamp_discovered"
-                        ) or poi_data_item.get("created_at")
-                        if timestamp_discovered is not None:
-                            timestamp_discovered = datetime_from_firestore(
-                                timestamp_discovered
+                        # Convert embedded format to subcollection format for consistent handling
+                        pois_data = []
+                        for embedded_poi in world_pois_data:
+                            if not embedded_poi.get("id"):
+                                continue
+                            created_at = embedded_poi.get("created_at")
+                            if created_at:
+                                created_at = datetime_from_firestore(created_at)
+                            pois_data.append(
+                                {
+                                    "poi_id": embedded_poi.get("id"),
+                                    "name": embedded_poi.get("name"),
+                                    "description": embedded_poi.get("description"),
+                                    "timestamp_discovered": created_at,
+                                    "tags": embedded_poi.get("tags"),
+                                }
                             )
 
-                        poi = PointOfInterest(
-                            id=poi_id,
-                            name=poi_data_item["name"],
-                            description=poi_data_item["description"],
-                            created_at=timestamp_discovered,
-                            tags=poi_data_item.get("tags"),
-                        )
-                        pois_sample_list.append(poi)
-                    except (KeyError, ValueError, TypeError) as e:
-                        # Skip malformed POI data and log warning
-                        logger.warning(
-                            "get_context_malformed_poi",
-                            character_id=character_id,
-                            poi_id=poi_data_item.get("poi_id")
-                            or poi_data_item.get("id", "unknown"),
-                            error_type=type(e).__name__,
-                            error_message=str(e),
-                        )
+                # Sample POIs randomly using configured sample size
+                actual_sample_size = min(sample_size, len(pois_data))
+                if actual_sample_size > 0:
+                    sampled_data = random.sample(pois_data, actual_sample_size)
+                    for poi_data_item in sampled_data:
+                        try:
+                            # Handle both subcollection format and embedded format fields
+                            poi_id = poi_data_item.get("poi_id") or poi_data_item.get(
+                                "id"
+                            )
+                            timestamp_discovered = poi_data_item.get(
+                                "timestamp_discovered"
+                            ) or poi_data_item.get("created_at")
+                            if timestamp_discovered is not None:
+                                timestamp_discovered = datetime_from_firestore(
+                                    timestamp_discovered
+                                )
+
+                            poi = PointOfInterest(
+                                id=poi_id,
+                                name=poi_data_item["name"],
+                                description=poi_data_item["description"],
+                                created_at=timestamp_discovered,
+                                tags=poi_data_item.get("tags"),
+                            )
+                            pois_sample_list.append(poi)
+                        except (KeyError, ValueError, TypeError) as e:
+                            # Skip malformed POI data and log warning
+                            logger.warning(
+                                "get_context_malformed_poi",
+                                character_id=character_id,
+                                poi_id=poi_data_item.get("poi_id")
+                                or poi_data_item.get("id", "unknown"),
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                            )
+            finally:
+                timings["poi_query_ms"] = round(
+                    (time.perf_counter() - start_time) * 1000, 2
+                )
+        else:
+            # Skip POI fetch when flag is false
+            timings["poi_query_ms"] = 0.0
 
         world_context = WorldContextState(
             pois_sample=pois_sample_list,
@@ -4324,7 +4410,18 @@ async def get_character_context(
             max_n=settings.context_recent_n_max,
         )
 
-        # 8. Prepare context metadata
+        # 8. Prepare quest data (conditionally)
+        has_active_quest = character.active_quest is not None and include_quest
+        active_quest = character.active_quest if include_quest else None
+
+        if not include_quest:
+            logger.debug(
+                "get_context_quest_skipped",
+                character_id=character_id,
+                reason="include_quest=false",
+            )
+
+        # 9. Prepare context metadata
         context_metadata = ContextCapsMetadata(
             narrative_max_n=settings.context_recent_n_max,
             narrative_requested_n=recent_n,
@@ -4332,25 +4429,27 @@ async def get_character_context(
             pois_requested=include_pois,
         )
 
-        # 9. Build context response
+        # 10. Build context response
         context_response = CharacterContextResponse(
             character_id=character.character_id,
             player_state=character.player_state,
-            quest=character.active_quest,
-            has_active_quest=character.active_quest is not None,
+            quest=active_quest,
+            has_active_quest=has_active_quest,
             combat=combat_context,
             narrative=narrative_context,
             world=world_context,
             metadata=context_metadata,
         )
 
+        # Log success with timing metrics
         logger.info(
             "get_context_success",
             character_id=character_id,
             returned_turns=len(recent_turns),
-            has_quest=character.active_quest is not None,
-            combat_active=combat_active,
+            has_quest=has_active_quest,
+            combat_active=combat_context.active,
             pois_included=len(pois_sample_list),
+            **timings,  # Include all timing measurements
         )
 
         return context_response

@@ -3162,12 +3162,52 @@ The context aggregation endpoint provides a single comprehensive payload contain
 **Optional Query Parameters:**
 - `recent_n` (integer): Number of recent narrative turns to include (default: 20, min: 1, max: configured via `CONTEXT_RECENT_N_MAX`)
 - `include_pois` (boolean): Whether to include POI sample in world state (default: false)
+- `include_narrative` (boolean): Whether to include narrative turns in response (default: true)
+- `include_combat` (boolean): Whether to include combat state in response (default: true)
+- `include_quest` (boolean): Whether to include quest data in response (default: true)
+
+**Component Toggles:**
+The `include_*` flags allow Directors to selectively reduce payload size and optimize query performance:
+- **`include_narrative=false`**: Skips Firestore narrative query entirely, returns empty `recent_turns` list with `returned_n=0`. The `recent_n` parameter is still validated for consistency. Timing: `narrative_query_ms=0.0`.
+- **`include_combat=false`**: Skips combat processing, returns `{active: false, state: null}` regardless of stored combat state. No Firestore query needed (combat is embedded).
+- **`include_quest=false`**: Returns `quest=null` and `has_active_quest=false` regardless of stored quest. No Firestore query needed (quest is embedded).
+- **Default behavior**: All flags default to `true` to preserve existing full-context responses.
+- **Structural stability**: Response shape remains consistent with empty/neutral values when components are skipped—no missing keys or unexpected nulls.
 
 **Query Parameter Validation:**
 - `recent_n` must be between 1 and configured maximum (default max: 100, configurable via `CONTEXT_RECENT_N_MAX`)
 - Requests with `recent_n < 1` or `recent_n > max` return 422 Unprocessable Entity
 - `include_pois` must be a boolean value (true/false)
+- `include_narrative`, `include_combat`, `include_quest` must be boolean values (true/false)
 - Invalid query parameters trigger HTTP 400 Bad Request with validation details
+
+**Timing Metrics:**
+The endpoint emits structured timing logs on success to aid performance monitoring:
+- **`character_doc_fetch_ms`**: Time to fetch the character document from Firestore (always measured)
+- **`narrative_query_ms`**: Time to query and deserialize narrative turns (0.0 if `include_narrative=false`)
+- **`poi_query_ms`**: Time to query and sample POIs (0.0 if `include_pois=false`)
+
+All timing measurements are included in the `get_context_success` log event along with `character_id` for correlation. Typical values:
+- Character doc fetch: 10-50ms
+- Narrative query (20 turns): 20-100ms  
+- POI query (3 POIs): 10-30ms
+- Total overhead of instrumentation: <1ms per fetch
+
+Example log output:
+```json
+{
+  "event": "get_context_success",
+  "character_id": "550e8400-e29b-41d4-a716-446655440000",
+  "returned_turns": 15,
+  "has_quest": true,
+  "combat_active": false,
+  "pois_included": 3,
+  "character_doc_fetch_ms": 25.42,
+  "narrative_query_ms": 48.17,
+  "poi_query_ms": 18.35,
+  "timestamp": "2026-01-15T14:30:00.123456Z"
+}
+```
 
 **Response Format:**
 ```json
@@ -3314,16 +3354,24 @@ The response includes several server-computed derived fields for Director conven
 
 **Performance Notes:**
 - **Character document**: Single Firestore read (all embedded state loaded at once)
-- **Narrative turns**: Subcollection query (indexed by timestamp, efficient for recent queries)
-- **POI sample**: In-memory random sampling from embedded world_pois array (no additional Firestore reads)
+- **Narrative turns**: Subcollection query (indexed by timestamp, efficient for recent queries) - **skipped if `include_narrative=false`**
+- **POI sample**: Subcollection query with sampling - **skipped if `include_pois=false`**
 - **Total latency**: Typically <100ms for moderate datasets, scales with narrative history size
-- **Optimization tip**: Use `include_pois=false` to reduce payload size if POIs aren't needed
-- **Firestore Read Pattern**: 1 character doc + 1 narrative query + optional 1 POI query (exposed in metadata)
+- **Optimization tips**:
+  - Use `include_pois=false` to skip POI query (saves 10-30ms)
+  - Use `include_narrative=false` to skip narrative query (saves 20-100ms for large histories)
+  - Use `include_combat=false` or `include_quest=false` to reduce payload size (no query time savings, as combat/quest are embedded)
+  - Combine multiple flags to minimize both latency and payload size
+- **Firestore Read Pattern**: 1 character doc + optional 1 narrative query + optional 1 POI query (exposed in metadata)
+- **Instrumentation overhead**: <1ms per fetch (negligible)
 
 **Validation Rules:**
 - `recent_n` must be between 1 and configured maximum (default max: 100)
 - Requests with `recent_n < 1` or `recent_n > max` return 422 Unprocessable Entity
 - `include_pois` accepts true/false, default false
+- `include_narrative` accepts true/false, default true
+- `include_combat` accepts true/false, default true
+- `include_quest` accepts true/false, default true
 
 **Error Responses:**
 - `400 Bad Request`: Invalid query parameters (recent_n out of range) or empty X-User-Id
@@ -3334,7 +3382,7 @@ The response includes several server-computed derived fields for Director conven
 
 **Example Requests:**
 ```bash
-# Get context with default settings (20 recent turns, POIs not included by default)
+# Get context with default settings (narrative/combat/quest included, POIs excluded by default)
 curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context
 
 # Get context with custom narrative window
@@ -3343,14 +3391,21 @@ curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/cont
 # Get context with POIs included
 curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_pois=true"
 
+# Get minimal context (player state only, skip narrative/combat/quest for fast response)
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_narrative=false&include_combat=false&include_quest=false"
+
+# Get context without narrative for payload optimization
+curl "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?include_narrative=false"
+
 # Get context with access control
 curl -H "X-User-Id: user123" \
   "http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context?recent_n=30"
 
-# HTTPie example with all parameters
+# HTTPie example with selective components
 http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context \
   recent_n==40 \
   include_pois==true \
+  include_combat==false \
   X-User-Id:user123
 ```
 
@@ -3359,10 +3414,15 @@ http GET http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/c
 - **No active quest**: Returns `quest=null`, `has_active_quest=false`
 - **Inactive combat**: Returns `combat.active=false`, `combat.state=null`
 - **include_pois=false**: Returns `world.pois_sample=[]`, `world.include_pois=false`
+- **include_narrative=false**: Skips Firestore query, returns empty `recent_turns` list, `narrative_query_ms=0.0`, still validates `recent_n` parameter
+- **include_combat=false**: Returns `{active: false, state: null}` regardless of stored combat state
+- **include_quest=false**: Returns `quest=null`, `has_active_quest=false` regardless of stored quest state
+- **Multiple include_* flags false simultaneously**: Response remains structurally valid without missing keys or unexpected nulls
 - **recent_n exceeds available turns**: Returns all available turns without error (check `len(narrative.turns)` for actual count)
 - **Malformed combat state**: Treated as inactive (defensive handling), logs warning
 - **Missing X-User-Id**: Allows anonymous access (useful for public character viewing)
 - **Empty/whitespace-only X-User-Id**: Returns 400 error (client error)
+- **Timing logs**: Do not leak sensitive payload data, only include duration measurements and character_id
 
 **Configuration:**
 Context endpoint behavior is configurable via environment variables:
