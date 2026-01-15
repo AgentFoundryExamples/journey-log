@@ -635,8 +635,12 @@ class CharacterContextQuery(BaseModel):
     Validates request parameters with configurable bounds from settings:
     - recent_n: Number of recent narrative turns to include
     - include_pois: Whether to include POI sample in world context
+    - include_narrative: Whether to include narrative turns in response
+    - include_combat: Whether to include combat state in response
+    - include_quest: Whether to include quest data in response
     
     Validators ensure recent_n stays within configured min/max bounds.
+    All include_* flags default to true to preserve existing behavior.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -649,6 +653,18 @@ class CharacterContextQuery(BaseModel):
     include_pois: bool = Field(
         default=False,
         description="Whether to include POI sample in world context",
+    )
+    include_narrative: bool = Field(
+        default=True,
+        description="Whether to include narrative turns in response (default: true)",
+    )
+    include_combat: bool = Field(
+        default=True,
+        description="Whether to include combat state in response (default: true)",
+    )
+    include_quest: bool = Field(
+        default=True,
+        description="Whether to include quest data in response (default: true)",
     )
 
 
