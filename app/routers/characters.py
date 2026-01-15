@@ -4242,25 +4242,26 @@ async def get_character_context(
         recent_turns = []
         if include_narrative:
             start_time = time.perf_counter()
-            turns_collection = char_ref.collection("narrative_turns")
-            query = turns_collection.order_by(
-                "timestamp", direction=firestore.Query.DESCENDING
-            ).limit(recent_n)
+            try:
+                turns_collection = char_ref.collection("narrative_turns")
+                query = turns_collection.order_by(
+                    "timestamp", direction=firestore.Query.DESCENDING
+                ).limit(recent_n)
 
-            turn_docs = list(query.stream())
-            # Reverse to get oldest-to-newest order (chronological)
-            turn_docs.reverse()
+                turn_docs = list(query.stream())
+                # Reverse to get oldest-to-newest order (chronological)
+                turn_docs.reverse()
 
-            for doc in turn_docs:
-                turn_data = doc.to_dict()
-                turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
-                recent_turns.append(turn)
-
-            timings["narrative_query_ms"] = round(
-                (time.perf_counter() - start_time) * 1000, 2
-            )
+                for doc in turn_docs:
+                    turn_data = doc.to_dict()
+                    turn = narrative_turn_from_firestore(turn_data, turn_id=doc.id)
+                    recent_turns.append(turn)
+            finally:
+                timings["narrative_query_ms"] = round(
+                    (time.perf_counter() - start_time) * 1000, 2
+                )
         else:
-            # Skip narrative fetch when flag is false, but validate recent_n param for consistency
+            # Skip narrative fetch when flag is false
             timings["narrative_query_ms"] = 0.0
             logger.debug(
                 "get_context_narrative_skipped",
@@ -4307,85 +4308,90 @@ async def get_character_context(
         pois_sample_list = []
         if include_pois:
             start_time = time.perf_counter()
-            # Query POIs from subcollection (authoritative storage) directly
-            pois_collection = char_ref.collection("pois")
+            try:
+                # Query POIs from subcollection (authoritative storage) directly
+                pois_collection = char_ref.collection("pois")
 
-            # Use offset-based random sampling for better performance
-            # First, get a rough count (or use a limited query)
-            sample_size = settings.context_poi_cap
+                # Use offset-based random sampling for better performance
+                # First, get a rough count (or use a limited query)
+                sample_size = settings.context_poi_cap
 
-            # Fetch POIs ordered by document ID for consistent results
-            pois_query = pois_collection.order_by("__name__").limit(sample_size * 3)
-            pois_docs = list(pois_query.stream())
+                # Fetch POIs ordered by document ID for consistent results
+                pois_query = pois_collection.order_by("__name__").limit(
+                    sample_size * 3
+                )
+                pois_docs = list(pois_query.stream())
 
-            # Convert document snapshots to dict format
-            pois_data = [doc.to_dict() for doc in pois_docs]
+                # Convert document snapshots to dict format
+                pois_data = [doc.to_dict() for doc in pois_docs]
 
-            # If subcollection is empty and fallback enabled, try embedded POIs
-            if not pois_data and settings.poi_embedded_read_fallback:
-                world_pois_data = char_data.get("world_pois", [])
-                if world_pois_data:
-                    logger.info(
-                        "get_context_fallback_to_embedded_pois",
-                        character_id=character_id,
-                        embedded_count=len(world_pois_data),
-                    )
-                    # Convert embedded format to subcollection format for consistent handling
-                    pois_data = []
-                    for embedded_poi in world_pois_data:
-                        if not embedded_poi.get("id"):
-                            continue
-                        created_at = embedded_poi.get("created_at")
-                        if created_at:
-                            created_at = datetime_from_firestore(created_at)
-                        pois_data.append(
-                            {
-                                "poi_id": embedded_poi.get("id"),
-                                "name": embedded_poi.get("name"),
-                                "description": embedded_poi.get("description"),
-                                "timestamp_discovered": created_at,
-                                "tags": embedded_poi.get("tags"),
-                            }
+                # If subcollection is empty and fallback enabled, try embedded POIs
+                if not pois_data and settings.poi_embedded_read_fallback:
+                    world_pois_data = char_data.get("world_pois", [])
+                    if world_pois_data:
+                        logger.info(
+                            "get_context_fallback_to_embedded_pois",
+                            character_id=character_id,
+                            embedded_count=len(world_pois_data),
                         )
-
-            # Sample POIs randomly using configured sample size
-            actual_sample_size = min(sample_size, len(pois_data))
-            if actual_sample_size > 0:
-                sampled_data = random.sample(pois_data, actual_sample_size)
-                for poi_data_item in sampled_data:
-                    try:
-                        # Handle both subcollection format and embedded format fields
-                        poi_id = poi_data_item.get("poi_id") or poi_data_item.get("id")
-                        timestamp_discovered = poi_data_item.get(
-                            "timestamp_discovered"
-                        ) or poi_data_item.get("created_at")
-                        if timestamp_discovered is not None:
-                            timestamp_discovered = datetime_from_firestore(
-                                timestamp_discovered
+                        # Convert embedded format to subcollection format for consistent handling
+                        pois_data = []
+                        for embedded_poi in world_pois_data:
+                            if not embedded_poi.get("id"):
+                                continue
+                            created_at = embedded_poi.get("created_at")
+                            if created_at:
+                                created_at = datetime_from_firestore(created_at)
+                            pois_data.append(
+                                {
+                                    "poi_id": embedded_poi.get("id"),
+                                    "name": embedded_poi.get("name"),
+                                    "description": embedded_poi.get("description"),
+                                    "timestamp_discovered": created_at,
+                                    "tags": embedded_poi.get("tags"),
+                                }
                             )
 
-                        poi = PointOfInterest(
-                            id=poi_id,
-                            name=poi_data_item["name"],
-                            description=poi_data_item["description"],
-                            created_at=timestamp_discovered,
-                            tags=poi_data_item.get("tags"),
-                        )
-                        pois_sample_list.append(poi)
-                    except (KeyError, ValueError, TypeError) as e:
-                        # Skip malformed POI data and log warning
-                        logger.warning(
-                            "get_context_malformed_poi",
-                            character_id=character_id,
-                            poi_id=poi_data_item.get("poi_id")
-                            or poi_data_item.get("id", "unknown"),
-                            error_type=type(e).__name__,
-                            error_message=str(e),
-                        )
+                # Sample POIs randomly using configured sample size
+                actual_sample_size = min(sample_size, len(pois_data))
+                if actual_sample_size > 0:
+                    sampled_data = random.sample(pois_data, actual_sample_size)
+                    for poi_data_item in sampled_data:
+                        try:
+                            # Handle both subcollection format and embedded format fields
+                            poi_id = poi_data_item.get("poi_id") or poi_data_item.get(
+                                "id"
+                            )
+                            timestamp_discovered = poi_data_item.get(
+                                "timestamp_discovered"
+                            ) or poi_data_item.get("created_at")
+                            if timestamp_discovered is not None:
+                                timestamp_discovered = datetime_from_firestore(
+                                    timestamp_discovered
+                                )
 
-            timings["poi_query_ms"] = round(
-                (time.perf_counter() - start_time) * 1000, 2
-            )
+                            poi = PointOfInterest(
+                                id=poi_id,
+                                name=poi_data_item["name"],
+                                description=poi_data_item["description"],
+                                created_at=timestamp_discovered,
+                                tags=poi_data_item.get("tags"),
+                            )
+                            pois_sample_list.append(poi)
+                        except (KeyError, ValueError, TypeError) as e:
+                            # Skip malformed POI data and log warning
+                            logger.warning(
+                                "get_context_malformed_poi",
+                                character_id=character_id,
+                                poi_id=poi_data_item.get("poi_id")
+                                or poi_data_item.get("id", "unknown"),
+                                error_type=type(e).__name__,
+                                error_message=str(e),
+                            )
+            finally:
+                timings["poi_query_ms"] = round(
+                    (time.perf_counter() - start_time) * 1000, 2
+                )
         else:
             # Skip POI fetch when flag is false
             timings["poi_query_ms"] = 0.0
@@ -4405,8 +4411,8 @@ async def get_character_context(
         )
 
         # 8. Prepare quest data (conditionally)
+        has_active_quest = character.active_quest is not None and include_quest
         active_quest = character.active_quest if include_quest else None
-        has_active_quest = active_quest is not None
 
         if not include_quest:
             logger.debug(
@@ -4441,7 +4447,7 @@ async def get_character_context(
             character_id=character_id,
             returned_turns=len(recent_turns),
             has_quest=has_active_quest,
-            combat_active=combat_active,
+            combat_active=combat_context.active,
             pois_included=len(pois_sample_list),
             **timings,  # Include all timing measurements
         )
