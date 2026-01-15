@@ -109,8 +109,8 @@
       "summary": "Python data models (role: model)",
       "summary_text": "Python data models (role: model)",
       "metrics": {
-        "size_bytes": 48655,
-        "loc": 1003,
+        "size_bytes": 49366,
+        "loc": 1025,
         "todo_count": 0
       }
     },
@@ -137,8 +137,8 @@
       "summary": "Python module for characters",
       "summary_text": "Python module for characters",
       "metrics": {
-        "size_bytes": 166632,
-        "loc": 3496,
+        "size_bytes": 171842,
+        "loc": 3584,
         "todo_count": 0
       }
     },
@@ -249,8 +249,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 45739,
-        "loc": 910,
+        "size_bytes": 53016,
+        "loc": 1059,
         "todo_count": 0
       }
     },

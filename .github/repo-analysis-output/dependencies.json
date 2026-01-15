@@ -155,6 +155,7 @@
           "datetime.datetime",
           "datetime.timezone",
           "random",
+          "time",
           "typing.Optional",
           "uuid"
         ],
