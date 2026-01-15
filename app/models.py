@@ -628,9 +628,63 @@ class CharacterDocument(BaseModel):
 # ==============================================================================
 
 
-class ContextCombatState(BaseModel):
+class CharacterContextQuery(BaseModel):
     """
-    Combat state for context aggregation with derived active flag.
+    Query parameters for character context aggregation endpoint.
+    
+    Validates request parameters with configurable bounds from settings:
+    - recent_n: Number of recent narrative turns to include
+    - include_pois: Whether to include POI sample in world context
+    
+    Validators ensure recent_n stays within configured min/max bounds.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    recent_n: int = Field(
+        default=20,
+        ge=1,
+        description="Number of recent narrative turns to include (min: 1, max: from settings)",
+    )
+    include_pois: bool = Field(
+        default=False,
+        description="Whether to include POI sample in world context",
+    )
+
+
+class ContextCapsMetadata(BaseModel):
+    """
+    Metadata describing read limits and caps for context aggregation.
+    
+    Exposes server configuration to help Directors understand:
+    - Firestore read pattern (1 character doc + 1 narrative query + optional 1 POI query)
+    - Configured limits for narrative and POI caps
+    - Current request parameters
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    firestore_reads: str = Field(
+        default="1 character doc + 1 narrative query + optional 1 POI query",
+        description="Expected Firestore read pattern for this request",
+    )
+    narrative_max_n: int = Field(
+        description="Maximum narrative turns that can be requested (server config)",
+    )
+    narrative_requested_n: int = Field(
+        description="Number of narrative turns requested in this call",
+    )
+    pois_cap: int = Field(
+        description="Maximum POIs that can be sampled (server config)",
+    )
+    pois_requested: bool = Field(
+        description="Whether POIs were requested via include_pois parameter",
+    )
+
+
+class CombatEnvelope(BaseModel):
+    """
+    Combat envelope for context aggregation with derived active flag.
     
     This model exposes the active boolean explicitly for Director consumption,
     computed server-side based on enemy statuses.
@@ -647,24 +701,23 @@ class ContextCombatState(BaseModel):
     )
 
 
-class NarrativeContextMetadata(BaseModel):
+class NarrativeContext(BaseModel):
     """
-    Metadata for narrative turns in context aggregation.
+    Narrative context for context aggregation.
     
-    Provides information about the requested, returned, and maximum narrative window
-    to help Directors understand context boundaries.
+    Provides recent narrative turns with metadata about the requested,
+    returned, and maximum narrative window to help Directors understand
+    context boundaries.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    recent_turns: list[NarrativeTurn] = Field(
+    turns: list[NarrativeTurn] = Field(
+        default_factory=list,
         description="List of recent narrative turns ordered oldest-to-newest (chronological)"
     )
     requested_n: int = Field(
         description="Number of turns requested via recent_n parameter"
-    )
-    returned_n: int = Field(
-        description="Number of turns actually returned (may be less than requested)"
     )
     max_n: int = Field(
         description="Maximum number of turns that can be requested (server config limit)"
@@ -676,6 +729,7 @@ class WorldContextState(BaseModel):
     World state for context aggregation including optional POI sample.
     
     POIs can be suppressed via include_pois flag to reduce payload size.
+    The pois_cap field exposes the server configuration for POI sampling limits.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -683,6 +737,9 @@ class WorldContextState(BaseModel):
     pois_sample: list[PointOfInterest] = Field(
         default_factory=list,
         description="Random sample of discovered POIs (empty if include_pois=false)",
+    )
+    pois_cap: int = Field(
+        description="Maximum number of POIs that can be sampled (server config limit)",
     )
     include_pois: bool = Field(
         description="Whether POIs were included in this response (reflects request parameter)"
@@ -699,6 +756,7 @@ class CharacterContextResponse(BaseModel):
     - Combat state with derived active flag
     - Recent narrative turns with metadata
     - Optional world POIs sample
+    - Metadata describing caps and read limits
     
     This is the primary integration surface for Directors to retrieve character context
     for AI-driven narrative generation.
@@ -714,20 +772,27 @@ class CharacterContextResponse(BaseModel):
     quest: Optional[Quest] = Field(
         default=None, description="Active quest or null if no active quest"
     )
-    combat: ContextCombatState = Field(
+    has_active_quest: bool = Field(
+        description="Derived flag: true if quest is not null, false otherwise"
+    )
+    combat: CombatEnvelope = Field(
         description="Combat state with derived active flag"
     )
-    narrative: NarrativeContextMetadata = Field(
+    narrative: NarrativeContext = Field(
         description="Recent narrative turns with metadata"
     )
     world: WorldContextState = Field(
         description="World state including optional POI sample"
     )
-
-    # Derived fields for convenience
-    has_active_quest: bool = Field(
-        description="Derived flag: true if quest is not null, false otherwise"
+    metadata: ContextCapsMetadata = Field(
+        description="Metadata describing read limits and configured caps"
     )
+
+
+# Backward compatibility aliases for existing code
+ContextCombatState = CombatEnvelope
+NarrativeContextMetadata = NarrativeContext
+
 
 
 # ==============================================================================

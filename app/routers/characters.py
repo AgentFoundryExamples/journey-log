@@ -37,9 +37,12 @@ from app.models import (
     CharacterDocument,
     CharacterIdentity,
     CharacterContextResponse,
+    CombatEnvelope,
     CombatState,
+    ContextCapsMetadata,
     ContextCombatState,
     Location,
+    NarrativeContext,
     NarrativeContextMetadata,
     NarrativeTurn,
     PlayerState,
@@ -4065,14 +4068,14 @@ async def get_character_context(
         None, description="User identifier for access control"
     ),
     recent_n: int = Query(
-        default=settings.context_default_recent_n,
+        default=settings.context_recent_n_default,
         ge=1,
-        le=settings.context_max_recent_n,
-        description=f"Number of recent narrative turns to include (default: {settings.context_default_recent_n}, max: {settings.context_max_recent_n})",
+        le=settings.context_recent_n_max,
+        description=f"Number of recent narrative turns to include (default: {settings.context_recent_n_default}, max: {settings.context_recent_n_max})",
     ),
     include_pois: bool = Query(
-        default=True,
-        description="Whether to include POI sample in world state (default: true)",
+        default=False,
+        description="Whether to include POI sample in world state (default: false)",
     ),
 ) -> CharacterContextResponse:
     """
@@ -4214,7 +4217,7 @@ async def get_character_context(
                 combat_active = False
 
         # When combat is inactive, set state to None per acceptance criteria
-        combat_context = ContextCombatState(
+        combat_context = CombatEnvelope(
             active=combat_active,
             state=combat_state_obj if combat_active else None,
         )
@@ -4227,7 +4230,7 @@ async def get_character_context(
 
             # Use offset-based random sampling for better performance
             # First, get a rough count (or use a limited query)
-            sample_size = settings.context_default_poi_sample_size
+            sample_size = settings.context_poi_cap
 
             # Fetch POIs ordered by document ID for consistent results
             pois_query = pois_collection.order_by("__name__").limit(sample_size * 3)
@@ -4300,26 +4303,35 @@ async def get_character_context(
 
         world_context = WorldContextState(
             pois_sample=pois_sample_list,
+            pois_cap=settings.context_poi_cap,
             include_pois=include_pois,
         )
 
-        # 7. Prepare narrative metadata
-        narrative_metadata = NarrativeContextMetadata(
-            recent_turns=recent_turns,
+        # 7. Prepare narrative context
+        narrative_context = NarrativeContext(
+            turns=recent_turns,
             requested_n=recent_n,
-            returned_n=len(recent_turns),
-            max_n=settings.context_max_recent_n,
+            max_n=settings.context_recent_n_max,
         )
 
-        # 8. Build context response
+        # 8. Prepare context metadata
+        context_metadata = ContextCapsMetadata(
+            narrative_max_n=settings.context_recent_n_max,
+            narrative_requested_n=recent_n,
+            pois_cap=settings.context_poi_cap,
+            pois_requested=include_pois,
+        )
+
+        # 9. Build context response
         context_response = CharacterContextResponse(
             character_id=character.character_id,
             player_state=character.player_state,
             quest=character.active_quest,
-            combat=combat_context,
-            narrative=narrative_metadata,
-            world=world_context,
             has_active_quest=character.active_quest is not None,
+            combat=combat_context,
+            narrative=narrative_context,
+            world=world_context,
+            metadata=context_metadata,
         )
 
         logger.info(
