@@ -121,13 +121,13 @@ class Settings(BaseSettings):
     )
 
     # Context Aggregation Configuration
-    context_default_recent_n: int = Field(
+    context_recent_n_default: int = Field(
         default=20,
         ge=1,
         le=100,
         description="Default number of recent narrative turns to include in context aggregation (1-100)",
     )
-    context_max_recent_n: int = Field(
+    context_recent_n_max: int = Field(
         default=100,
         ge=1,
         le=1000,
@@ -136,11 +136,11 @@ class Settings(BaseSettings):
             "This limit ensures context payloads remain manageable for LLM/Director consumption."
         ),
     )
-    context_default_poi_sample_size: int = Field(
+    context_poi_cap: int = Field(
         default=3,
         ge=1,
         le=20,
-        description="Default number of POIs to sample for context aggregation (1-20)",
+        description="Maximum number of POIs to sample for context aggregation (1-20)",
     )
 
     # POI Storage Configuration
@@ -163,11 +163,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_context_defaults(self) -> "Settings":
-        """Validate that context_default_recent_n does not exceed context_max_recent_n."""
-        if self.context_default_recent_n > self.context_max_recent_n:
+        """Validate that context_recent_n_default does not exceed context_recent_n_max."""
+        if self.context_recent_n_default > self.context_recent_n_max:
             raise ValueError(
-                f"context_default_recent_n ({self.context_default_recent_n}) "
-                f"cannot exceed context_max_recent_n ({self.context_max_recent_n})"
+                f"context_recent_n_default ({self.context_recent_n_default}) "
+                f"cannot exceed context_recent_n_max ({self.context_recent_n_max})"
             )
         return self
 
