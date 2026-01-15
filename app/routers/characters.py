@@ -4021,7 +4021,7 @@ async def get_combat(
         "- When include_narrative=false: narrative.recent_turns returns empty list, Firestore query skipped\n"
         "- When include_combat=false: combat returns {active: false, state: null}\n"
         "- When include_quest=false: quest returns null, has_active_quest=false\n"
-        "- All flags default to true to preserve existing behavior\n"
+        "- Component flags (narrative, combat, quest) default to true; include_pois defaults to false\n"
         "- Response structure remains stable regardless of flag values\n\n"
         "**Timing Metrics:**\n"
         "Success logs include timing measurements (in milliseconds):\n"

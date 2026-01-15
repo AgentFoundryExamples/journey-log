@@ -3382,7 +3382,7 @@ The response includes several server-computed derived fields for Director conven
 
 **Example Requests:**
 ```bash
-# Get context with default settings (all components included, 20 turns, no POIs)
+# Get context with default settings (narrative/combat/quest included, POIs excluded by default)
 curl http://localhost:8080/characters/550e8400-e29b-41d4-a716-446655440000/context
 
 # Get context with custom narrative window
