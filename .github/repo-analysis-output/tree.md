@@ -52,6 +52,7 @@
 ├── .gitignore
 ├── Dockerfile
 ├── example_openai_usage.py
+├── firestore.indexes.json
 ├── gcp_deployment_reference.md
 ├── infrastructure_versions.txt
 ├── LICENSE

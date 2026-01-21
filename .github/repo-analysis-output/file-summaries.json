@@ -137,8 +137,8 @@
       "summary": "Python module for characters",
       "summary_text": "Python module for characters",
       "metrics": {
-        "size_bytes": 171842,
-        "loc": 3584,
+        "size_bytes": 172231,
+        "loc": 3586,
         "todo_count": 0
       }
     },
@@ -221,8 +221,8 @@
       "summary": "Python test file (role: test)",
       "summary_text": "Python test file (role: test)",
       "metrics": {
-        "size_bytes": 150539,
-        "loc": 3317,
+        "size_bytes": 150879,
+        "loc": 3321,
         "todo_count": 0
       }
     },

@@ -166,6 +166,7 @@
           "fastapi.Query",
           "fastapi.status",
           "google.cloud.firestore",
+          "google.cloud.firestore_v1.base_query.FieldFilter",
           "pydantic.BaseModel",
           "pydantic.Field",
           "pydantic.model_validator"
@@ -667,6 +668,7 @@
       "fastapi.testclient.TestClient",
       "google.cloud.exceptions.GoogleCloudError",
       "google.cloud.firestore",
+      "google.cloud.firestore_v1.base_query.FieldFilter",
       "openai",
       "openai.OpenAI",
       "pydantic.BaseModel",
@@ -687,6 +689,6 @@
       "uvicorn"
     ],
     "stdlib_count": 32,
-    "third-party_count": 32
+    "third-party_count": 33
   }
 }

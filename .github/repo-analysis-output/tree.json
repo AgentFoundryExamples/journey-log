@@ -230,6 +230,10 @@
     },
     {
       "type": "file",
+      "name": "firestore.indexes.json"
+    },
+    {
+      "type": "file",
       "name": "gcp_deployment_reference.md"
     },
     {

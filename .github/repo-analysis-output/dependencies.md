@@ -11,7 +11,7 @@ Includes classification of external dependencies as stdlib vs third-party.
 - **Total files**: 26
 - **Intra-repo dependencies**: 43
 - **External stdlib dependencies**: 32
-- **External third-party dependencies**: 32
+- **External third-party dependencies**: 33
 
 ## External Dependencies
 
@@ -43,7 +43,7 @@ Total: 32 unique modules
 
 ### Third-Party Packages
 
-Total: 32 unique packages
+Total: 33 unique packages
 
 - `fastapi.APIRouter`
 - `fastapi.Depends`
@@ -59,13 +59,13 @@ Total: 32 unique packages
 - `fastapi.testclient.TestClient`
 - `google.cloud.exceptions.GoogleCloudError`
 - `google.cloud.firestore`
+- `google.cloud.firestore_v1.base_query.FieldFilter`
 - `openai`
 - `openai.OpenAI`
 - `pydantic.BaseModel`
 - `pydantic.ConfigDict`
 - `pydantic.Field`
-- `pydantic.ValidationError`
-- ... and 12 more (see JSON for full list)
+- ... and 13 more (see JSON for full list)
 
 ## Most Depended Upon Files (Intra-Repo)
 
