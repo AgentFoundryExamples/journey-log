@@ -280,6 +280,45 @@ The Journey Log API uses the following Firestore collections:
 
 The connectivity test collection will contain test documents created by the `/firestore-test` endpoint. These documents are not automatically cleaned up.
 
+### Required Firestore Indexes
+
+The API requires composite indexes for efficient queries. A `firestore.indexes.json` file is provided in the repository root with the necessary index definitions.
+
+#### Deploy Indexes
+
+```bash
+# Using gcloud CLI to create the required composite index
+gcloud firestore indexes composite create \
+    --collection-group=characters \
+    --query-scope=COLLECTION \
+    --field-config=field-path=owner_user_id,order=ASCENDING \
+    --field-config=field-path=updated_at,order=DESCENDING \
+    --project=YOUR_PROJECT_ID
+```
+
+#### Verify Index Status
+
+```bash
+# List all composite indexes
+gcloud firestore indexes composite list --project=YOUR_PROJECT_ID
+
+# The index should show STATE as "READY" before the API can use it
+# Index creation can take several minutes for large collections
+```
+
+#### Required Indexes
+
+The following composite indexes are required:
+
+1. **Characters Collection - User Listing**
+   - Collection: `characters`
+   - Fields:
+     - `owner_user_id` (ASCENDING)
+     - `updated_at` (DESCENDING)
+   - Purpose: List characters owned by a user, ordered by most recently updated
+
+If you encounter errors like "The query requires an index", the error message will include a direct link to create the index in the Firebase Console.
+
 ### Cleanup Test Documents
 
 To clean up test documents created by connectivity tests:

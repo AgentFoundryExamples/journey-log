@@ -25,6 +25,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Header, Query, status
 from google.cloud import firestore  # type: ignore[import-untyped]
+from google.cloud.firestore_v1.base_query import FieldFilter  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, model_validator
 
 from app.config import (
@@ -247,7 +248,7 @@ async def list_characters(
     try:
         # Query Firestore for characters owned by user
         characters_ref = db.collection(settings.firestore_characters_collection)
-        query = characters_ref.where("owner_user_id", "==", user_id)
+        query = characters_ref.where(filter=FieldFilter("owner_user_id", "==", user_id))
 
         # Order by updated_at descending
         query = query.order_by("updated_at", direction=firestore.Query.DESCENDING)
@@ -418,10 +419,10 @@ async def create_character(
             # Query for existing character with same tuple
             # Note: Firestore queries are case-sensitive
             query = (
-                characters_ref.where("owner_user_id", "==", user_id)
-                .where("player_state.identity.name", "==", request.name)
-                .where("player_state.identity.race", "==", request.race)
-                .where("player_state.identity.class", "==", request.character_class)
+                characters_ref.where(filter=FieldFilter("owner_user_id", "==", user_id))
+                .where(filter=FieldFilter("player_state.identity.name", "==", request.name))
+                .where(filter=FieldFilter("player_state.identity.race", "==", request.race))
+                .where(filter=FieldFilter("player_state.identity.class", "==", request.character_class))
                 .limit(1)
             )
 
@@ -947,7 +948,15 @@ async def append_narrative_turn(
                     detail="Access denied: user ID does not match character owner",
                 )
 
-            # 3. Create narrative turn document
+            # 3. Count turns BEFORE writing (Firestore requires all reads before writes in transaction)
+            # This counts existing turns; we'll add 1 after writing to get the total
+            turns_collection = char_ref.collection("narrative_turns")
+            count_query = turns_collection.count()
+            count_result = count_query.get(transaction=transaction)
+            # The result structure is [[AggregationResult]] where AggregationResult has a value attribute
+            existing_turns_count = count_result[0][0].value
+
+            # 4. Create narrative turn document
             # Use server timestamp if not provided by client
             turn_data = {
                 "turn_id": turn_id,
@@ -958,20 +967,15 @@ async def append_narrative_turn(
                 else firestore.SERVER_TIMESTAMP,
             }
 
-            # 4. Write turn to subcollection
+            # 5. Write turn to subcollection
             turn_ref = char_ref.collection("narrative_turns").document(turn_id)
             transaction.set(turn_ref, turn_data)
 
-            # 5. Update character.updated_at
+            # 6. Update character.updated_at
             transaction.update(char_ref, {"updated_at": firestore.SERVER_TIMESTAMP})
 
-            # 6. Count turns atomically within transaction using aggregation
-            # Note: Firestore aggregation count is efficient and atomic within transaction
-            turns_collection = char_ref.collection("narrative_turns")
-            count_query = turns_collection.count()
-            count_result = count_query.get(transaction=transaction)
-            # The result structure is [[AggregationResult]] where AggregationResult has a value attribute
-            total_turns = count_result[0][0].value
+            # 7. Calculate total turns (existing + the one we just added)
+            total_turns = existing_turns_count + 1
 
             return turn_ref, turn_data, turn_id, total_turns
 
@@ -1229,7 +1233,7 @@ async def get_narrative_turns(
         # Note: The filter is applied BEFORE ordering, so it correctly limits the result set
         # before selecting the N most recent turns from the filtered set
         if since_dt:
-            query = query.where("timestamp", ">", since_dt)
+            query = query.where(filter=FieldFilter("timestamp", ">", since_dt))
 
         # Apply limit to get at most N turns
         query = query.limit(n)
@@ -1252,7 +1256,7 @@ async def get_narrative_turns(
         # Performance consideration: For characters with many turns, consider caching
         # Count all turns matching the since filter if provided (strict inequality)
         if since_dt:
-            count_query = turns_collection.where("timestamp", ">", since_dt).count()
+            count_query = turns_collection.where(filter=FieldFilter("timestamp", ">", since_dt)).count()
         else:
             count_query = turns_collection.count()
 

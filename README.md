@@ -151,6 +151,8 @@ GCP_PROJECT_ID=demo-project
 uvicorn app.main:app --reload
 ```
 
+**Note**: The Firestore emulator does not require indexes for development, so queries will work without creating composite indexes. However, you'll need to create indexes when deploying to production Firestore.
+
 #### Option 2: Use Application Default Credentials
 
 ```bash
@@ -164,6 +166,14 @@ gcloud config set project YOUR_PROJECT_ID
 gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
     --member="user:your-email@example.com" \
     --role="roles/datastore.user"
+
+# Create required Firestore indexes (production only)
+gcloud firestore indexes composite create \
+    --collection-group=characters \
+    --query-scope=COLLECTION \
+    --field-config=field-path=owner_user_id,order=ASCENDING \
+    --field-config=field-path=updated_at,order=DESCENDING \
+    --project=YOUR_PROJECT_ID
 
 # In your .env file, set:
 GCP_PROJECT_ID=YOUR_PROJECT_ID

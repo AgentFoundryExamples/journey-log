@@ -1388,8 +1388,13 @@ class TestListCharacters:
         data = response.json()
         assert len(data["characters"]) == 1
 
-        # Verify Firestore was queried with correct user_id filter
-        mock_collection.where.assert_called_once_with("owner_user_id", "==", "user123")
+        # Verify Firestore was queried with a where filter (using FieldFilter)
+        mock_collection.where.assert_called_once()
+        # Verify it's filtering by owner_user_id - check the FieldFilter argument
+        call_args = mock_collection.where.call_args
+        assert call_args[1]["filter"].field_path == "owner_user_id"
+        assert call_args[1]["filter"].op_string == "=="
+        assert call_args[1]["filter"].value == "user123"
 
 
 class TestAppendNarrativeTurn:
@@ -1463,7 +1468,7 @@ class TestAppendNarrativeTurn:
         # Mock count aggregation query for atomic count
         mock_count_query = Mock()
         mock_agg_result = Mock()
-        mock_agg_result.value = 5
+        mock_agg_result.value = 5  # 5 existing turns
         mock_count_query.get.return_value = [[mock_agg_result]]
         mock_turn_collection.count.return_value = mock_count_query
 
@@ -1495,7 +1500,7 @@ class TestAppendNarrativeTurn:
         data = response.json()
         assert "turn" in data
         assert "total_turns" in data
-        assert data["total_turns"] == 5
+        assert data["total_turns"] == 6  # 5 existing + 1 newly added
 
         turn = data["turn"]
         assert turn["player_action"] == valid_append_request["user_action"]
